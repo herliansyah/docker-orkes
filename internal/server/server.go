@@ -118,10 +118,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /nodes", s.requireAuth(http.HandlerFunc(s.handleListNodes)))
 	mux.Handle("POST /nodes", s.requireAuth(http.HandlerFunc(s.handleCreateNode)))
 	mux.Handle("POST /nodes/{id}/test", s.requireAuth(http.HandlerFunc(s.handleTestNode)))
+	mux.Handle("POST /nodes/{id}/bootstrap", s.requireAuth(http.HandlerFunc(s.handleBootstrapNode)))
 	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
 	mux.Handle("GET /nodes/{id}", s.requireAuth(http.HandlerFunc(s.handleNodeDetail)))
 	mux.Handle("GET /nodes/{id}/telemetry", s.requireAuth(http.HandlerFunc(s.handleNodeTelemetry)))
 	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
+
 
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
@@ -246,6 +248,8 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		user = "root"
 	}
 
+	sshPassword := strings.TrimSpace(r.FormValue("ssh_password"))
+
 	node := store.Node{
 		ID:        generateToken(8),
 		Name:      name,
@@ -256,6 +260,22 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().UTC(),
 	}
 
+	if sshPassword != "" {
+		if err := s.executor.BootstrapKey(r.Context(), node.Host, node.Port, node.User, sshPassword, s.pubKey); err != nil {
+			node.Status = "offline"
+			node.LastError = "Auto-inject key failed: " + err.Error()
+		} else {
+			dockerVer, err := s.executor.TestConnection(r.Context(), node.Host, node.Port, node.User, s.privKey)
+			if err != nil {
+				node.Status = "offline"
+				node.LastError = err.Error()
+			} else {
+				node.Status = "online"
+				node.DockerVersion = dockerVer
+			}
+		}
+	}
+
 	if err := s.store.CreateNode(node); err != nil {
 		http.Error(w, "Failed to create node: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -263,6 +283,42 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+func (s *Server) handleBootstrapNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	sshPassword := strings.TrimSpace(r.FormValue("ssh_password"))
+	if sshPassword == "" {
+		http.Error(w, "SSH Password is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.executor.BootstrapKey(r.Context(), node.Host, node.Port, node.User, sshPassword, s.pubKey); err != nil {
+		_ = s.store.UpdateNodeStatus(node.ID, "offline", "Auto-inject key failed: "+err.Error(), "")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	dockerVer, err := s.executor.TestConnection(r.Context(), node.Host, node.Port, node.User, s.privKey)
+	if err != nil {
+		_ = s.store.UpdateNodeStatus(node.ID, "offline", err.Error(), "")
+	} else {
+		_ = s.store.UpdateNodeStatus(node.ID, "online", "", dockerVer)
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 
 func (s *Server) handleTestNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

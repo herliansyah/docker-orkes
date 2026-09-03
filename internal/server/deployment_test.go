@@ -57,6 +57,11 @@ func (m *mockDeployExecutor) ReadRemoteFile(ctx context.Context, host string, po
 	return m.uploaded[path], nil
 }
 
+func (m *mockDeployExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
+	return nil
+}
+
+
 func TestServer_DeploymentLifecycle(t *testing.T) {
 	mockExec := &mockDeployExecutor{}
 

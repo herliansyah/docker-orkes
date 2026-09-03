@@ -20,7 +20,9 @@ type Executor interface {
 	RunCommandStream(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string, out io.Writer) error
 	UploadFiles(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteDir string, files map[string][]byte) error
 	ReadRemoteFile(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteFilePath string) ([]byte, error)
+	BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error
 }
+
 
 
 type RealExecutor struct{}
@@ -203,4 +205,47 @@ func (e *RealExecutor) ReadRemoteFile(ctx context.Context, host string, port int
 
 	return content, nil
 }
+
+func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
+	config := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to dial %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		return fmt.Errorf("ssh password authentication failed: %w", err)
+	}
+	client := ssh.NewClient(sshConn, chans, reqs)
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create ssh session: %w", err)
+	}
+	defer session.Close()
+
+	cleanKey := strings.TrimSpace(pubKey)
+	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qF '%s' ~/.ssh/authorized_keys || echo '%s' >> ~/.ssh/authorized_keys`, cleanKey, cleanKey)
+
+	out, err := session.CombinedOutput(cmd)
+	if err != nil {
+		return fmt.Errorf("failed to install ssh key on remote server: %w (output: %s)", err, string(out))
+	}
+
+	return nil
+}
+
 
