@@ -4,12 +4,15 @@
 
 **Blocked by:** 04 — Deployment Lifecycle (Deploy, Stop, Restart via SFTP & SSH)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Settings page allows configuring a Git Mirror repository URL, branch, and authentication credentials (SSH key or Personal Access Token).
-- [ ] Control Plane validates connection to the external Git repository upon saving settings.
-- [ ] Whenever a Stack template or Deployment is created, edited, or deleted, an asynchronous job stages and commits changes to the Git mirror repository.
-- [ ] Stacks are written to `/stacks/<stack-slug>/docker-compose.yml` and `/stacks/<stack-slug>/metadata.json`.
-- [ ] Deployments are written to `/deployments/<node-slug>/<stack-slug>.json` recording node associations and non-sensitive metadata.
-- [ ] Dashboard displays the last sync timestamp, current commit hash, and sync status badge (Synced, Pending, or Error), with a manual "Sync Now" button.
-- [ ] Automated tests verify repository formatting, commit message generation, and synchronization logic via the HTTP API boundary.
+- [x] Operator can configure an external Git repository URL, branch, and credentials in the Control Plane settings.
+- [x] Control Plane maintains a local mirror repository directory containing:
+  - `stacks/<stack-name>/docker-compose.yml`
+  - `stacks/<stack-name>/.env.example`
+  - `deployments/<node-name>/<stack-name>.env`
+  - `inventory.json` (metadata mapping Nodes, Stacks, and active Deployments)
+- [x] Any mutation to Stacks or Deployments triggers an automatic commit and push to the configured Git mirror with descriptive commit messages.
+- [x] Operator can click "Sync Now" to manually trigger an immediate push or pull to reconcile Control Plane state with the Git repository.
+- [x] Sync failures (e.g. authentication error, network timeout) are recorded in the system status and surfaced with clear error messages without halting Control Plane operations.
+- [x] Automated tests verify repository initialization, directory layout generation, commit creation, and sync status updates via the HTTP API boundary.

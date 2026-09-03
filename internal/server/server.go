@@ -16,15 +16,12 @@ import (
 
 
 	"docker-orkes/internal/diff"
+	"docker-orkes/internal/gitsync"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 
 	"gopkg.in/yaml.v3"
 )
-
-
-
-
 
 //go:embed templates/*.html
 var templatesFS embed.FS
@@ -34,15 +31,19 @@ type Config struct {
 	MasterPassword string
 	Addr           string
 	Executor       ssh.Executor
+	GitSyncer      gitsync.Syncer
+	GitMirrorDir   string
 }
 
 type Server struct {
-	cfg       Config
-	store     *store.Store
-	executor  ssh.Executor
-	templates *template.Template
-	pubKey    string
-	privKey   string
+	cfg          Config
+	store        *store.Store
+	executor     ssh.Executor
+	gitSyncer    gitsync.Syncer
+	gitMirrorDir string
+	templates    *template.Template
+	pubKey       string
+	privKey      string
 }
 
 func New(cfg Config) (*Server, error) {
@@ -52,11 +53,18 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Executor == nil {
 		cfg.Executor = ssh.NewExecutor()
 	}
+	if cfg.GitSyncer == nil {
+		cfg.GitSyncer = gitsync.NewSyncer()
+	}
+	if cfg.GitMirrorDir == "" {
+		cfg.GitMirrorDir = "data/git-mirror"
+	}
 
 	st, err := store.New(cfg.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize store: %w", err)
 	}
+
 
 	pubKey, privKey, err := st.EnsureSSHKeyPair()
 	if err != nil {
@@ -71,13 +79,16 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:       cfg,
-		store:     st,
-		executor:  cfg.Executor,
-		templates: tmpl,
-		pubKey:    pubKey,
-		privKey:   privKey,
+		cfg:          cfg,
+		store:        st,
+		executor:     cfg.Executor,
+		gitSyncer:    cfg.GitSyncer,
+		gitMirrorDir: cfg.GitMirrorDir,
+		templates:    tmpl,
+		pubKey:       pubKey,
+		privKey:      privKey,
 	}, nil
+
 }
 
 func (s *Server) Store() *store.Store {
@@ -129,7 +140,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/drift/reconcile", s.requireAuth(http.HandlerFunc(s.handleReconcileDrift)))
 	mux.Handle("POST /deployments/{id}/drift/adopt", s.requireAuth(http.HandlerFunc(s.handleAdoptDrift)))
 
+	mux.Handle("POST /settings/git", s.requireAuth(http.HandlerFunc(s.handleUpdateGitSettings)))
+	mux.Handle("POST /settings/git/sync", s.requireAuth(http.HandlerFunc(s.handleSyncGitNow)))
+
 	return mux
+
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
@@ -638,19 +653,133 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gitMirrorURL, _ := s.store.GetSetting("git_mirror_url")
+	gitMirrorBranch, _ := s.store.GetSetting("git_mirror_branch")
+	if gitMirrorBranch == "" {
+		gitMirrorBranch = "main"
+	}
+	gitMirrorStatus, _ := s.store.GetSetting("git_mirror_status")
+	if gitMirrorStatus == "" {
+		gitMirrorStatus = "idle"
+	}
+	gitMirrorLastSync, _ := s.store.GetSetting("git_mirror_last_sync")
+	gitMirrorError, _ := s.store.GetSetting("git_mirror_error")
+
 	data := map[string]interface{}{
-		"PublicKeySSH":    s.pubKey,
-		"Nodes":           nodes,
-		"NodeCount":       len(nodes),
-		"Stacks":          stacks,
-		"StackCount":      len(stacks),
-		"Deployments":     deployments,
-		"DeploymentCount": len(deployments),
+		"PublicKeySSH":      s.pubKey,
+		"Nodes":             nodes,
+		"NodeCount":         len(nodes),
+		"Stacks":            stacks,
+		"StackCount":        len(stacks),
+		"Deployments":       deployments,
+		"DeploymentCount":   len(deployments),
+		"GitMirrorURL":      gitMirrorURL,
+		"GitMirrorBranch":   gitMirrorBranch,
+		"GitMirrorStatus":   gitMirrorStatus,
+		"GitMirrorLastSync": gitMirrorLastSync,
+		"GitMirrorError":    gitMirrorError,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.templates.ExecuteTemplate(w, "dashboard.html", data)
 }
+
+func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
+	files := make(map[string][]byte)
+
+	stacks, err := s.store.ListStacks()
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range stacks {
+		composePath := fmt.Sprintf("stacks/%s/docker-compose.yml", st.Name)
+		files[composePath] = []byte(st.ComposeYAML)
+
+		if st.DefaultEnv != "" {
+			envPath := fmt.Sprintf("stacks/%s/.env.example", st.Name)
+			files[envPath] = []byte(st.DefaultEnv)
+		}
+	}
+
+	nodes, err := s.store.ListNodes()
+	if err != nil {
+		return nil, err
+	}
+
+	deployments, err := s.store.ListDeployments()
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range deployments {
+		depEnvPath := fmt.Sprintf("deployments/%s/%s.env", d.NodeName, d.StackName)
+		files[depEnvPath] = []byte(d.EnvVars)
+	}
+
+	inventory := map[string]interface{}{
+		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"nodes":        nodes,
+		"stacks":       stacks,
+		"deployments":  deployments,
+	}
+	invJSON, _ := json.MarshalIndent(inventory, "", "  ")
+	files["inventory.json"] = invJSON
+
+	return files, nil
+}
+
+func (s *Server) triggerGitSync(ctx context.Context) error {
+	files, err := s.buildGitMirrorFiles()
+	if err != nil {
+		_ = s.store.SetSetting("git_mirror_status", "failed")
+		_ = s.store.SetSetting("git_mirror_error", err.Error())
+		return err
+	}
+
+	repoURL, _ := s.store.GetSetting("git_mirror_url")
+	branch, _ := s.store.GetSetting("git_mirror_branch")
+	if branch == "" {
+		branch = "main"
+	}
+
+	syncErr := s.gitSyncer.Sync(ctx, s.gitMirrorDir, repoURL, branch, s.privKey, files)
+	_ = s.store.SetSetting("git_mirror_last_sync", time.Now().UTC().Format(time.RFC3339))
+
+	if syncErr != nil {
+		_ = s.store.SetSetting("git_mirror_status", "failed")
+		_ = s.store.SetSetting("git_mirror_error", syncErr.Error())
+		return syncErr
+	}
+
+	_ = s.store.SetSetting("git_mirror_status", "synced")
+	_ = s.store.SetSetting("git_mirror_error", "")
+	return nil
+}
+
+func (s *Server) handleUpdateGitSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	repoURL := strings.TrimSpace(r.FormValue("git_mirror_url"))
+	branch := strings.TrimSpace(r.FormValue("git_mirror_branch"))
+	if branch == "" {
+		branch = "main"
+	}
+
+	_ = s.store.SetSetting("git_mirror_url", repoURL)
+	_ = s.store.SetSetting("git_mirror_branch", branch)
+
+	_ = s.triggerGitSync(r.Context())
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleSyncGitNow(w http.ResponseWriter, r *http.Request) {
+	_ = s.triggerGitSync(r.Context())
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 
 func generateToken(n int) string {
 	b := make([]byte, n)

@@ -526,7 +526,70 @@
         </table>
       </div>
     </div>
+
+    <!-- Git Mirror Backup Section -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h2 class="text-base font-semibold text-slate-100">Git Mirror Backup Sync</h2>
+            {{if eq .GitMirrorStatus "synced"}}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Synced
+            </span>
+            {{else if eq .GitMirrorStatus "failed"}}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.GitMirrorError}}">
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Sync Failed
+            </span>
+            {{else}}
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Idle
+            </span>
+            {{end}}
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Automated Git commit & push of all Stacks, node deployment envs, and <code class="text-indigo-400">inventory.json</code>.
+            {{if .GitMirrorLastSync}}<span class="text-slate-500 ml-1">Last synced: {{.GitMirrorLastSync}}</span>{{end}}
+          </p>
+        </div>
+        {{if .GitMirrorURL}}
+        <form method="POST" action="/settings/git/sync">
+          <button type="submit" class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3.5 py-2 rounded-lg transition shadow-sm">
+            🔄 Sync Now
+          </button>
+        </form>
+        {{end}}
+      </div>
+
+      {{if .GitMirrorError}}
+      <div class="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 text-xs text-rose-300">
+        <strong>Last Sync Error:</strong> {{.GitMirrorError}}
+      </div>
+      {{end}}
+
+      <form method="POST" action="/settings/git" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-slate-300 mb-1">Git Repository URL (SSH or HTTPS)</label>
+            <input type="text" name="git_mirror_url" value="{{.GitMirrorURL}}" placeholder="git@github.com:myorg/infrastructure-backup.git"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <p class="text-[11px] text-slate-500 mt-1">If using SSH, add Control Plane public key above as a deploy key with write access.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Target Branch</label>
+            <input type="text" name="git_mirror_branch" value="{{.GitMirrorBranch}}" placeholder="main"
+              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+            Save & Sync Mirror
+          </button>
+        </div>
+      </form>
+    </div>
   </main>
+
 
 
 
