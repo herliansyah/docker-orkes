@@ -55,6 +55,18 @@ type Stack struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type Deployment struct {
+	ID          string    `json:"id"`
+	StackID     string    `json:"stack_id"`
+	NodeID      string    `json:"node_id"`
+	StackName   string    `json:"stack_name,omitempty"`
+	NodeName    string    `json:"node_name,omitempty"`
+	EnvVars     string    `json:"env_vars"`
+	Status      string    `json:"status"` // pending, deploying, running, stopped, failed
+	DesiredHash string    `json:"desired_hash"`
+	LastLog     string    `json:"last_log"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
 
 func (s *Store) Close() error {
 	return s.db.Close()
@@ -84,7 +96,6 @@ func (s *Store) initSchema() error {
 		created_at DATETIME NOT NULL
 	);
 
-
 	CREATE TABLE IF NOT EXISTS stacks (
 		id TEXT PRIMARY KEY,
 		name TEXT NOT NULL UNIQUE,
@@ -101,12 +112,14 @@ func (s *Store) initSchema() error {
 		env_vars TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'pending',
 		desired_hash TEXT NOT NULL DEFAULT '',
+		last_log TEXT NOT NULL DEFAULT '',
 		updated_at DATETIME NOT NULL
 	);
 	`
 	_, err := s.db.Exec(schema)
 	return err
 }
+
 
 func (s *Store) GetSetting(key string) (string, error) {
 	var val string
@@ -274,5 +287,74 @@ func (s *Store) DeleteStack(id string) error {
 	_, err := s.db.Exec(`DELETE FROM stacks WHERE id = ?`, id)
 	return err
 }
+
+func (s *Store) CreateDeployment(d Deployment) error {
+	_, err := s.db.Exec(`
+		INSERT INTO deployments (id, stack_id, node_id, env_vars, status, desired_hash, last_log, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, d.ID, d.StackID, d.NodeID, d.EnvVars, d.Status, d.DesiredHash, d.LastLog, d.UpdatedAt)
+	return err
+}
+
+func (s *Store) ListDeployments() ([]Deployment, error) {
+	query := `
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.status, d.desired_hash, d.last_log, d.updated_at
+		FROM deployments d
+		JOIN stacks s ON d.stack_id = s.id
+		JOIN nodes n ON d.node_id = n.id
+		ORDER BY d.updated_at DESC
+	`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []Deployment
+	for rows.Next() {
+		var d Deployment
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Status, &d.DesiredHash, &d.LastLog, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, rows.Err()
+}
+
+func (s *Store) GetDeployment(id string) (*Deployment, error) {
+	query := `
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.status, d.desired_hash, d.last_log, d.updated_at
+		FROM deployments d
+		JOIN stacks s ON d.stack_id = s.id
+		JOIN nodes n ON d.node_id = n.id
+		WHERE d.id = ?
+	`
+	var d Deployment
+	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Status, &d.DesiredHash, &d.LastLog, &d.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (s *Store) UpdateDeploymentStatus(id, status, lastLog string) error {
+	_, err := s.db.Exec(`
+		UPDATE deployments SET status = ?, last_log = ?, updated_at = ? WHERE id = ?
+	`, status, lastLog, time.Now().UTC(), id)
+	return err
+}
+
+func (s *Store) UpdateDeploymentDesiredHash(id, hash string) error {
+	_, err := s.db.Exec(`
+		UPDATE deployments SET desired_hash = ?, updated_at = ? WHERE id = ?
+	`, hash, time.Now().UTC(), id)
+	return err
+}
+
+func (s *Store) DeleteDeployment(id string) error {
+	_, err := s.db.Exec(`DELETE FROM deployments WHERE id = ?`, id)
+	return err
+}
+
 
 

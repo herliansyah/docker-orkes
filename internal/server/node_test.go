@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"docker-orkes/internal/server"
 )
+
 
 type mockExecutor struct {
 	testConnFunc func(ctx context.Context, host string, port int, user string, privKey string) (string, error)
@@ -26,6 +28,19 @@ func (m *mockExecutor) TestConnection(ctx context.Context, host string, port int
 func (m *mockExecutor) RunCommand(ctx context.Context, host string, port int, user string, privKey string, cmd string) (string, error) {
 	return "", nil
 }
+
+func (m *mockExecutor) RunCommandStream(ctx context.Context, host string, port int, user string, privKey string, cmd string, out io.Writer) error {
+	return nil
+}
+
+func (m *mockExecutor) UploadFiles(ctx context.Context, host string, port int, user string, privKey string, remoteDir string, files map[string][]byte) error {
+	return nil
+}
+
+func (m *mockExecutor) ReadRemoteFile(ctx context.Context, host string, port int, user string, privKey string, remoteFilePath string) ([]byte, error) {
+	return nil, nil
+}
+
 
 func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 	mockExec := &mockExecutor{}

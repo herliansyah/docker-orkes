@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
 
 
 
@@ -107,7 +110,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /stacks/{id}/update", s.requireAuth(http.HandlerFunc(s.handleUpdateStack)))
 	mux.Handle("POST /stacks/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteStack)))
 
+	mux.Handle("GET /deployments", s.requireAuth(http.HandlerFunc(s.handleListDeployments)))
+	mux.Handle("POST /deployments", s.requireAuth(http.HandlerFunc(s.handleCreateDeployment)))
+	mux.Handle("POST /deployments/{id}/up", s.requireAuth(http.HandlerFunc(s.handleUpDeployment)))
+	mux.Handle("POST /deployments/{id}/restart", s.requireAuth(http.HandlerFunc(s.handleRestartDeployment)))
+	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
+	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
+
 	return mux
+
 
 }
 
@@ -354,8 +365,169 @@ func validateComposeYAML(content string) error {
 	return nil
 }
 
+func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
+	s.handleDashboard(w, r)
+}
+
+func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	stackID := strings.TrimSpace(r.FormValue("stack_id"))
+	nodeID := strings.TrimSpace(r.FormValue("node_id"))
+	envVars := strings.TrimSpace(r.FormValue("env_vars"))
+
+	if stackID == "" || nodeID == "" {
+		http.Error(w, "stack_id and node_id are required", http.StatusBadRequest)
+		return
+	}
+
+	dep := store.Deployment{
+		ID:        generateToken(8),
+		StackID:   stackID,
+		NodeID:    nodeID,
+		EnvVars:   envVars,
+		Status:    "deploying",
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	if err := s.store.CreateDeployment(dep); err != nil {
+		http.Error(w, "Failed to create deployment: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = s.deployStack(r.Context(), &dep)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	_ = s.deployStack(r.Context(), dep)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleRestartDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml restart", remoteDir)
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
+	} else {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "running", out)
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleDownDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml down", remoteDir)
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
+	} else {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "stopped", out)
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteDeployment(id); err != nil {
+		http.Error(w, "Failed to delete deployment: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) deployStack(ctx context.Context, dep *store.Deployment) error {
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	files := map[string][]byte{
+		"docker-compose.yml": []byte(stack.ComposeYAML),
+		".env":               []byte(dep.EnvVars),
+	}
+
+	if err := s.executor.UploadFiles(ctx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
+		return fmt.Errorf("failed to upload files: %w", err)
+	}
+
+	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", remoteDir, remoteDir)
+	out, err := s.executor.RunCommand(ctx, node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", fmt.Sprintf("command error: %v (out: %s)", err, out))
+		return fmt.Errorf("failed to run docker compose up: %w", err)
+	}
+
+	hash := computeDesiredHash(stack.ComposeYAML, dep.EnvVars)
+	_ = s.store.UpdateDeploymentDesiredHash(dep.ID, hash)
+	_ = s.store.UpdateDeploymentStatus(dep.ID, "running", out)
+	return nil
+}
+
+func computeDesiredHash(composeYAML, envVars string) string {
+	h := sha256.New()
+	h.Write([]byte(composeYAML))
+	h.Write([]byte("\n---\n"))
+	h.Write([]byte(envVars))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" && r.URL.Path != "/nodes" && r.URL.Path != "/stacks" {
+	if r.URL.Path != "/" && r.URL.Path != "/nodes" && r.URL.Path != "/stacks" && r.URL.Path != "/deployments" {
 		http.NotFound(w, r)
 		return
 	}
@@ -372,13 +544,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deployments, err := s.store.ListDeployments()
+	if err != nil {
+		http.Error(w, "Failed to list deployments", http.StatusInternalServerError)
+		return
+	}
+
 	data := map[string]interface{}{
 		"PublicKeySSH":    s.pubKey,
 		"Nodes":           nodes,
 		"NodeCount":       len(nodes),
 		"Stacks":          stacks,
 		"StackCount":      len(stacks),
-		"DeploymentCount": 0,
+		"Deployments":     deployments,
+		"DeploymentCount": len(deployments),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -390,4 +569,5 @@ func generateToken(n int) string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
 
