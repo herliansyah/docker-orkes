@@ -389,6 +389,7 @@
               <th class="py-3 px-4">Stack</th>
               <th class="py-3 px-4">Target Node</th>
               <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4">Drift</th>
               <th class="py-3 px-4">Last Updated</th>
               <th class="py-3 px-4 text-right">Actions</th>
             </tr>
@@ -427,11 +428,31 @@
                 </span>
                 {{end}}
               </td>
+              <td class="py-3.5 px-4">
+                {{if eq .DriftStatus "synced"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  ✓ Synced
+                </span>
+                {{else if eq .DriftStatus "drifted"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                  ⚠️ Drifted
+                </span>
+                {{else}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                  Untested
+                </span>
+                {{end}}
+              </td>
               <td class="py-3.5 px-4 text-slate-400 text-[11px]">
                 {{.UpdatedAt.Format "Jan 02, 15:04"}}
               </td>
               <td class="py-3.5 px-4 text-right">
                 <div class="inline-flex items-center gap-1.5">
+                  <form method="POST" action="/deployments/{{.ID}}/drift/check">
+                    <button type="submit" title="Compare remote files with desired state" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded text-xs transition">
+                      Check Drift
+                    </button>
+                  </form>
                   <form method="POST" action="/deployments/{{.ID}}/up">
                     <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition">
                       Up
@@ -455,9 +476,33 @@
                 </div>
               </td>
             </tr>
+            {{if eq .DriftStatus "drifted"}}
+            <tr class="bg-amber-500/5 border-l-2 border-amber-500">
+              <td colspan="6" class="p-4 border-b border-slate-800">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                    ⚠️ Configuration Drift Detected on Remote Node
+                  </span>
+                  <div class="inline-flex gap-2">
+                    <form method="POST" action="/deployments/{{.ID}}/drift/reconcile" onsubmit="return confirm('Overwrite remote server with Desired State?');">
+                      <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-medium transition">
+                        Reconcile (Overwrite Remote)
+                      </button>
+                    </form>
+                    <form method="POST" action="/deployments/{{.ID}}/drift/adopt" onsubmit="return confirm('Adopt remote changes as new Desired State?');">
+                      <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-medium transition">
+                        Adopt Remote
+                      </button>
+                    </form>
+                  </div>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] font-mono max-h-48 overflow-y-auto whitespace-pre-wrap text-slate-300">{{.DiffOutput}}</div>
+              </td>
+            </tr>
+            {{end}}
             {{if .LastLog}}
             <tr class="bg-slate-950/40">
-              <td colspan="5" class="py-2 px-4 border-b border-slate-800/40">
+              <td colspan="6" class="py-2 px-4 border-b border-slate-800/40">
                 <details class="text-[11px] text-slate-400">
                   <summary class="cursor-pointer hover:text-slate-200">View Deployment Output Log</summary>
                   <pre class="mt-2 bg-slate-950 p-2.5 rounded border border-slate-800 text-[11px] font-mono text-slate-300 max-h-32 overflow-y-auto whitespace-pre-wrap">{{.LastLog}}</pre>
@@ -465,6 +510,7 @@
               </td>
             </tr>
             {{end}}
+
             {{else}}
             <tr>
               <td colspan="5" class="py-8 text-center text-slate-500">

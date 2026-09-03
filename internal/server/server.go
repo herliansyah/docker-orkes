@@ -13,11 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"docker-orkes/internal/diff"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 
 	"gopkg.in/yaml.v3"
 )
+
 
 
 
@@ -117,9 +119,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
 	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
 
+	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
+	mux.Handle("POST /deployments/{id}/drift/reconcile", s.requireAuth(http.HandlerFunc(s.handleReconcileDrift)))
+	mux.Handle("POST /deployments/{id}/drift/adopt", s.requireAuth(http.HandlerFunc(s.handleAdoptDrift)))
+
 	return mux
-
-
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
@@ -525,6 +529,84 @@ func computeDesiredHash(composeYAML, envVars string) string {
 	h.Write([]byte(envVars))
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+func (s *Server) handleCheckDrift(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	composeBytes, err1 := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/docker-compose.yml")
+	envBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/.env")
+
+	if err1 != nil {
+		_ = s.store.UpdateDeploymentDrift(dep.ID, "drifted", "Remote compose file missing: "+err1.Error(), "", "")
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	remoteCompose := string(composeBytes)
+	remoteEnv := string(envBytes)
+	actualHash := computeDesiredHash(remoteCompose, remoteEnv)
+
+	if actualHash == dep.DesiredHash {
+		_ = s.store.UpdateDeploymentDrift(dep.ID, "synced", "", remoteCompose, remoteEnv)
+	} else {
+		diffOutput := diff.UnifiedDiff(stack.Name+" (Desired)", stack.ComposeYAML+"\n# .env\n"+dep.EnvVars, stack.Name+" (Actual)", remoteCompose+"\n# .env\n"+remoteEnv)
+		_ = s.store.UpdateDeploymentDrift(dep.ID, "drifted", diffOutput, remoteCompose, remoteEnv)
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleReconcileDrift(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	_ = s.deployStack(r.Context(), dep)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleAdoptDrift(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+
+	if dep.RemoteCompose != "" {
+		stack.ComposeYAML = dep.RemoteCompose
+		_ = s.store.UpdateStack(*stack)
+	}
+
+	actualHash := computeDesiredHash(stack.ComposeYAML, dep.RemoteEnv)
+	_ = s.store.UpdateDeploymentEnvAndHash(dep.ID, dep.RemoteEnv, actualHash)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "/nodes" && r.URL.Path != "/stacks" && r.URL.Path != "/deployments" {
