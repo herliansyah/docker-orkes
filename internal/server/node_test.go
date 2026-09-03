@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	"docker-orkes/internal/server"
+	"docker-orkes/internal/store"
 )
+
 
 
 type mockExecutor struct {
@@ -174,3 +176,64 @@ func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 		t.Errorf("expected 0 nodes after deletion, got %d", len(nodes))
 	}
 }
+
+func TestServer_NodeUpdate(t *testing.T) {
+	mockExec := &mockExecutor{}
+
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// 1. Authenticate
+	loginForm := url.Values{"password": {"secret-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	// 2. Create Node
+	_ = srv.Store().CreateNode(store.Node{
+		ID:     "node-edit-1",
+		Name:   "Old Name",
+		Host:   "192.168.1.10",
+		Port:   22,
+		User:   "ubuntu",
+		Status: "unknown",
+	})
+
+	// 3. Update Node via POST /nodes/{id}/update
+	updateForm := url.Values{
+		"name": {"New Production Name"},
+		"host": {"192.168.1.99"},
+		"port": {"2222"},
+		"user": {"admin"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/nodes/node-edit-1/update", strings.NewReader(updateForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after update, got %d", rec.Code)
+	}
+
+	updated, err := srv.Store().GetNode("node-edit-1")
+	if err != nil {
+		t.Fatalf("failed to get node: %v", err)
+	}
+
+	if updated.Name != "New Production Name" || updated.Host != "192.168.1.99" || updated.Port != 2222 || updated.User != "admin" {
+		t.Errorf("node fields not updated correctly: %+v", updated)
+	}
+}
+

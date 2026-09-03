@@ -119,12 +119,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes", s.requireAuth(http.HandlerFunc(s.handleCreateNode)))
 	mux.Handle("POST /nodes/{id}/test", s.requireAuth(http.HandlerFunc(s.handleTestNode)))
 	mux.Handle("POST /nodes/{id}/bootstrap", s.requireAuth(http.HandlerFunc(s.handleBootstrapNode)))
+	mux.Handle("POST /nodes/{id}/update", s.requireAuth(http.HandlerFunc(s.handleUpdateNode)))
 	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
 	mux.Handle("GET /nodes/{id}", s.requireAuth(http.HandlerFunc(s.handleNodeDetail)))
 	mux.Handle("GET /nodes/{id}/telemetry", s.requireAuth(http.HandlerFunc(s.handleNodeTelemetry)))
 	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
-
-
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
 	mux.Handle("POST /stacks", s.requireAuth(http.HandlerFunc(s.handleCreateStack)))
@@ -133,10 +132,12 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /deployments", s.requireAuth(http.HandlerFunc(s.handleListDeployments)))
 	mux.Handle("POST /deployments", s.requireAuth(http.HandlerFunc(s.handleCreateDeployment)))
+	mux.Handle("POST /deployments/{id}/update", s.requireAuth(http.HandlerFunc(s.handleUpdateDeployment)))
 	mux.Handle("POST /deployments/{id}/up", s.requireAuth(http.HandlerFunc(s.handleUpDeployment)))
 	mux.Handle("POST /deployments/{id}/restart", s.requireAuth(http.HandlerFunc(s.handleRestartDeployment)))
 	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
 	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
+
 
 	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
 	mux.Handle("POST /deployments/{id}/drift/reconcile", s.requireAuth(http.HandlerFunc(s.handleReconcileDrift)))
@@ -347,6 +348,51 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	host := strings.TrimSpace(r.FormValue("host"))
+	portStr := strings.TrimSpace(r.FormValue("port"))
+	user := strings.TrimSpace(r.FormValue("user"))
+
+	if name == "" || host == "" {
+		http.Error(w, "Name and host are required", http.StatusBadRequest)
+		return
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		port = 22
+	}
+	if user == "" {
+		user = "root"
+	}
+
+	node.Name = name
+	node.Host = host
+	node.Port = port
+	node.User = user
+
+	if err := s.store.UpdateNode(*node); err != nil {
+		http.Error(w, "Failed to update node: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = s.triggerGitSync(r.Context())
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+
 func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
 	s.handleDashboard(w, r)
 }
@@ -483,6 +529,30 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	envVars := strings.TrimSpace(r.FormValue("env_vars"))
+	if err := s.store.UpdateDeploymentEnv(dep.ID, envVars); err != nil {
+		http.Error(w, "Failed to update deployment: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_ = s.triggerGitSync(r.Context())
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

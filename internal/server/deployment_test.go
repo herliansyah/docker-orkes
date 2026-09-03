@@ -187,4 +187,27 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 	if depAfterDown.Status != "stopped" {
 		t.Errorf("expected status 'stopped' after down, got %q", depAfterDown.Status)
 	}
+
+	// 10. Update deployment env via POST /deployments/{id}/update
+	updateEnvForm := url.Values{
+		"env_vars": {"PORT=9090\nNEW_VAR=hello"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/update", strings.NewReader(updateEnvForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after env update, got %d", rec.Code)
+	}
+
+	depAfterUpdate, err := srv.Store().GetDeployment(deployID)
+	if err != nil {
+		t.Fatalf("failed to get deployment: %v", err)
+	}
+	if !strings.Contains(depAfterUpdate.EnvVars, "PORT=9090") {
+		t.Errorf("expected updated env_vars to contain PORT=9090, got %q", depAfterUpdate.EnvVars)
+	}
 }
+

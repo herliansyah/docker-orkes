@@ -238,10 +238,18 @@ func (s *Store) UpdateNodeStatus(id, status, lastError, dockerVersion string) er
 	return err
 }
 
+func (s *Store) UpdateNode(n Node) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET name = ?, host = ?, port = ?, user = ? WHERE id = ?
+	`, n.Name, n.Host, n.Port, n.User, n.ID)
+	return err
+}
+
 func (s *Store) DeleteNode(id string) error {
 	_, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
 	return err
 }
+
 
 func (s *Store) CreateStack(st Stack) error {
 	_, err := s.db.Exec(`
@@ -377,10 +385,18 @@ func (s *Store) UpdateDeploymentEnvAndHash(id, envVars, hash string) error {
 	return err
 }
 
+func (s *Store) UpdateDeploymentEnv(id, envVars string) error {
+	_, err := s.db.Exec(`
+		UPDATE deployments SET env_vars = ?, updated_at = ? WHERE id = ?
+	`, envVars, time.Now().UTC(), id)
+	return err
+}
+
 func (s *Store) DeleteDeployment(id string) error {
 	_, err := s.db.Exec(`DELETE FROM deployments WHERE id = ?`, id)
 	return err
 }
+
 
 
 
