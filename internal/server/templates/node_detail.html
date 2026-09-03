@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.Node.Name}} - Observability - Docker Orkes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <a href="/" class="text-slate-400 hover:text-slate-200 transition text-sm flex items-center gap-1.5">
+          ← Dashboard
+        </a>
+        <span class="text-slate-600">/</span>
+        <span class="font-bold text-lg tracking-tight">{{.Node.Name}}</span>
+        <span class="text-xs font-mono text-slate-400">({{.Node.User}}@{{.Node.Host}}:{{.Node.Port}})</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button onclick="fetchTelemetry()" id="refresh-btn"
+          class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+          🔄 <span>Refresh Metrics</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <!-- Storage & Health Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- Disk Usage Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-2">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-100">Disk Storage Capacity (Host Root)</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Physical filesystem utilization (<code class="text-indigo-400">df -h /</code>)</p>
+          </div>
+          <span id="disk-percent-badge" class="text-sm font-bold text-indigo-400">--%</span>
+        </div>
+
+        <div class="w-full bg-slate-950 rounded-full h-3.5 border border-slate-800 overflow-hidden mb-3">
+          <div id="disk-progress" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+
+        <div class="flex justify-between text-xs text-slate-400 font-mono">
+          <span>Used: <strong id="disk-used" class="text-slate-200">--</strong></span>
+          <span>Free: <strong id="disk-free" class="text-slate-200">--</strong></span>
+          <span>Total: <strong id="disk-total" class="text-slate-200">--</strong></span>
+        </div>
+      </div>
+
+      <!-- Node Vitals Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+        <div>
+          <h3 class="text-sm font-semibold text-slate-100 mb-3">Docker Engine Vitals</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between text-slate-400">
+              <span>Status:</span>
+              <span class="font-medium text-emerald-400">● {{.Node.Status}}</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Docker Version:</span>
+              <span class="font-mono text-slate-200 truncate max-w-[140px]">{{.Node.DockerVersion}}</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>SSH Endpoint:</span>
+              <span class="font-mono text-slate-200">{{.Node.Host}}:{{.Node.Port}}</span>
+            </div>
+          </div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+          Auto-polling active while viewing
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Containers Inventory -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-slate-100">Containers on this Node</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Live container list and states (<code class="text-indigo-400">docker ps -a</code>)</p>
+        </div>
+        <span id="container-count" class="text-xs font-mono bg-slate-800 px-2.5 py-1 rounded text-slate-300">0 containers</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th class="py-3 px-4">Container Name</th>
+              <th class="py-3 px-4">Image</th>
+              <th class="py-3 px-4">State</th>
+              <th class="py-3 px-4">Ports</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="containers-body" class="divide-y divide-slate-800/60 text-xs">
+            <tr>
+              <td colspan="5" class="py-8 text-center text-slate-500">Loading containers...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- Logs Modal -->
+  <div id="logs-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-sm">📋</span>
+          <h3 id="modal-container-name" class="text-sm font-semibold text-slate-100">Container Logs</h3>
+        </div>
+        <button onclick="closeLogsModal()" class="text-slate-400 hover:text-slate-200 text-sm p-1">✕</button>
+      </div>
+      <div class="p-4 flex-1 overflow-hidden flex flex-col">
+        <pre id="logs-content" class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-slate-300 flex-1 overflow-y-auto whitespace-pre-wrap">Fetching logs...</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const nodeID = "{{.Node.ID}}";
+
+    async function fetchTelemetry() {
+      try {
+        const res = await fetch(`/nodes/${nodeID}/telemetry`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update Disk
+        if (data.disk) {
+          document.getElementById('disk-used').innerText = data.disk.used || '--';
+          document.getElementById('disk-free').innerText = data.disk.free || '--';
+          document.getElementById('disk-total').innerText = data.disk.total || '--';
+          document.getElementById('disk-percent-badge').innerText = data.disk.percent || '--%';
+          
+          const rawPercent = parseInt(data.disk.percent || '0', 10);
+          const bar = document.getElementById('disk-progress');
+          bar.style.width = rawPercent + '%';
+          if (rawPercent > 85) {
+            bar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+          } else if (rawPercent > 70) {
+            bar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+          } else {
+            bar.className = 'bg-indigo-500 h-full rounded-full transition-all duration-500';
+          }
+        }
+
+        // Update Containers
+        const tbody = document.getElementById('containers-body');
+        if (data.containers && data.containers.length > 0) {
+          document.getElementById('container-count').innerText = `${data.containers.length} containers`;
+          tbody.innerHTML = data.containers.map(c => `
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="py-3 px-4 font-semibold text-slate-100">
+                ${c.names || c.id}
+                <div class="text-[10px] text-slate-500 font-mono">${c.id.substring(0, 12)}</div>
+              </td>
+              <td class="py-3 px-4 font-mono text-[11px] text-slate-300">${c.image}</td>
+              <td class="py-3 px-4">
+                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${c.state === 'running' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}">
+                  ${c.state === 'running' ? '● Running' : '○ ' + c.state}
+                </span>
+              </td>
+              <td class="py-3 px-4 font-mono text-[11px] text-slate-400">${c.ports || '-'}</td>
+              <td class="py-3 px-4 text-right">
+                <button onclick="viewContainerLogs('${c.id}', '${c.names}')"
+                  class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                  View Logs
+                </button>
+              </td>
+            </tr>
+          `).join('');
+        } else {
+          document.getElementById('container-count').innerText = '0 containers';
+          tbody.innerHTML = '<tr><td colspan="5" class="py-8 text-center text-slate-500">No containers found on this node.</td></tr>';
+        }
+      } catch (err) {
+        console.error("Failed to fetch telemetry:", err);
+      }
+    }
+
+    async function viewContainerLogs(containerID, containerName) {
+      document.getElementById('modal-container-name').innerText = `Logs: ${containerName || containerID}`;
+      document.getElementById('logs-content').innerText = 'Loading logs...';
+      document.getElementById('logs-modal').classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/logs`);
+        const text = await res.text();
+        document.getElementById('logs-content').innerText = text || '(No log output)';
+      } catch (err) {
+        document.getElementById('logs-content').innerText = 'Failed to load logs: ' + err;
+      }
+    }
+
+    function closeLogsModal() {
+      document.getElementById('logs-modal').classList.add('hidden');
+    }
+
+    fetchTelemetry();
+    const interval = setInterval(fetchTelemetry, 10000); // Poll every 10s while tab open
+    window.addEventListener('beforeunload', () => clearInterval(interval));
+  </script>
+</body>
+</html>

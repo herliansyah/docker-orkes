@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
 
 	"docker-orkes/internal/diff"
 	"docker-orkes/internal/ssh"
@@ -106,6 +108,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes", s.requireAuth(http.HandlerFunc(s.handleCreateNode)))
 	mux.Handle("POST /nodes/{id}/test", s.requireAuth(http.HandlerFunc(s.handleTestNode)))
 	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
+	mux.Handle("GET /nodes/{id}", s.requireAuth(http.HandlerFunc(s.handleNodeDetail)))
+	mux.Handle("GET /nodes/{id}/telemetry", s.requireAuth(http.HandlerFunc(s.handleNodeTelemetry)))
+	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
+
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
 	mux.Handle("POST /stacks", s.requireAuth(http.HandlerFunc(s.handleCreateStack)))
@@ -651,5 +657,118 @@ func generateToken(n int) string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+
+type DiskMetrics struct {
+	Total   string `json:"total"`
+	Used    string `json:"used"`
+	Free    string `json:"free"`
+	Percent string `json:"percent"`
+}
+
+type ContainerInfo struct {
+	ID      string `json:"id"`
+	Names   string `json:"names"`
+	Image   string `json:"image"`
+	Status  string `json:"status"`
+	State   string `json:"state"`
+	Ports   string `json:"ports"`
+	Created string `json:"created"`
+}
+
+type NodeTelemetry struct {
+	Disk       DiskMetrics     `json:"disk"`
+	Containers []ContainerInfo `json:"containers"`
+	Error      string          `json:"error,omitempty"`
+}
+
+func parseDfOutput(out string) DiskMetrics {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) < 2 {
+		return DiskMetrics{}
+	}
+	fields := strings.Fields(lines[1])
+	if len(fields) >= 5 {
+		return DiskMetrics{
+			Total:   fields[1],
+			Used:    fields[2],
+			Free:    fields[3],
+			Percent: fields[4],
+		}
+	}
+	return DiskMetrics{}
+}
+
+func parseDockerPsOutput(out string) []ContainerInfo {
+	var list []ContainerInfo
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var c ContainerInfo
+		if err := json.Unmarshal([]byte(line), &c); err == nil {
+			list = append(list, c)
+		}
+	}
+	return list
+}
+
+func (s *Server) handleNodeDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Node": node,
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = s.templates.ExecuteTemplate(w, "node_detail.html", data)
+}
+
+func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	dfOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "df -h /")
+	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
+
+	telemetry := NodeTelemetry{
+		Disk:       parseDfOutput(dfOut),
+		Containers: parseDockerPsOutput(psOut),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(telemetry)
+}
+
+func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	containerID := r.PathValue("container_id")
+
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	cmd := fmt.Sprintf("docker logs --tail 100 %s", containerID)
+	logs, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		http.Error(w, "Failed to get logs: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(logs))
+}
+
 
 
