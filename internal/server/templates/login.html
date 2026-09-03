@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Docker Orkes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-md w-full bg-slate-800 border border-slate-700 rounded-xl p-8 shadow-2xl">
+    <div class="flex items-center space-x-3 mb-6">
+      <div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-xl">🐳</div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">Docker Orkes</h1>
+        <p class="text-xs text-slate-400">Agentless Multi-Node Control Plane</p>
+      </div>
+    </div>
+
+    {{if .Error}}
+    <div class="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-2.5 rounded-lg text-sm mb-6">
+      {{.Error}}
+    </div>
+    {{end}}
+
+    <form method="POST" action="/login" class="space-y-4">
+      <div>
+        <label for="password" class="block text-sm font-medium text-slate-300 mb-1.5">Master Password</label>
+        <input type="password" id="password" name="password" required autofocus
+          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
+          placeholder="Enter master password">
+      </div>
+      <button type="submit"
+        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm shadow-sm hover:shadow">
+        Sign In
+      </button>
+    </form>
+  </div>
+</body>
+</html>

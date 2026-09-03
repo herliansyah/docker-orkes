@@ -1,0 +1,15 @@
+# Binaries
+/docker-orkes
+
+*.exe
+*.dll
+*.so
+*.dylib
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Test artifacts
+tmp/
