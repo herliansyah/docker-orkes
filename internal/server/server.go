@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
+	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 )
+
 
 //go:embed templates/*.html
 var templatesFS embed.FS
@@ -19,11 +23,13 @@ type Config struct {
 	DBPath         string
 	MasterPassword string
 	Addr           string
+	Executor       ssh.Executor
 }
 
 type Server struct {
 	cfg       Config
 	store     *store.Store
+	executor  ssh.Executor
 	templates *template.Template
 	pubKey    string
 	privKey   string
@@ -32,6 +38,9 @@ type Server struct {
 func New(cfg Config) (*Server, error) {
 	if cfg.MasterPassword == "" {
 		cfg.MasterPassword = "admin" // ponytail: sensible default for zero-config quickstart, ceiling: user should provide strong password via env
+	}
+	if cfg.Executor == nil {
+		cfg.Executor = ssh.NewExecutor()
 	}
 
 	st, err := store.New(cfg.DBPath)
@@ -54,11 +63,17 @@ func New(cfg Config) (*Server, error) {
 	return &Server{
 		cfg:       cfg,
 		store:     st,
+		executor:  cfg.Executor,
 		templates: tmpl,
 		pubKey:    pubKey,
 		privKey:   privKey,
 	}, nil
 }
+
+func (s *Server) Store() *store.Store {
+	return s.store
+}
+
 
 func (s *Server) Close() error {
 	return s.store.Close()
@@ -79,6 +94,10 @@ func (s *Server) Handler() http.Handler {
 
 	// Protected routes
 	mux.Handle("GET /", s.requireAuth(http.HandlerFunc(s.handleDashboard)))
+	mux.Handle("GET /nodes", s.requireAuth(http.HandlerFunc(s.handleListNodes)))
+	mux.Handle("POST /nodes", s.requireAuth(http.HandlerFunc(s.handleCreateNode)))
+	mux.Handle("POST /nodes/{id}/test", s.requireAuth(http.HandlerFunc(s.handleTestNode)))
+	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
 
 	return mux
 }
@@ -154,15 +173,96 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
+	s.handleDashboard(w, r)
+}
+
+func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	host := strings.TrimSpace(r.FormValue("host"))
+	portStr := strings.TrimSpace(r.FormValue("port"))
+	user := strings.TrimSpace(r.FormValue("user"))
+
+	if name == "" || host == "" {
+		http.Error(w, "Name and host are required", http.StatusBadRequest)
+		return
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
+		port = 22
+	}
+	if user == "" {
+		user = "root"
+	}
+
+	node := store.Node{
+		ID:        generateToken(8),
+		Name:      name,
+		Host:      host,
+		Port:      port,
+		User:      user,
+		Status:    "unknown",
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := s.store.CreateNode(node); err != nil {
+		http.Error(w, "Failed to create node: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleTestNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	dockerVer, err := s.executor.TestConnection(r.Context(), node.Host, node.Port, node.User, s.privKey)
+	if err != nil {
+		_ = s.store.UpdateNodeStatus(node.ID, "offline", err.Error(), "")
+	} else {
+		_ = s.store.UpdateNodeStatus(node.ID, "online", "", dockerVer)
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteNode(id); err != nil {
+		http.Error(w, "Failed to delete node: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/" && r.URL.Path != "/nodes" {
 		http.NotFound(w, r)
+		return
+	}
+
+
+	nodes, err := s.store.ListNodes()
+	if err != nil {
+		http.Error(w, "Failed to list nodes", http.StatusInternalServerError)
 		return
 	}
 
 	data := map[string]interface{}{
 		"PublicKeySSH":    s.pubKey,
-		"NodeCount":       0,
+		"Nodes":           nodes,
+		"NodeCount":       len(nodes),
 		"StackCount":      0,
 		"DeploymentCount": 0,
 	}
@@ -170,6 +270,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.templates.ExecuteTemplate(w, "dashboard.html", data)
 }
+
 
 func generateToken(n int) string {
 	b := make([]byte, n)

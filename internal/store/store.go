@@ -34,6 +34,18 @@ func New(dbPath string) (*Store, error) {
 	return s, nil
 }
 
+type Node struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Host          string    `json:"host"`
+	Port          int       `json:"port"`
+	User          string    `json:"user"`
+	Status        string    `json:"status"` // "unknown", "online", "offline"
+	LastError     string    `json:"last_error"`
+	DockerVersion string    `json:"docker_version"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -56,8 +68,12 @@ func (s *Store) initSchema() error {
 		host TEXT NOT NULL,
 		port INTEGER NOT NULL DEFAULT 22,
 		user TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'unknown',
+		last_error TEXT NOT NULL DEFAULT '',
+		docker_version TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL
 	);
+
 
 	CREATE TABLE IF NOT EXISTS stacks (
 		id TEXT PRIMARY KEY,
@@ -141,3 +157,57 @@ func (s *Store) EnsureSSHKeyPair() (publicKey string, privateKey string, err err
 
 	return kp.PublicKeySSH, kp.PrivateKeyPEM, nil
 }
+
+func (s *Store) CreateNode(n Node) error {
+	_, err := s.db.Exec(`
+		INSERT INTO nodes (id, name, host, port, user, status, last_error, docker_version, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, n.ID, n.Name, n.Host, n.Port, n.User, n.Status, n.LastError, n.DockerVersion, n.CreatedAt)
+	return err
+}
+
+func (s *Store) ListNodes() ([]Node, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, host, port, user, status, last_error, docker_version, created_at
+		FROM nodes ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []Node
+	for rows.Next() {
+		var n Node
+		if err := rows.Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes, rows.Err()
+}
+
+func (s *Store) GetNode(id string) (*Node, error) {
+	var n Node
+	err := s.db.QueryRow(`
+		SELECT id, name, host, port, user, status, last_error, docker_version, created_at
+		FROM nodes WHERE id = ?
+	`, id).Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+func (s *Store) UpdateNodeStatus(id, status, lastError, dockerVersion string) error {
+	_, err := s.db.Exec(`
+		UPDATE nodes SET status = ?, last_error = ?, docker_version = ? WHERE id = ?
+	`, status, lastError, dockerVersion, id)
+	return err
+}
+
+func (s *Store) DeleteNode(id string) error {
+	_, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
+	return err
+}
+

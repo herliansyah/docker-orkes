@@ -4,11 +4,12 @@
 
 **Blocked by:** 01 — Server Foundation, Auth, & Keypair Initialization
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Operator can add a new Node by providing a friendly name, IP/hostname, SSH port (default 22), and SSH username.
-- [ ] Nodes are listed on the main inventory screen showing their connection status and basic connection details.
-- [ ] Clicking "Test Connection" on a Node triggers an asynchronous SSH handshake using the Control Plane's private key, tests running `docker version`, and updates the Node's status badge (Online, Unreachable, or Permission Denied).
-- [ ] Meaningful error messages are displayed if SSH authentication fails or if the remote user lacks Docker socket permissions.
-- [ ] Operator can remove a Node from the inventory, confirming before deletion.
-- [ ] Automated tests verify node persistence and simulated SSH connection success/failure through the HTTP boundary.
+- [x] Operator can add a new Node by providing a friendly name, IP/hostname, SSH port (default 22), and SSH username.
+- [x] Nodes are listed on the main inventory screen showing their connection status and basic connection details.
+- [x] Clicking "Test Connection" on a Node triggers an asynchronous SSH handshake using the Control Plane's private key, tests running `docker version`, and updates the Node's status badge (Online, Unreachable, or Permission Denied).
+- [x] Meaningful error messages are displayed if SSH authentication fails or if the remote user lacks Docker socket permissions.
+- [x] Operator can remove a Node from the inventory, confirming before deletion.
+- [x] Automated tests verify node persistence and simulated SSH connection success/failure through the HTTP boundary.
+
