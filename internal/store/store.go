@@ -130,9 +130,18 @@ func (s *Store) initSchema() error {
 		updated_at DATETIME NOT NULL
 	);
 	`
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// Auto-migrate schema columns for existing databases
+	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.Exec(`ALTER TABLE stacks ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.Exec(`ALTER TABLE deployments ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
+
+	return nil
 }
+
 
 
 
