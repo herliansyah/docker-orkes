@@ -13,7 +13,10 @@ import (
 
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
+
+	"gopkg.in/yaml.v3"
 )
+
 
 
 //go:embed templates/*.html
@@ -99,7 +102,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes/{id}/test", s.requireAuth(http.HandlerFunc(s.handleTestNode)))
 	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
 
+	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
+	mux.Handle("POST /stacks", s.requireAuth(http.HandlerFunc(s.handleCreateStack)))
+	mux.Handle("POST /stacks/{id}/update", s.requireAuth(http.HandlerFunc(s.handleUpdateStack)))
+	mux.Handle("POST /stacks/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteStack)))
+
 	return mux
+
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
@@ -246,12 +255,110 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" && r.URL.Path != "/nodes" {
-		http.NotFound(w, r)
+func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
+	s.handleDashboard(w, r)
+}
+
+func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
+	name := strings.TrimSpace(r.FormValue("name"))
+	composeYAML := strings.TrimSpace(r.FormValue("compose_yaml"))
+	defaultEnv := strings.TrimSpace(r.FormValue("default_env"))
+
+	if name == "" || composeYAML == "" {
+		http.Error(w, "Name and compose_yaml are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateComposeYAML(composeYAML); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	now := time.Now().UTC()
+	stack := store.Stack{
+		ID:          generateToken(8),
+		Name:        name,
+		ComposeYAML: composeYAML,
+		DefaultEnv:  defaultEnv,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := s.store.CreateStack(stack); err != nil {
+		http.Error(w, "Failed to create stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	composeYAML := strings.TrimSpace(r.FormValue("compose_yaml"))
+	defaultEnv := strings.TrimSpace(r.FormValue("default_env"))
+
+	if name == "" || composeYAML == "" {
+		http.Error(w, "Name and compose_yaml are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateComposeYAML(composeYAML); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	stack := store.Stack{
+		ID:          id,
+		Name:        name,
+		ComposeYAML: composeYAML,
+		DefaultEnv:  defaultEnv,
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	if err := s.store.UpdateStack(stack); err != nil {
+		http.Error(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.store.DeleteStack(id); err != nil {
+		http.Error(w, "Failed to delete stack: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func validateComposeYAML(content string) error {
+	var parsed map[string]interface{}
+	if err := yaml.Unmarshal([]byte(content), &parsed); err != nil {
+		return fmt.Errorf("invalid YAML syntax: %w", err)
+	}
+	if len(parsed) == 0 {
+		return fmt.Errorf("compose YAML cannot be empty")
+	}
+	return nil
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" && r.URL.Path != "/nodes" && r.URL.Path != "/stacks" {
+		http.NotFound(w, r)
+		return
+	}
 
 	nodes, err := s.store.ListNodes()
 	if err != nil {
@@ -259,11 +366,18 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	stacks, err := s.store.ListStacks()
+	if err != nil {
+		http.Error(w, "Failed to list stacks", http.StatusInternalServerError)
+		return
+	}
+
 	data := map[string]interface{}{
 		"PublicKeySSH":    s.pubKey,
 		"Nodes":           nodes,
 		"NodeCount":       len(nodes),
-		"StackCount":      0,
+		"Stacks":          stacks,
+		"StackCount":      len(stacks),
 		"DeploymentCount": 0,
 	}
 
@@ -271,9 +385,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	_ = s.templates.ExecuteTemplate(w, "dashboard.html", data)
 }
 
-
 func generateToken(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
+

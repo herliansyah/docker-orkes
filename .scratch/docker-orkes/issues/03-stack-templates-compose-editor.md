@@ -4,12 +4,13 @@
 
 **Blocked by:** 01 — Server Foundation, Auth, & Keypair Initialization
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Developer can create a new Stack by entering a unique name/slug, description, and `docker-compose.yml` body.
-- [ ] Developer can define default environment variables (key-value pairs) associated with the Stack template.
-- [ ] The compose editor performs client-side or server-side YAML syntax validation before saving, rejecting malformed YAML with clear line errors.
-- [ ] Existing Stacks are listed with their metadata, last updated timestamp, and number of active deployments.
-- [ ] Developer can view and edit an existing Stack's compose definition and default environment variables.
-- [ ] Developer can delete a Stack template (prevented or warned if active Deployments reference it).
-- [ ] Automated tests verify Stack creation, YAML validation, and retrieval via the HTTP API boundary.
+- [x] Developer can create a new Stack by entering a unique name/slug, description, and `docker-compose.yml` body.
+- [x] Developer can define default environment variables (key-value pairs) associated with the Stack template.
+- [x] The compose editor performs client-side or server-side YAML syntax validation before saving, rejecting malformed YAML with clear line errors.
+- [x] Existing Stacks are listed with their metadata, last updated timestamp, and number of active deployments.
+- [x] Developer can view and edit an existing Stack's compose definition and default environment variables.
+- [x] Developer can delete a Stack template (prevented or warned if active Deployments reference it).
+- [x] Automated tests verify Stack creation, YAML validation, and retrieval via the HTTP API boundary.
+

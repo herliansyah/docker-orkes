@@ -46,6 +46,16 @@ type Node struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+type Stack struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ComposeYAML string    `json:"compose_yaml"`
+	DefaultEnv  string    `json:"default_env"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -210,4 +220,59 @@ func (s *Store) DeleteNode(id string) error {
 	_, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
 	return err
 }
+
+func (s *Store) CreateStack(st Stack) error {
+	_, err := s.db.Exec(`
+		INSERT INTO stacks (id, name, compose_yaml, default_env, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, st.ID, st.Name, st.ComposeYAML, st.DefaultEnv, st.CreatedAt, st.UpdatedAt)
+	return err
+}
+
+func (s *Store) ListStacks() ([]Stack, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, compose_yaml, default_env, created_at, updated_at
+		FROM stacks ORDER BY updated_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stacks []Stack
+	for rows.Next() {
+		var st Stack
+		if err := rows.Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.CreatedAt, &st.UpdatedAt); err != nil {
+			return nil, err
+		}
+		stacks = append(stacks, st)
+	}
+	return stacks, rows.Err()
+}
+
+func (s *Store) GetStack(id string) (*Stack, error) {
+	var st Stack
+	err := s.db.QueryRow(`
+		SELECT id, name, compose_yaml, default_env, created_at, updated_at
+		FROM stacks WHERE id = ?
+	`, id).Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.CreatedAt, &st.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+func (s *Store) UpdateStack(st Stack) error {
+	_, err := s.db.Exec(`
+		UPDATE stacks SET name = ?, compose_yaml = ?, default_env = ?, updated_at = ?
+		WHERE id = ?
+	`, st.Name, st.ComposeYAML, st.DefaultEnv, st.UpdatedAt, st.ID)
+	return err
+}
+
+func (s *Store) DeleteStack(id string) error {
+	_, err := s.db.Exec(`DELETE FROM stacks WHERE id = ?`, id)
+	return err
+}
+
 

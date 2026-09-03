@@ -197,7 +197,135 @@
         </table>
       </div>
     </div>
+
+    <!-- Stack Templates Section -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-semibold text-slate-100">Stack Templates</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Reusable docker-compose definitions ready to deploy to nodes.</p>
+        </div>
+        <button onclick="document.getElementById('add-stack-modal').classList.toggle('hidden')"
+          class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm">
+          + Add Stack
+        </button>
+      </div>
+
+      <!-- Add Stack Form (collapsible) -->
+      <div id="add-stack-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5">
+        <h3 class="text-sm font-semibold text-slate-200 mb-4">Create New Stack Template</h3>
+        <form method="POST" action="/stacks" class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Stack Name / Slug</label>
+            <input type="text" name="name" required placeholder="e.g. redis-cache or web-app"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">docker-compose.yml</label>
+            <textarea name="compose_yaml" rows="8" required placeholder="services:&#10;  app:&#10;    image: nginx:alpine&#10;    ports:&#10;      - '80:80'"
+              class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Default Environment Variables (optional, KEY=val per line)</label>
+            <textarea name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
+              class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+          </div>
+          <div class="flex gap-2 justify-end">
+            <button type="button" onclick="document.getElementById('add-stack-modal').classList.add('hidden')"
+              class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
+              Cancel
+            </button>
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+              Save Stack Template
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Stacks Table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <th class="py-3 px-4">Stack Name</th>
+              <th class="py-3 px-4">Compose Definition</th>
+              <th class="py-3 px-4">Default Env</th>
+              <th class="py-3 px-4">Updated</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60 text-xs">
+            {{range .Stacks}}
+            <tr class="hover:bg-slate-800/30 transition">
+              <td class="py-3.5 px-4 font-semibold text-slate-100">
+                <div>{{.Name}}</div>
+                <div class="text-[11px] text-slate-500 font-mono">ID: {{.ID}}</div>
+              </td>
+              <td class="py-3.5 px-4">
+                <pre class="bg-slate-950 p-2 rounded text-[11px] font-mono text-emerald-400/90 max-h-20 overflow-y-auto max-w-sm whitespace-pre">{{.ComposeYAML}}</pre>
+              </td>
+              <td class="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
+                {{if .DefaultEnv}}
+                  <pre class="bg-slate-950 p-1.5 rounded text-[11px] font-mono text-slate-300 max-h-16 overflow-y-auto max-w-xs whitespace-pre">{{.DefaultEnv}}</pre>
+                {{else}}
+                  <span class="text-slate-600 italic">None</span>
+                {{end}}
+              </td>
+              <td class="py-3.5 px-4 text-slate-400 text-[11px]">
+                {{.UpdatedAt.Format "Jan 02, 15:04"}}
+              </td>
+              <td class="py-3.5 px-4 text-right">
+                <div class="inline-flex items-center gap-2">
+                  <button onclick="document.getElementById('edit-stack-{{.ID}}').classList.toggle('hidden')"
+                    class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                    Edit
+                  </button>
+                  <form method="POST" action="/stacks/{{.ID}}/delete" onsubmit="return confirm('Are you sure you want to delete stack {{.Name}}?');">
+                    <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded text-xs transition">
+                      Delete
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            <!-- Inline Edit Modal/Row -->
+            <tr id="edit-stack-{{.ID}}" class="hidden bg-slate-950/90">
+              <td colspan="5" class="p-4 border-b border-slate-800">
+                <form method="POST" action="/stacks/{{.ID}}/update" class="space-y-3">
+                  <div class="font-semibold text-slate-200 text-xs">Edit Stack: {{.Name}}</div>
+                  <input type="hidden" name="name" value="{{.Name}}">
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Compose YAML</label>
+                    <textarea name="compose_yaml" rows="6" required
+                      class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-emerald-400">{{.ComposeYAML}}</textarea>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Env</label>
+                    <textarea name="default_env" rows="2"
+                      class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300">{{.DefaultEnv}}</textarea>
+                  </div>
+                  <div class="flex gap-2 justify-end">
+                    <button type="button" onclick="document.getElementById('edit-stack-{{.ID}}').classList.add('hidden')"
+                      class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded text-xs">Cancel</button>
+                    <button type="submit"
+                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Save Changes</button>
+                  </div>
+                </form>
+              </td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="5" class="py-8 text-center text-slate-500">
+                No stack templates created yet. Click <span class="text-indigo-400 font-medium">+ Add Stack</span> to create your first template.
+              </td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </main>
+
 
 
   <script>
