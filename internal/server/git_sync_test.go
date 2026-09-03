@@ -147,3 +147,116 @@ func TestServer_GitMirrorBackupSync(t *testing.T) {
 		t.Errorf("expected git_mirror_status 'synced', got %q", gitStatus)
 	}
 }
+
+func TestServer_NotesAndRunbookSync(t *testing.T) {
+	mockExec := &mockDeployExecutor{}
+	mockGit := &mockGitSyncer{}
+
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+		GitSyncer:      mockGit,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// 1. Authenticate
+	loginForm := url.Values{"password": {"secret-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	// 2. Create Node with notes
+	nodeForm := url.Values{
+		"name":  {"Node-Alpha"},
+		"host":  {"10.0.0.1"},
+		"notes": {"Hetzner Falkenstein (4 vCPU, 8GB RAM). PIC: Budi."},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/nodes", strings.NewReader(nodeForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	nodes, _ := srv.Store().ListNodes()
+	if len(nodes) != 1 || nodes[0].Notes != "Hetzner Falkenstein (4 vCPU, 8GB RAM). PIC: Budi." {
+		t.Fatalf("expected node notes to persist, got: %+v", nodes)
+	}
+
+	// 3. Create Stack with notes
+	stackForm := url.Values{
+		"name":         {"api-gateway"},
+		"compose_yaml": {"services:\n  gateway:\n    image: traefik:v3\n"},
+		"notes":        {"Expose port 80/443. Requires external network proxy-net."},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/stacks", strings.NewReader(stackForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	stacks, _ := srv.Store().ListStacks()
+	if len(stacks) != 1 || stacks[0].Notes != "Expose port 80/443. Requires external network proxy-net." {
+		t.Fatalf("expected stack notes to persist, got: %+v", stacks)
+	}
+
+	// 4. Create Deployment with notes
+	depForm := url.Values{
+		"stack_id": {stacks[0].ID},
+		"node_id":  {nodes[0].ID},
+		"notes":    {"Production instance for PT Maju Mundur"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments", strings.NewReader(depForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	deps, _ := srv.Store().ListDeployments()
+	if len(deps) != 1 || deps[0].Notes != "Production instance for PT Maju Mundur" {
+		t.Fatalf("expected deployment notes to persist, got: %+v", deps)
+	}
+
+	// 5. Update Runbook via POST /settings/runbook
+	runbookForm := url.Values{
+		"runbook_notes": {"# Operator Runbook\n- Maintenance window: Friday 23:00\n- Primary DNS: 1.1.1.1\n"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/settings/runbook", strings.NewReader(runbookForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after runbook update, got %d", rec.Code)
+	}
+
+	savedNotes, _ := srv.Store().GetSetting("global_runbook_notes")
+	if !strings.Contains(savedNotes, "Maintenance window: Friday 23:00") {
+		t.Fatalf("expected runbook notes saved in store, got %q", savedNotes)
+	}
+
+	// 6. Trigger Sync and check RUNBOOK.md and notes in inventory.json
+	req = httptest.NewRequest(http.MethodPost, "/settings/git/sync", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	runbookFile := string(mockGit.syncedFiles["RUNBOOK.md"])
+	if !strings.Contains(runbookFile, "Maintenance window: Friday 23:00") {
+		t.Errorf("expected RUNBOOK.md in git mirror sync, got: %s", runbookFile)
+	}
+
+	inventoryFile := string(mockGit.syncedFiles["inventory.json"])
+	if !strings.Contains(inventoryFile, "Hetzner Falkenstein") || !strings.Contains(inventoryFile, "PT Maju Mundur") {
+		t.Errorf("expected inventory.json to contain notes, got: %s", inventoryFile)
+	}
+}
+

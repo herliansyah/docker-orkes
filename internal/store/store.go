@@ -40,6 +40,7 @@ type Node struct {
 	Host          string    `json:"host"`
 	Port          int       `json:"port"`
 	User          string    `json:"user"`
+	Notes         string    `json:"notes"`
 	Status        string    `json:"status"` // "unknown", "online", "offline"
 	LastError     string    `json:"last_error"`
 	DockerVersion string    `json:"docker_version"`
@@ -51,6 +52,7 @@ type Stack struct {
 	Name        string    `json:"name"`
 	ComposeYAML string    `json:"compose_yaml"`
 	DefaultEnv  string    `json:"default_env"`
+	Notes       string    `json:"notes"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -62,6 +64,7 @@ type Deployment struct {
 	StackName     string    `json:"stack_name,omitempty"`
 	NodeName      string    `json:"node_name,omitempty"`
 	EnvVars       string    `json:"env_vars"`
+	Notes         string    `json:"notes"`
 	Status        string    `json:"status"` // pending, deploying, running, stopped, failed
 	DesiredHash   string    `json:"desired_hash"`
 	LastLog       string    `json:"last_log"`
@@ -94,6 +97,7 @@ func (s *Store) initSchema() error {
 		host TEXT NOT NULL,
 		port INTEGER NOT NULL DEFAULT 22,
 		user TEXT NOT NULL,
+		notes TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'unknown',
 		last_error TEXT NOT NULL DEFAULT '',
 		docker_version TEXT NOT NULL DEFAULT '',
@@ -105,6 +109,7 @@ func (s *Store) initSchema() error {
 		name TEXT NOT NULL UNIQUE,
 		compose_yaml TEXT NOT NULL,
 		default_env TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
 	);
@@ -114,6 +119,7 @@ func (s *Store) initSchema() error {
 		stack_id TEXT NOT NULL REFERENCES stacks(id) ON DELETE CASCADE,
 		node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
 		env_vars TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'pending',
 		desired_hash TEXT NOT NULL DEFAULT '',
 		last_log TEXT NOT NULL DEFAULT '',
@@ -127,6 +133,7 @@ func (s *Store) initSchema() error {
 	_, err := s.db.Exec(schema)
 	return err
 }
+
 
 
 
@@ -192,15 +199,15 @@ func (s *Store) EnsureSSHKeyPair() (publicKey string, privateKey string, err err
 
 func (s *Store) CreateNode(n Node) error {
 	_, err := s.db.Exec(`
-		INSERT INTO nodes (id, name, host, port, user, status, last_error, docker_version, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, n.ID, n.Name, n.Host, n.Port, n.User, n.Status, n.LastError, n.DockerVersion, n.CreatedAt)
+		INSERT INTO nodes (id, name, host, port, user, notes, status, last_error, docker_version, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, n.ID, n.Name, n.Host, n.Port, n.User, n.Notes, n.Status, n.LastError, n.DockerVersion, n.CreatedAt)
 	return err
 }
 
 func (s *Store) ListNodes() ([]Node, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, host, port, user, status, last_error, docker_version, created_at
+		SELECT id, name, host, port, user, notes, status, last_error, docker_version, created_at
 		FROM nodes ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -211,7 +218,7 @@ func (s *Store) ListNodes() ([]Node, error) {
 	var nodes []Node
 	for rows.Next() {
 		var n Node
-		if err := rows.Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Notes, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, n)
@@ -222,9 +229,9 @@ func (s *Store) ListNodes() ([]Node, error) {
 func (s *Store) GetNode(id string) (*Node, error) {
 	var n Node
 	err := s.db.QueryRow(`
-		SELECT id, name, host, port, user, status, last_error, docker_version, created_at
+		SELECT id, name, host, port, user, notes, status, last_error, docker_version, created_at
 		FROM nodes WHERE id = ?
-	`, id).Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt)
+	`, id).Scan(&n.ID, &n.Name, &n.Host, &n.Port, &n.User, &n.Notes, &n.Status, &n.LastError, &n.DockerVersion, &n.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +247,8 @@ func (s *Store) UpdateNodeStatus(id, status, lastError, dockerVersion string) er
 
 func (s *Store) UpdateNode(n Node) error {
 	_, err := s.db.Exec(`
-		UPDATE nodes SET name = ?, host = ?, port = ?, user = ? WHERE id = ?
-	`, n.Name, n.Host, n.Port, n.User, n.ID)
+		UPDATE nodes SET name = ?, host = ?, port = ?, user = ?, notes = ? WHERE id = ?
+	`, n.Name, n.Host, n.Port, n.User, n.Notes, n.ID)
 	return err
 }
 
@@ -253,15 +260,15 @@ func (s *Store) DeleteNode(id string) error {
 
 func (s *Store) CreateStack(st Stack) error {
 	_, err := s.db.Exec(`
-		INSERT INTO stacks (id, name, compose_yaml, default_env, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, st.ID, st.Name, st.ComposeYAML, st.DefaultEnv, st.CreatedAt, st.UpdatedAt)
+		INSERT INTO stacks (id, name, compose_yaml, default_env, notes, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, st.ID, st.Name, st.ComposeYAML, st.DefaultEnv, st.Notes, st.CreatedAt, st.UpdatedAt)
 	return err
 }
 
 func (s *Store) ListStacks() ([]Stack, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, compose_yaml, default_env, created_at, updated_at
+		SELECT id, name, compose_yaml, default_env, notes, created_at, updated_at
 		FROM stacks ORDER BY updated_at DESC
 	`)
 	if err != nil {
@@ -272,7 +279,7 @@ func (s *Store) ListStacks() ([]Stack, error) {
 	var stacks []Stack
 	for rows.Next() {
 		var st Stack
-		if err := rows.Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.CreatedAt, &st.UpdatedAt); err != nil {
+		if err := rows.Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.Notes, &st.CreatedAt, &st.UpdatedAt); err != nil {
 			return nil, err
 		}
 		stacks = append(stacks, st)
@@ -283,9 +290,9 @@ func (s *Store) ListStacks() ([]Stack, error) {
 func (s *Store) GetStack(id string) (*Stack, error) {
 	var st Stack
 	err := s.db.QueryRow(`
-		SELECT id, name, compose_yaml, default_env, created_at, updated_at
+		SELECT id, name, compose_yaml, default_env, notes, created_at, updated_at
 		FROM stacks WHERE id = ?
-	`, id).Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.CreatedAt, &st.UpdatedAt)
+	`, id).Scan(&st.ID, &st.Name, &st.ComposeYAML, &st.DefaultEnv, &st.Notes, &st.CreatedAt, &st.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -294,11 +301,12 @@ func (s *Store) GetStack(id string) (*Stack, error) {
 
 func (s *Store) UpdateStack(st Stack) error {
 	_, err := s.db.Exec(`
-		UPDATE stacks SET name = ?, compose_yaml = ?, default_env = ?, updated_at = ?
+		UPDATE stacks SET name = ?, compose_yaml = ?, default_env = ?, notes = ?, updated_at = ?
 		WHERE id = ?
-	`, st.Name, st.ComposeYAML, st.DefaultEnv, st.UpdatedAt, st.ID)
+	`, st.Name, st.ComposeYAML, st.DefaultEnv, st.Notes, st.UpdatedAt, st.ID)
 	return err
 }
+
 
 func (s *Store) DeleteStack(id string) error {
 	_, err := s.db.Exec(`DELETE FROM stacks WHERE id = ?`, id)
@@ -310,15 +318,15 @@ func (s *Store) CreateDeployment(d Deployment) error {
 		d.DriftStatus = "unknown"
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO deployments (id, stack_id, node_id, env_vars, status, desired_hash, last_log, drift_status, diff_output, remote_compose, remote_env, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, d.ID, d.StackID, d.NodeID, d.EnvVars, d.Status, d.DesiredHash, d.LastLog, d.DriftStatus, d.DiffOutput, d.RemoteCompose, d.RemoteEnv, d.UpdatedAt)
+		INSERT INTO deployments (id, stack_id, node_id, env_vars, notes, status, desired_hash, last_log, drift_status, diff_output, remote_compose, remote_env, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, d.ID, d.StackID, d.NodeID, d.EnvVars, d.Notes, d.Status, d.DesiredHash, d.LastLog, d.DriftStatus, d.DiffOutput, d.RemoteCompose, d.RemoteEnv, d.UpdatedAt)
 	return err
 }
 
 func (s *Store) ListDeployments() ([]Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
@@ -333,7 +341,7 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 	var deps []Deployment
 	for rows.Next() {
 		var d Deployment
-		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		deps = append(deps, d)
@@ -343,14 +351,14 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 
 func (s *Store) GetDeployment(id string) (*Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
 		WHERE d.id = ?
 	`
 	var d Deployment
-	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt)
+	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -385,10 +393,10 @@ func (s *Store) UpdateDeploymentEnvAndHash(id, envVars, hash string) error {
 	return err
 }
 
-func (s *Store) UpdateDeploymentEnv(id, envVars string) error {
+func (s *Store) UpdateDeploymentEnv(id, envVars, notes string) error {
 	_, err := s.db.Exec(`
-		UPDATE deployments SET env_vars = ?, updated_at = ? WHERE id = ?
-	`, envVars, time.Now().UTC(), id)
+		UPDATE deployments SET env_vars = ?, notes = ?, updated_at = ? WHERE id = ?
+	`, envVars, notes, time.Now().UTC(), id)
 	return err
 }
 
@@ -396,6 +404,7 @@ func (s *Store) DeleteDeployment(id string) error {
 	_, err := s.db.Exec(`DELETE FROM deployments WHERE id = ?`, id)
 	return err
 }
+
 
 
 

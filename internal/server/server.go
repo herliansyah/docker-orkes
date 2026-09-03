@@ -145,8 +145,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("POST /settings/git", s.requireAuth(http.HandlerFunc(s.handleUpdateGitSettings)))
 	mux.Handle("POST /settings/git/sync", s.requireAuth(http.HandlerFunc(s.handleSyncGitNow)))
+	mux.Handle("POST /settings/runbook", s.requireAuth(http.HandlerFunc(s.handleUpdateRunbook)))
 
 	return mux
+
 
 }
 
@@ -236,6 +238,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	host := strings.TrimSpace(r.FormValue("host"))
 	portStr := strings.TrimSpace(r.FormValue("port"))
 	user := strings.TrimSpace(r.FormValue("user"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if name == "" || host == "" {
 		http.Error(w, "Name and host are required", http.StatusBadRequest)
@@ -257,9 +260,11 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		Host:      host,
 		Port:      port,
 		User:      user,
+		Notes:     notes,
 		Status:    "unknown",
 		CreatedAt: time.Now().UTC(),
 	}
+
 
 	if sshPassword != "" {
 		if err := s.executor.BootstrapKey(r.Context(), node.Host, node.Port, node.User, sshPassword, s.pubKey); err != nil {
@@ -365,6 +370,7 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	host := strings.TrimSpace(r.FormValue("host"))
 	portStr := strings.TrimSpace(r.FormValue("port"))
 	user := strings.TrimSpace(r.FormValue("user"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if name == "" || host == "" {
 		http.Error(w, "Name and host are required", http.StatusBadRequest)
@@ -382,8 +388,10 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	node.Host = host
 	node.Port = port
 	node.User = user
+	node.Notes = notes
 
 	if err := s.store.UpdateNode(*node); err != nil {
+
 		http.Error(w, "Failed to update node: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -406,6 +414,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	composeYAML := strings.TrimSpace(r.FormValue("compose_yaml"))
 	defaultEnv := strings.TrimSpace(r.FormValue("default_env"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if name == "" || composeYAML == "" {
 		http.Error(w, "Name and compose_yaml are required", http.StatusBadRequest)
@@ -423,6 +432,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		Name:        name,
 		ComposeYAML: composeYAML,
 		DefaultEnv:  defaultEnv,
+		Notes:       notes,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -445,6 +455,7 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	composeYAML := strings.TrimSpace(r.FormValue("compose_yaml"))
 	defaultEnv := strings.TrimSpace(r.FormValue("default_env"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if name == "" || composeYAML == "" {
 		http.Error(w, "Name and compose_yaml are required", http.StatusBadRequest)
@@ -461,8 +472,10 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		Name:        name,
 		ComposeYAML: composeYAML,
 		DefaultEnv:  defaultEnv,
+		Notes:       notes,
 		UpdatedAt:   time.Now().UTC(),
 	}
+
 
 	if err := s.store.UpdateStack(stack); err != nil {
 		http.Error(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
@@ -505,6 +518,7 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 	stackID := strings.TrimSpace(r.FormValue("stack_id"))
 	nodeID := strings.TrimSpace(r.FormValue("node_id"))
 	envVars := strings.TrimSpace(r.FormValue("env_vars"))
+	notes := strings.TrimSpace(r.FormValue("notes"))
 
 	if stackID == "" || nodeID == "" {
 		http.Error(w, "stack_id and node_id are required", http.StatusBadRequest)
@@ -516,6 +530,7 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 		StackID:   stackID,
 		NodeID:    nodeID,
 		EnvVars:   envVars,
+		Notes:     notes,
 		Status:    "deploying",
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -544,7 +559,8 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	envVars := strings.TrimSpace(r.FormValue("env_vars"))
-	if err := s.store.UpdateDeploymentEnv(dep.ID, envVars); err != nil {
+	notes := strings.TrimSpace(r.FormValue("notes"))
+	if err := s.store.UpdateDeploymentEnv(dep.ID, envVars, notes); err != nil {
 		http.Error(w, "Failed to update deployment: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -552,6 +568,7 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
 
 
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
@@ -790,6 +807,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	gitMirrorLastSync, _ := s.store.GetSetting("git_mirror_last_sync")
 	gitMirrorError, _ := s.store.GetSetting("git_mirror_error")
+	runbookNotes, _ := s.store.GetSetting("global_runbook_notes")
 
 	data := map[string]interface{}{
 		"PublicKeySSH":      s.pubKey,
@@ -804,10 +822,23 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"GitMirrorStatus":   gitMirrorStatus,
 		"GitMirrorLastSync": gitMirrorLastSync,
 		"GitMirrorError":    gitMirrorError,
+		"RunbookNotes":      runbookNotes,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = s.templates.ExecuteTemplate(w, "dashboard.html", data)
+}
+
+func (s *Server) handleUpdateRunbook(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	notes := strings.TrimSpace(r.FormValue("runbook_notes"))
+	_ = s.store.SetSetting("global_runbook_notes", notes)
+	_ = s.triggerGitSync(r.Context())
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
@@ -841,6 +872,11 @@ func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
 		files[depEnvPath] = []byte(d.EnvVars)
 	}
 
+	runbookNotes, _ := s.store.GetSetting("global_runbook_notes")
+	if runbookNotes != "" {
+		files["RUNBOOK.md"] = []byte(runbookNotes)
+	}
+
 	inventory := map[string]interface{}{
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"nodes":        nodes,
@@ -852,6 +888,7 @@ func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
 
 	return files, nil
 }
+
 
 func (s *Server) triggerGitSync(ctx context.Context) error {
 	files, err := s.buildGitMirrorFiles()

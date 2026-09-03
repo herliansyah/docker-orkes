@@ -74,6 +74,46 @@
       </div>
     </div>
 
+    <!-- Global Operator Runbook & Scratchpad Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm">📋</div>
+          <div>
+            <h2 class="text-base font-semibold text-slate-100">Operator Runbook & Global Notes</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Shared operational checklist, maintenance reminders, and infrastructure notes (synced to Git as RUNBOOK.md).</p>
+          </div>
+        </div>
+        <button type="button" onclick="document.getElementById('runbook-editor').classList.toggle('hidden')"
+          class="text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition">
+          ✏️ Edit Runbook
+        </button>
+      </div>
+
+      <!-- Preview when closed -->
+      {{if .RunbookNotes}}
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-lg p-4 font-mono text-xs text-slate-300 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+{{.RunbookNotes}}
+      </div>
+      {{else}}
+      <div class="bg-slate-950/40 border border-dashed border-slate-800 rounded-lg p-4 text-xs text-slate-500 italic">
+        Belum ada catatan global. Klik 'Edit Runbook' untuk menulis panduan operasional, jadwal maintenance, atau checklist tim.
+      </div>
+      {{end}}
+
+      <!-- Collapsible Editor Form -->
+      <form id="runbook-editor" method="POST" action="/settings/runbook" class="hidden space-y-3 pt-2">
+        <textarea name="runbook_notes" rows="6" placeholder="Tuliskan catatan checklist operasional, jadwal maintenance server, atau nomor kontak tim di sini..."
+          class="w-full font-mono bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed">{{.RunbookNotes}}</textarea>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="document.getElementById('runbook-editor').classList.add('hidden')"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Batal</button>
+          <button type="submit"
+            class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-sm">Simpan Runbook</button>
+        </div>
+      </form>
+    </div>
+
     <!-- Nodes Inventory Section -->
     <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
       <div class="flex items-center justify-between">
@@ -113,6 +153,15 @@
                 class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
             </div>
           </div>
+
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">
+              Notes / Catatan Server <span class="text-slate-500 font-normal">(Opsional — Lokasi datacenter, spesifikasi RAM/CPU, PIC, dsb)</span>
+            </label>
+            <input type="text" name="notes" placeholder="Contoh: Hetzner Falkenstein (4 vCPU, 8GB RAM). PIC: Budi. Nginx reverse proxy di port 80."
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
+
 
           <!-- Auto Key Injection (Password) -->
           <div class="bg-indigo-950/20 border border-indigo-500/20 rounded-lg p-3.5 space-y-2">
@@ -158,6 +207,7 @@
             <tr class="hover:bg-slate-800/30 transition">
               <td class="py-3.5 px-4 font-medium text-slate-200">
                 <div class="font-semibold text-slate-100">{{.Name}}</div>
+                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
                 <div class="text-[11px] text-slate-500 font-mono">ID: {{.ID}}</div>
               </td>
               <td class="py-3.5 px-4 font-mono text-slate-300">
@@ -240,6 +290,11 @@
                         class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
                     </div>
                   </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Catatan Server</label>
+                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Lokasi server, spek hardware, kontak PIC, dsb"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </div>
                   <div class="flex gap-2 justify-end">
                     <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.add('hidden')"
                       class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
@@ -250,6 +305,7 @@
               </td>
             </tr>
             {{if ne .Status "online"}}
+
             <tr id="inject-key-{{.ID}}" class="hidden bg-slate-950/80 border-b border-slate-800">
               <td colspan="5" class="p-3.5">
                 <form method="POST" action="/nodes/{{.ID}}/bootstrap" class="flex items-center gap-3">
@@ -313,6 +369,11 @@
             <textarea name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
               class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Notes / Dokumentasi Template <span class="text-slate-500 font-normal">(Opsional — Prasyarat network, deskripsi service, port)</span></label>
+            <input type="text" name="notes" placeholder="Contoh: Butuh network 'proxy-net'. Default expose port 3000."
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
           <div class="flex gap-2 justify-end">
             <button type="button" onclick="document.getElementById('add-stack-modal').classList.add('hidden')"
               class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
@@ -342,7 +403,8 @@
             <tr class="hover:bg-slate-800/30 transition">
               <td class="py-3.5 px-4 font-semibold text-slate-100">
                 <div>{{.Name}}</div>
-                <div class="text-[11px] text-slate-500 font-mono">ID: {{.ID}}</div>
+                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                <div class="text-[11px] text-slate-500 font-mono font-normal">ID: {{.ID}}</div>
               </td>
               <td class="py-3.5 px-4">
                 <pre class="bg-slate-950 p-2 rounded text-[11px] font-mono text-emerald-400/90 max-h-20 overflow-y-auto max-w-sm whitespace-pre">{{.ComposeYAML}}</pre>
@@ -387,6 +449,11 @@
                     <textarea name="default_env" rows="2"
                       class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300">{{.DefaultEnv}}</textarea>
                   </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Dokumentasi</label>
+                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Prasyarat network, deskripsi service, port, dsb"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </div>
                   <div class="flex gap-2 justify-end">
                     <button type="button" onclick="document.getElementById('edit-stack-{{.ID}}').classList.add('hidden')"
                       class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded text-xs">Cancel</button>
@@ -397,6 +464,7 @@
               </td>
             </tr>
             {{else}}
+
             <tr>
               <td colspan="5" class="py-8 text-center text-slate-500">
                 No stack templates created yet. Click <span class="text-indigo-400 font-medium">+ Add Stack</span> to create your first template.
@@ -452,6 +520,11 @@
             <textarea name="env_vars" rows="4" placeholder="PORT=8080&#10;NODE_ENV=production"
               class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
           </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1">Deployment Notes <span class="text-slate-500 font-normal">(Opsional — Nama klien, domain URL, info SSL, dsb)</span></label>
+            <input type="text" name="notes" placeholder="Contoh: Website PT Maju (Domain: https://maju.com), reverse proxy Cloudflare"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+          </div>
           <div class="flex gap-2 justify-end">
             <button type="button" onclick="document.getElementById('new-deployment-modal').classList.add('hidden')"
               class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
@@ -485,8 +558,10 @@
                   <span class="text-sm">📦</span>
                   <span>{{.StackName}}</span>
                 </div>
-                <div class="text-[11px] text-slate-500 font-mono">Deployment: {{.ID}}</div>
+                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                <div class="text-[11px] text-slate-500 font-mono font-normal">Deployment: {{.ID}}</div>
               </td>
+
               <td class="py-3.5 px-4 font-medium text-slate-300">
                 <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px]">
                   🖥️ {{.NodeName}}
@@ -572,15 +647,22 @@
                     <span class="text-[11px] text-slate-400">After saving, click 'Up' to redeploy to the remote node.</span>
                   </div>
                   <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Environment Variables (.env)</label>
                     <textarea name="env_vars" rows="4" placeholder="KEY=value"
                       class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">{{.EnvVars}}</textarea>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Deployment Notes</label>
+                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Keterangan project/klien, URL domain, dsb"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
                   </div>
                   <div class="flex gap-2 justify-end">
                     <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.add('hidden')"
                       class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
                     <button type="submit"
-                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Environment Variables</button>
+                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Changes</button>
                   </div>
+
                 </form>
               </td>
             </tr>
