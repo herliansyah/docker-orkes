@@ -11,6 +11,17 @@
     ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
     ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.8); }
+
+    /* Topology Mindmap tree connectors */
+    .topology-node-branch:last-child > .tree-node-v-bottom,
+    .topology-node-branch.is-last-node > .tree-node-v-bottom {
+      display: none !important;
+    }
+
+    .topology-dep-leaf-wrapper:last-child > .tree-dep-v-bottom,
+    .topology-dep-leaf-wrapper.is-last-dep > .tree-dep-v-bottom {
+      display: none !important;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between">
@@ -230,20 +241,33 @@
                 </div>
               </div>
 
-              <!-- Main Tree Trunk connecting Control Plane to Nodes -->
-              <div class="ml-6 pl-6 sm:pl-8 border-l-2 border-indigo-500/30 space-y-6 pt-6 w-full" id="topology-nodes-container">
+              <!-- Main Tree Stem from Root -->
+              {{if .Nodes}}
+              <div class="w-0.5 h-6 bg-indigo-500/40 ml-8"></div>
+              {{end}}
+
+              <!-- Main Tree Trunk Container for Nodes -->
+              <div class="ml-8 relative w-full" id="topology-nodes-container">
                 {{range .Nodes}}
                 {{$nodeDeps := index $.DeploymentsByNode .ID}}
                 <!-- Node Branch Container -->
-                <div class="topology-node-branch relative"
+                <div class="topology-node-branch relative pl-8 pb-6"
                   data-node-id="{{.ID}}"
                   data-node-name="{{.Name}}"
                   data-node-search="{{.Name}} {{.Host}} {{.User}} {{.Notes}}"
                   data-node-status="{{.Status}}">
                   
-                  <!-- Branch Connector Dot & Horizontal Stem -->
-                  <div class="absolute -left-[31px] sm:-left-[39px] top-5 w-6 sm:w-8 h-[2px] bg-indigo-500/30"></div>
-                  <div class="absolute -left-[35px] sm:-left-[43px] top-4 w-2.5 h-2.5 rounded-full {{if eq .Status "online"}}bg-emerald-400 ring-2 ring-emerald-500/20{{else if eq .Status "offline"}}bg-rose-400 ring-2 ring-rose-500/20{{else}}bg-slate-400{{end}}"></div>
+                  <!-- Top Vertical Spine: from top to horizontal branch -->
+                  <div class="tree-node-v-top absolute left-0 top-0 w-0.5 h-7 bg-indigo-500/40"></div>
+
+                  <!-- Horizontal Stem: touches the card directly (pl-8 = 32px, w-[33px] touches border with 1px overlap) -->
+                  <div class="tree-node-h-line absolute left-0 top-7 w-[33px] h-0.5 bg-indigo-500/40"></div>
+
+                  <!-- Corner Junction Status Dot: centered at (1px, 28px) -->
+                  <div class="tree-node-dot absolute -left-[5px] top-[22px] w-3 h-3 rounded-full border-2 border-slate-950 {{if eq .Status "online"}}bg-emerald-400 ring-2 ring-emerald-500/30{{else if eq .Status "offline"}}bg-rose-400 ring-2 ring-rose-500/30{{else}}bg-slate-400{{end}}"></div>
+
+                  <!-- Bottom Vertical Spine: continues down to next node (hidden on last node!) -->
+                  <div class="tree-node-v-bottom absolute left-0 top-7 bottom-0 w-0.5 bg-indigo-500/40"></div>
 
                   <!-- Node Card -->
                   <div class="bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/60 rounded-xl p-4 shadow-md transition max-w-2xl">
@@ -292,68 +316,86 @@
                   </div>
 
                   <!-- Deployments Sub-Branch (Children) -->
-                  <div id="mindmap-children-{{.ID}}" class="ml-4 sm:ml-6 pl-4 sm:pl-6 border-l-2 border-slate-700/60 space-y-3 pt-3">
+                  <div id="mindmap-children-{{.ID}}" class="ml-6 relative mt-1 space-y-0">
+                    <!-- Drop Stem from Node Card down to first deployment -->
+                    <div class="w-0.5 h-3 bg-slate-700/80"></div>
+
                     {{range $dep := $nodeDeps}}
-                    <!-- Deployment Node Leaf -->
-                    <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-lg p-3 max-w-xl transition"
-                      data-dep-id="{{$dep.ID}}"
-                      data-dep-name="{{$dep.StackName}}"
-                      data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
-                      data-dep-status="{{$dep.Status}}"
-                      data-dep-drift="{{$dep.DriftStatus}}">
+                    <!-- Deployment Leaf Wrapper -->
+                    <div class="topology-dep-leaf-wrapper relative pl-6 pb-2.5">
+                      <!-- Top Vertical Spine -->
+                      <div class="tree-dep-v-top absolute left-0 top-0 w-0.5 h-[26px] bg-slate-700/80"></div>
 
-                      <!-- Connector stem -->
-                      <div class="absolute -left-[17px] sm:-left-[25px] top-1/2 w-4 sm:w-6 h-[1px] bg-slate-700/60"></div>
-                      <div class="absolute -left-[20px] sm:-left-[28px] top-1/2 -mt-1 w-2 h-2 rounded-full {{if eq $dep.Status "running"}}bg-indigo-400{{else if eq $dep.Status "failed"}}bg-rose-400{{else}}bg-slate-500{{end}}"></div>
+                      <!-- Horizontal Stem: touches the card directly (pl-6 = 24px, w-[25px] touches border with 1px overlap) -->
+                      <div class="tree-dep-h-line absolute left-0 top-[26px] w-[25px] h-0.5 bg-slate-700/80"></div>
 
-                      <div class="flex items-center gap-3">
-                        <span class="text-base">📦</span>
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <span class="font-semibold text-xs text-slate-100">{{$dep.StackName}}</span>
-                            {{if eq $dep.Status "running"}}
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                              Running
-                            </span>
-                            {{else if eq $dep.Status "stopped"}}
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/20 font-medium">
-                              Stopped
-                            </span>
-                            {{else if eq $dep.Status "failed"}}
-                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
-                              Failed
-                            </span>
-                            {{end}}
+                      <!-- Corner Junction Dot: centered at (1px, 26px) -->
+                      <div class="tree-dep-dot absolute -left-[4px] top-[21px] w-2.5 h-2.5 rounded-full border-2 border-slate-950 {{if eq $dep.Status "running"}}bg-indigo-400{{else if eq $dep.Status "failed"}}bg-rose-400{{else}}bg-slate-500{{end}}"></div>
 
-                            {{if eq $dep.DriftStatus "synced"}}
-                            <span class="text-[10px] text-emerald-400 font-medium font-mono">✓ Synced</span>
-                            {{else if eq $dep.DriftStatus "drifted"}}
-                            <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">⚠️ Drifted</span>
-                            {{end}}
-                          </div>
-                          <div class="text-[10px] font-mono text-slate-500 mt-0.5">
-                            ~/.docker-orkes/stacks/{{$dep.StackName}}/
+                      <!-- Bottom Vertical Spine: continues down to next deployment (hidden on last deployment!) -->
+                      <div class="tree-dep-v-bottom absolute left-0 top-[26px] bottom-0 w-0.5 bg-slate-700/80"></div>
+
+                      <!-- Deployment Node Leaf Card -->
+                      <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-lg p-3 max-w-xl transition"
+                        data-dep-id="{{$dep.ID}}"
+                        data-dep-name="{{$dep.StackName}}"
+                        data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
+                        data-dep-status="{{$dep.Status}}"
+                        data-dep-drift="{{$dep.DriftStatus}}">
+
+                        <div class="flex items-center gap-3">
+                          <span class="text-base">📦</span>
+                          <div>
+                            <div class="flex items-center gap-2">
+                              <span class="font-semibold text-xs text-slate-100">{{$dep.StackName}}</span>
+                              {{if eq $dep.Status "running"}}
+                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                                Running
+                              </span>
+                              {{else if eq $dep.Status "stopped"}}
+                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/20 font-medium">
+                                Stopped
+                              </span>
+                              {{else if eq $dep.Status "failed"}}
+                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                                Failed
+                              </span>
+                              {{end}}
+
+                              {{if eq $dep.DriftStatus "synced"}}
+                              <span class="text-[10px] text-emerald-400 font-medium font-mono">✓ Synced</span>
+                              {{else if eq $dep.DriftStatus "drifted"}}
+                              <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">⚠️ Drifted</span>
+                              {{end}}
+                            </div>
+                            <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+                              ~/.docker-orkes/stacks/{{$dep.StackName}}/
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <!-- Deployment Quick Actions -->
-                      <div class="flex items-center gap-1.5 shrink-0">
-                        <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
-                          class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-[11px] transition" title="Browse files">
-                          📂
-                        </button>
-                        <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
-                          <button type="submit" title="Redeploy stack" class="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 px-2 py-1 rounded text-[11px] transition font-medium">
-                            🚀 Up
+                        <!-- Deployment Quick Actions -->
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-[11px] transition" title="Browse files">
+                            📂
                           </button>
-                        </form>
+                          <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
+                            <button type="submit" title="Redeploy stack" class="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 px-2 py-1 rounded text-[11px] transition font-medium">
+                              🚀 Up
+                            </button>
+                          </form>
+                        </div>
                       </div>
                     </div>
                     {{else}}
                     <!-- No deployments state -->
-                    <div class="text-slate-500 italic text-[11px] py-2 px-3 border border-dashed border-slate-800/80 rounded-lg max-w-md" data-i18n="map_no_deployments_for_node">
-                      No stacks deployed on this node yet.
+                    <div class="relative pl-6 pb-2 pt-0.5">
+                      <div class="absolute left-0 top-0 w-0.5 h-5 bg-slate-700/80"></div>
+                      <div class="absolute left-0 top-5 w-[25px] h-0.5 bg-slate-700/80"></div>
+                      <div class="text-slate-500 italic text-[11px] py-2 px-3 border border-dashed border-slate-800/80 rounded-lg max-w-md" data-i18n="map_no_deployments_for_node">
+                        No stacks deployed on this node yet.
+                      </div>
                     </div>
                     {{end}}
                   </div>
@@ -364,11 +406,11 @@
                   No managed nodes registered yet. Click + Add Node to register your first server.
                 </div>
                 {{end}}
+              </div>
 
-                <!-- Dynamic No Search Results in Map -->
-                <div id="topology-no-results" class="hidden text-slate-500 py-10 text-center text-xs" data-i18n="map_no_match">
-                  No servers or stacks match your filter criteria.
-                </div>
+              <!-- Dynamic No Search Results in Map -->
+              <div id="topology-no-results" class="hidden text-slate-500 py-10 text-center text-xs w-full" data-i18n="map_no_match">
+                No servers or stacks match your filter criteria.
               </div>
             </div>
           </div>
@@ -1892,16 +1934,23 @@
       const nodeBranches = document.querySelectorAll('.topology-node-branch');
       let visibleNodes = 0;
       let visibleDeps = 0;
+      let lastVisibleBranch = null;
 
       nodeBranches.forEach(branch => {
+        branch.classList.remove('is-last-node');
         const nodeId = branch.getAttribute('data-node-id');
         const nodeSearch = (branch.getAttribute('data-node-search') || '').toLowerCase();
         const nodeStatus = (branch.getAttribute('data-node-status') || '').toLowerCase();
 
-        const depLeaves = branch.querySelectorAll('.topology-dep-leaf');
+        const depWrappers = branch.querySelectorAll('.topology-dep-leaf-wrapper');
         let matchingDepsInNode = 0;
+        let lastVisibleDepWrap = null;
 
-        depLeaves.forEach(leaf => {
+        depWrappers.forEach(wrap => {
+          wrap.classList.remove('is-last-dep');
+          const leaf = wrap.querySelector('.topology-dep-leaf');
+          if (!leaf) return;
+
           const depSearch = (leaf.getAttribute('data-dep-search') || '').toLowerCase();
           const depName = leaf.getAttribute('data-dep-name') || '';
           const depStatus = (leaf.getAttribute('data-dep-status') || '').toLowerCase();
@@ -1917,13 +1966,18 @@
           }
 
           if (matchQuery && matchStack && matchHealth) {
-            leaf.classList.remove('hidden');
+            wrap.classList.remove('hidden');
             matchingDepsInNode++;
             visibleDeps++;
+            lastVisibleDepWrap = wrap;
           } else {
-            leaf.classList.add('hidden');
+            wrap.classList.add('hidden');
           }
         });
+
+        if (lastVisibleDepWrap) {
+          lastVisibleDepWrap.classList.add('is-last-dep');
+        }
 
         const matchNodeId = (nodeFilter === 'all') || (nodeId === nodeFilter);
         let matchNodeHealth = true;
@@ -1935,13 +1989,14 @@
 
         const hasMatchingDeps = (stackFilter !== 'all') 
           ? (matchingDepsInNode > 0) 
-          : (depLeaves.length === 0 ? (!query || nodeSearch.includes(query)) : (matchingDepsInNode > 0 || (!query || nodeSearch.includes(query))));
+          : (depWrappers.length === 0 ? (!query || nodeSearch.includes(query)) : (matchingDepsInNode > 0 || (!query || nodeSearch.includes(query))));
 
         const isNodeVisible = matchNodeId && matchNodeHealth && hasMatchingDeps;
 
         if (isNodeVisible) {
           branch.classList.remove('hidden');
           visibleNodes++;
+          lastVisibleBranch = branch;
 
           // Auto expand branch when user filters
           if (query || stackFilter !== 'all' || healthFilter !== 'all') {
@@ -1954,6 +2009,10 @@
           branch.classList.add('hidden');
         }
       });
+
+      if (lastVisibleBranch) {
+        lastVisibleBranch.classList.add('is-last-node');
+      }
 
       const countEl = document.getElementById('topology-count');
       const resetBtn = document.getElementById('topology-reset-btn');
