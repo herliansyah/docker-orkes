@@ -73,3 +73,8 @@ _Avoid_: Backup node, slave, secondary worker
 An internal OCI-compliant registry running as a Stack on a designated Node that provides both local repository storage for custom application images and pull-through caching for upstream registries.
 _Avoid_: Docker cache, registry proxy, mirror server
 
+**Runtime Assets**:
+Files and directories located inside a Stack Directory on a Node other than `docker-compose.yml` and `.env` files (such as auxiliary configuration files, static web assets, and SSL certificates) that are managed via remote file operations and not tracked for Drift.
+_Avoid_: Extra files, static data, auxiliary blobs
+
+
