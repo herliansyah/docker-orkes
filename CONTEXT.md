@@ -77,4 +77,9 @@ _Avoid_: Docker cache, registry proxy, mirror server
 Files and directories located inside a Stack Directory on a Node other than `docker-compose.yml` and `.env` files (such as auxiliary configuration files, static web assets, and SSL certificates) that are managed via remote file operations and not tracked for Drift.
 _Avoid_: Extra files, static data, auxiliary blobs
 
+**Web Terminal**:
+An interactive, browser-based pseudo-terminal (PTY) session bridged over secure WebSocket to a Node host shell or a running container for emergency inspection and debugging, operating entirely offline without external CDN dependencies.
+_Avoid_: Web shell, remote console, back door
+
+
 
