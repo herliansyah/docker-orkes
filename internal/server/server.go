@@ -1000,6 +1000,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	gitMirrorError, _ := s.store.GetSetting("git_mirror_error")
 	runbookNotes, _ := s.store.GetSetting("global_runbook_notes")
 
+	deploymentsByNode := make(map[string][]store.Deployment)
+	for _, d := range deployments {
+		deploymentsByNode[d.NodeID] = append(deploymentsByNode[d.NodeID], d)
+	}
+
 	data := map[string]interface{}{
 		"PublicKeySSH":      s.pubKey,
 		"Nodes":             nodes,
@@ -1007,6 +1012,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"Stacks":            stacks,
 		"StackCount":        len(stacks),
 		"Deployments":       deployments,
+		"DeploymentsByNode": deploymentsByNode,
 		"DeploymentCount":   len(deployments),
 		"GitMirrorURL":      gitMirrorURL,
 		"GitMirrorBranch":   gitMirrorBranch,

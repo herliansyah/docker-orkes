@@ -6,7 +6,7 @@
   <title>Dashboard - Docker Orkes</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Custom scrollbar for editors */
+    /* Custom scrollbar for editors & mindmap */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
     ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 3px; }
@@ -18,7 +18,7 @@
     <!-- Top Navigation Header -->
     <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('map')">
           <span class="text-2xl">🐳</span>
           <span class="font-bold text-lg tracking-tight">Docker Orkes</span>
           <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-medium">Control Plane</span>
@@ -104,6 +104,10 @@
       <!-- Tab Navigation Bar -->
       <div class="border-b border-slate-800 flex items-center justify-between gap-4 overflow-x-auto">
         <nav class="flex space-x-2" aria-label="Tabs">
+          <button type="button" onclick="switchTab('map')" id="tab-btn-map"
+            class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
+            <span>🗺️ <span data-i18n="tab_map">Topology Map</span></span>
+          </button>
           <button type="button" onclick="switchTab('deployments')" id="tab-btn-deployments"
             class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
             <span>🚀 <span data-i18n="tab_deployments">Active Deployments</span></span>
@@ -126,8 +130,253 @@
         </nav>
       </div>
 
+      <!-- TAB 0: Interactive Topology Map Panel -->
+      <section id="tab-panel-map" class="tab-panel space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-100 flex items-center gap-2">
+                <span>🗺️</span>
+                <span data-i18n="map_title">Infrastructure Topology Map</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-0.5" data-i18n="map_desc">Interactive visual mindmap showing nodes, runtime status, and deployed compose stacks.</p>
+            </div>
+
+            <!-- Global Map Actions -->
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="expandAllMindmapNodes()"
+                class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition shadow-sm">
+                <span>[+]</span> <span data-i18n="btn_expand_all">Expand All</span>
+              </button>
+              <button type="button" onclick="collapseAllMindmapNodes()"
+                class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition shadow-sm">
+                <span>[-]</span> <span data-i18n="btn_collapse_all">Collapse All</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Map Filters Toolbar -->
+          <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 text-xs">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+              <!-- Search Input -->
+              <div class="relative flex-1 max-w-md">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">🔍</span>
+                <input type="text" id="topology-search" oninput="filterTopology()"
+                  placeholder="Search servers, IP, stack names, notes..."
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+
+              <!-- Filter by Server/Node Dropdown -->
+              <select id="topology-node-filter" onchange="filterTopology()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all" data-i18n="filter_all_servers">All Servers</option>
+                {{range .Nodes}}
+                <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+              </select>
+
+              <!-- Filter by Stack Dropdown -->
+              <select id="topology-stack-filter" onchange="filterTopology()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all" data-i18n="filter_all_stacks">All Stacks</option>
+                {{range .Stacks}}
+                <option value="{{.Name}}">{{.Name}}</option>
+                {{end}}
+              </select>
+
+              <!-- Filter by Health/Issues -->
+              <select id="topology-health-filter" onchange="filterTopology()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all" data-i18n="filter_all_health">All Health Status</option>
+                <option value="healthy" data-i18n="filter_healthy_only">Healthy / Online Only</option>
+                <option value="issues" data-i18n="filter_issues_only">Issues Only (Offline / Drifted / Failed)</option>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-800">
+              <span id="topology-count" class="text-slate-400 text-[11px] font-mono whitespace-nowrap"></span>
+              <button type="button" id="topology-reset-btn" onclick="resetTopologyFilter()"
+                class="hidden text-[11px] text-slate-400 hover:text-indigo-400 underline transition" data-i18n="btn_reset">
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <!-- Mindmap Visual Graph Canvas / Tree Container -->
+          <div class="bg-slate-950/40 border border-slate-800/80 rounded-xl p-6 overflow-x-auto min-h-[400px]">
+            <!-- Root Hub (Control Plane) -->
+            <div class="flex flex-col items-start">
+              <div class="bg-gradient-to-r from-indigo-900/60 to-slate-900 border-2 border-indigo-500/50 rounded-xl p-4 shadow-lg flex items-center justify-between gap-6 max-w-xl">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-xl">
+                    🐳
+                  </div>
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <h3 class="font-bold text-sm text-slate-100">Docker Orkes Control Plane</h3>
+                      <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Active</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-0.5" data-i18n="map_root_desc">Central orchestrator & desired state registry</p>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 text-[11px] font-mono">
+                  <span class="px-2 py-1 rounded bg-slate-950/70 border border-slate-800 text-indigo-300">
+                    🖥️ {{.NodeCount}}
+                  </span>
+                  <span class="px-2 py-1 rounded bg-slate-950/70 border border-slate-800 text-emerald-300">
+                    📦 {{.DeploymentCount}}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Main Tree Trunk connecting Control Plane to Nodes -->
+              <div class="ml-6 pl-6 sm:pl-8 border-l-2 border-indigo-500/30 space-y-6 pt-6 w-full" id="topology-nodes-container">
+                {{range .Nodes}}
+                {{$nodeDeps := index $.DeploymentsByNode .ID}}
+                <!-- Node Branch Container -->
+                <div class="topology-node-branch relative"
+                  data-node-id="{{.ID}}"
+                  data-node-name="{{.Name}}"
+                  data-node-search="{{.Name}} {{.Host}} {{.User}} {{.Notes}}"
+                  data-node-status="{{.Status}}">
+                  
+                  <!-- Branch Connector Dot & Horizontal Stem -->
+                  <div class="absolute -left-[31px] sm:-left-[39px] top-5 w-6 sm:w-8 h-[2px] bg-indigo-500/30"></div>
+                  <div class="absolute -left-[35px] sm:-left-[43px] top-4 w-2.5 h-2.5 rounded-full {{if eq .Status "online"}}bg-emerald-400 ring-2 ring-emerald-500/20{{else if eq .Status "offline"}}bg-rose-400 ring-2 ring-rose-500/20{{else}}bg-slate-400{{end}}"></div>
+
+                  <!-- Node Card -->
+                  <div class="bg-slate-900/90 border border-slate-700/80 hover:border-indigo-500/60 rounded-xl p-4 shadow-md transition max-w-2xl">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div class="flex items-center gap-2.5">
+                        <!-- Collapse/Expand Toggle Button -->
+                        <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
+                          class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs font-mono font-bold transition">
+                          -
+                        </button>
+
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="text-sm">🖥️</span>
+                            <h4 class="font-semibold text-xs text-slate-100">{{.Name}}</h4>
+                            {{if eq .Status "online"}}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
+                            </span>
+                            {{else if eq .Status "offline"}}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
+                              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+                            </span>
+                            {{else}}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Untested
+                            </span>
+                            {{end}}
+                          </div>
+                          <div class="text-[11px] font-mono text-slate-400 mt-0.5">
+                            <span>{{.User}}@{{.Host}}:{{.Port}}</span>
+                            {{if .Notes}}<span class="text-slate-500 font-sans ml-2">📝 {{.Notes}}</span>{{end}}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <span class="text-[11px] font-mono px-2 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                          📦 {{len $nodeDeps}} <span class="hidden sm:inline" data-i18n="word_stacks">Stacks</span>
+                        </span>
+                        <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded text-xs transition inline-flex items-center gap-1">
+                          <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics</span>
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Deployments Sub-Branch (Children) -->
+                  <div id="mindmap-children-{{.ID}}" class="ml-4 sm:ml-6 pl-4 sm:pl-6 border-l-2 border-slate-700/60 space-y-3 pt-3">
+                    {{range $dep := $nodeDeps}}
+                    <!-- Deployment Node Leaf -->
+                    <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-slate-950/80 border border-slate-800 hover:border-slate-700 rounded-lg p-3 max-w-xl transition"
+                      data-dep-id="{{$dep.ID}}"
+                      data-dep-name="{{$dep.StackName}}"
+                      data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
+                      data-dep-status="{{$dep.Status}}"
+                      data-dep-drift="{{$dep.DriftStatus}}">
+
+                      <!-- Connector stem -->
+                      <div class="absolute -left-[17px] sm:-left-[25px] top-1/2 w-4 sm:w-6 h-[1px] bg-slate-700/60"></div>
+                      <div class="absolute -left-[20px] sm:-left-[28px] top-1/2 -mt-1 w-2 h-2 rounded-full {{if eq $dep.Status "running"}}bg-indigo-400{{else if eq $dep.Status "failed"}}bg-rose-400{{else}}bg-slate-500{{end}}"></div>
+
+                      <div class="flex items-center gap-3">
+                        <span class="text-base">📦</span>
+                        <div>
+                          <div class="flex items-center gap-2">
+                            <span class="font-semibold text-xs text-slate-100">{{$dep.StackName}}</span>
+                            {{if eq $dep.Status "running"}}
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                              Running
+                            </span>
+                            {{else if eq $dep.Status "stopped"}}
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-slate-500/10 text-slate-400 border border-slate-500/20 font-medium">
+                              Stopped
+                            </span>
+                            {{else if eq $dep.Status "failed"}}
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                              Failed
+                            </span>
+                            {{end}}
+
+                            {{if eq $dep.DriftStatus "synced"}}
+                            <span class="text-[10px] text-emerald-400 font-medium font-mono">✓ Synced</span>
+                            {{else if eq $dep.DriftStatus "drifted"}}
+                            <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">⚠️ Drifted</span>
+                            {{end}}
+                          </div>
+                          <div class="text-[10px] font-mono text-slate-500 mt-0.5">
+                            ~/.docker-orkes/stacks/{{$dep.StackName}}/
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Deployment Quick Actions -->
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                          class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-[11px] transition" title="Browse files">
+                          📂
+                        </button>
+                        <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
+                          <button type="submit" title="Redeploy stack" class="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 px-2 py-1 rounded text-[11px] transition font-medium">
+                            🚀 Up
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                    {{else}}
+                    <!-- No deployments state -->
+                    <div class="text-slate-500 italic text-[11px] py-2 px-3 border border-dashed border-slate-800/80 rounded-lg max-w-md" data-i18n="map_no_deployments_for_node">
+                      No stacks deployed on this node yet.
+                    </div>
+                    {{end}}
+                  </div>
+                </div>
+                {{else}}
+                <!-- No nodes state -->
+                <div class="text-slate-500 py-6 text-center text-xs" data-i18n="empty_nodes">
+                  No managed nodes registered yet. Click + Add Node to register your first server.
+                </div>
+                {{end}}
+
+                <!-- Dynamic No Search Results in Map -->
+                <div id="topology-no-results" class="hidden text-slate-500 py-10 text-center text-xs" data-i18n="map_no_match">
+                  No servers or stacks match your filter criteria.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- TAB 1: Deployments Panel -->
-      <section id="tab-panel-deployments" class="tab-panel space-y-6">
+      <section id="tab-panel-deployments" class="tab-panel hidden space-y-6">
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
@@ -253,7 +502,7 @@
                     </div>
                     {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
                     <div class="text-[11px] font-mono text-indigo-400 mt-0.5 flex items-center gap-1" title="Remote Directory Path"><span class="text-slate-500">📁</span> ~/.docker-orkes/stacks/{{.StackName}}/</div>
-                    <div class="text-[11px] text-slate-500 font-mono font-normal">ID: {{.ID}}</div>
+                    <div class="text-[11px] text-slate-500 font-mono font-normal">Deployment: {{.ID}}</div>
                   </td>
 
                   <td class="py-3.5 px-4 font-medium text-slate-300">
@@ -868,7 +1117,7 @@
                         <button type="button" onclick="document.getElementById('edit-stack-{{.ID}}').classList.add('hidden')"
                           class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded text-xs" data-i18n="btn_cancel">Cancel</button>
                         <button type="submit"
-                          class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium" data-i18n="btn_save_changes">Save Changes</button>
+                          class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded text-xs font-medium" data-i18n="btn_save_changes">Save Changes</button>
                       </div>
                     </form>
                   </td>
@@ -1237,10 +1486,24 @@
         stat_nodes_sub: "Target Servers",
         stat_stacks: "Stack Templates",
         stat_stacks_sub: "Compose Definitions",
+        tab_map: "Topology Map",
         tab_deployments: "Active Deployments",
         tab_nodes: "Managed Nodes",
         tab_stacks: "Stack Templates",
         tab_runbook: "Runbook & Notes",
+        map_title: "Infrastructure Topology Map",
+        map_desc: "Interactive visual mindmap showing nodes, runtime status, and deployed compose stacks.",
+        btn_expand_all: "Expand All",
+        btn_collapse_all: "Collapse All",
+        filter_all_servers: "All Servers",
+        filter_all_stacks: "All Stacks",
+        filter_all_health: "All Health Status",
+        filter_healthy_only: "Healthy / Online Only",
+        filter_issues_only: "Issues Only (Offline / Drifted / Failed)",
+        map_root_desc: "Central orchestrator & desired state registry",
+        word_stacks: "Stacks",
+        map_no_deployments_for_node: "No stacks deployed on this node yet.",
+        map_no_match: "No servers or stacks match your filter criteria.",
         deployments_title: "Active Deployments",
         deployments_desc: "Instances of stacks running across your remote nodes.",
         btn_new_deployment: "+ New Deployment",
@@ -1364,10 +1627,24 @@
         stat_nodes_sub: "Server Target",
         stat_stacks: "Template Stack",
         stat_stacks_sub: "Definisi Compose",
+        tab_map: "Peta Topologi",
         tab_deployments: "Deployment Aktif",
         tab_nodes: "Node Terkelola",
         tab_stacks: "Template Stack",
         tab_runbook: "Runbook & Catatan",
+        map_title: "Peta Topologi Infrastruktur",
+        map_desc: "Mindmap visual interaktif memetakan server node, status runtime, dan stack aplikasi terpasang.",
+        btn_expand_all: "Buka Semua",
+        btn_collapse_all: "Ciutkan Semua",
+        filter_all_servers: "Semua Server",
+        filter_all_stacks: "Semua Stack",
+        filter_all_health: "Semua Status Kesehatan",
+        filter_healthy_only: "Hanya Sehat / Online",
+        filter_issues_only: "Hanya Bermasalah (Offline / Drifted / Failed)",
+        map_root_desc: "Orkestrator pusat & registry desired state",
+        word_stacks: "Stack",
+        map_no_deployments_for_node: "Belum ada stack yang di-deploy ke node ini.",
+        map_no_match: "Tidak ada server atau stack yang sesuai filter pencarian.",
         deployments_title: "Deployment Aktif",
         deployments_desc: "Instansiasi stack compose yang aktif berjalan di berbagai server remote.",
         btn_new_deployment: "+ Deployment Baru",
@@ -1512,6 +1789,7 @@
       });
 
       // Update counters
+      filterTopology();
       filterDeployments();
       filterNodes();
       filterStacks();
@@ -1580,6 +1858,138 @@
     window.addEventListener('scroll', closeAllDropdowns, true);
     window.addEventListener('resize', closeAllDropdowns);
 
+    // --- Topology Mindmap Collapse / Expand ---
+    function toggleMindmapNode(nodeId) {
+      const children = document.getElementById(`mindmap-children-${nodeId}`);
+      const btn = document.getElementById(`toggle-btn-${nodeId}`);
+      if (!children || !btn) return;
+      if (children.classList.contains('hidden')) {
+        children.classList.remove('hidden');
+        btn.innerText = '-';
+      } else {
+        children.classList.add('hidden');
+        btn.innerText = '+';
+      }
+    }
+
+    function expandAllMindmapNodes() {
+      document.querySelectorAll('[id^="mindmap-children-"]').forEach(c => c.classList.remove('hidden'));
+      document.querySelectorAll('[id^="toggle-btn-"]').forEach(b => b.innerText = '-');
+    }
+
+    function collapseAllMindmapNodes() {
+      document.querySelectorAll('[id^="mindmap-children-"]').forEach(c => c.classList.add('hidden'));
+      document.querySelectorAll('[id^="toggle-btn-"]').forEach(b => b.innerText = '+');
+    }
+
+    // --- Topology Mindmap Filter & Search ---
+    function filterTopology() {
+      const query = (document.getElementById('topology-search')?.value || '').toLowerCase().trim();
+      const nodeFilter = document.getElementById('topology-node-filter')?.value || 'all';
+      const stackFilter = document.getElementById('topology-stack-filter')?.value || 'all';
+      const healthFilter = document.getElementById('topology-health-filter')?.value || 'all';
+
+      const nodeBranches = document.querySelectorAll('.topology-node-branch');
+      let visibleNodes = 0;
+      let visibleDeps = 0;
+
+      nodeBranches.forEach(branch => {
+        const nodeId = branch.getAttribute('data-node-id');
+        const nodeSearch = (branch.getAttribute('data-node-search') || '').toLowerCase();
+        const nodeStatus = (branch.getAttribute('data-node-status') || '').toLowerCase();
+
+        const depLeaves = branch.querySelectorAll('.topology-dep-leaf');
+        let matchingDepsInNode = 0;
+
+        depLeaves.forEach(leaf => {
+          const depSearch = (leaf.getAttribute('data-dep-search') || '').toLowerCase();
+          const depName = leaf.getAttribute('data-dep-name') || '';
+          const depStatus = (leaf.getAttribute('data-dep-status') || '').toLowerCase();
+          const depDrift = (leaf.getAttribute('data-dep-drift') || '').toLowerCase();
+
+          const matchQuery = !query || depSearch.includes(query) || nodeSearch.includes(query);
+          const matchStack = (stackFilter === 'all') || (depName === stackFilter);
+          let matchHealth = true;
+          if (healthFilter === 'healthy') {
+            matchHealth = (depStatus === 'running' && depDrift === 'synced');
+          } else if (healthFilter === 'issues') {
+            matchHealth = (depStatus === 'failed' || depStatus === 'stopped' || depDrift === 'drifted' || nodeStatus === 'offline');
+          }
+
+          if (matchQuery && matchStack && matchHealth) {
+            leaf.classList.remove('hidden');
+            matchingDepsInNode++;
+            visibleDeps++;
+          } else {
+            leaf.classList.add('hidden');
+          }
+        });
+
+        const matchNodeId = (nodeFilter === 'all') || (nodeId === nodeFilter);
+        let matchNodeHealth = true;
+        if (healthFilter === 'healthy') {
+          matchNodeHealth = (nodeStatus === 'online');
+        } else if (healthFilter === 'issues') {
+          matchNodeHealth = (nodeStatus === 'offline' || matchingDepsInNode > 0);
+        }
+
+        const hasMatchingDeps = (stackFilter !== 'all') 
+          ? (matchingDepsInNode > 0) 
+          : (depLeaves.length === 0 ? (!query || nodeSearch.includes(query)) : (matchingDepsInNode > 0 || (!query || nodeSearch.includes(query))));
+
+        const isNodeVisible = matchNodeId && matchNodeHealth && hasMatchingDeps;
+
+        if (isNodeVisible) {
+          branch.classList.remove('hidden');
+          visibleNodes++;
+
+          // Auto expand branch when user filters
+          if (query || stackFilter !== 'all' || healthFilter !== 'all') {
+            const children = document.getElementById(`mindmap-children-${nodeId}`);
+            const btn = document.getElementById(`toggle-btn-${nodeId}`);
+            if (children) children.classList.remove('hidden');
+            if (btn) btn.innerText = '-';
+          }
+        } else {
+          branch.classList.add('hidden');
+        }
+      });
+
+      const countEl = document.getElementById('topology-count');
+      const resetBtn = document.getElementById('topology-reset-btn');
+      if (countEl) {
+        countEl.innerText = `${(currentLang === 'id') ? 'Menampilkan' : 'Showing'} ${visibleNodes} nodes, ${visibleDeps} stacks`;
+      }
+      if (resetBtn) {
+        if (query || nodeFilter !== 'all' || stackFilter !== 'all' || healthFilter !== 'all') {
+          resetBtn.classList.remove('hidden');
+        } else {
+          resetBtn.classList.add('hidden');
+        }
+      }
+
+      const noResults = document.getElementById('topology-no-results');
+      if (noResults) {
+        if (visibleNodes === 0) {
+          noResults.classList.remove('hidden');
+        } else {
+          noResults.classList.add('hidden');
+        }
+      }
+    }
+
+    function resetTopologyFilter() {
+      const s = document.getElementById('topology-search');
+      const n = document.getElementById('topology-node-filter');
+      const st = document.getElementById('topology-stack-filter');
+      const h = document.getElementById('topology-health-filter');
+      if (s) s.value = '';
+      if (n) n.value = 'all';
+      if (st) st.value = 'all';
+      if (h) h.value = 'all';
+      filterTopology();
+    }
+
     // --- SSH Key Copy ---
     function copySSHKey() {
       const keyText = document.getElementById('ssh-pub-key').innerText.trim();
@@ -1622,7 +2032,6 @@
 
       if (serverErrBox) serverErrBox.classList.add('hidden');
 
-      // Loading state
       btn.disabled = true;
       spinner.classList.remove('hidden');
       btnIcon.classList.add('hidden');
@@ -1741,16 +2150,15 @@
         btnText.innerText = (currentLang === 'id') ? 'Simpan & Sinkronkan Mirror' : 'Save & Sync Mirror';
 
         alertBox.className = 'rounded-lg p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center justify-between';
-        alertBox.classList.remove('hidden');
         alertMsg.innerText = 'Network error: ' + err.message;
       });
     }
 
     // --- Tab Switching with Persistence ---
-    const availableTabs = ['deployments', 'nodes', 'stacks', 'runbook'];
+    const availableTabs = ['map', 'deployments', 'nodes', 'stacks', 'runbook'];
 
     function switchTab(tabId) {
-      if (!availableTabs.includes(tabId)) tabId = 'deployments';
+      if (!availableTabs.includes(tabId)) tabId = 'map';
 
       availableTabs.forEach(t => {
         const panel = document.getElementById(`tab-panel-${t}`);
@@ -1772,6 +2180,10 @@
       try {
         localStorage.setItem('docker_orkes_active_tab', tabId);
       } catch (e) {}
+
+      if (tabId === 'map') {
+        filterTopology();
+      }
     }
 
     // --- Table Filtering & Searching ---
@@ -2139,8 +2551,8 @@
       try { savedLang = localStorage.getItem('docker_orkes_lang') || 'en'; } catch (e) {}
       setLanguage(savedLang);
 
-      // 2. Tab Setup
-      let initialTab = 'deployments';
+      // 2. Tab Setup (defaults to 'map')
+      let initialTab = 'map';
       const hash = window.location.hash.replace('#', '');
       if (availableTabs.includes(hash)) {
         initialTab = hash;
