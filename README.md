@@ -1,4 +1,4 @@
-# Docker Orkes
+<h1 align="center">🐳 Docker Orkes</h1>
 
 <p align="center">
   <strong>A lightweight, agentless multi-node Docker deployment and host observability control plane based on declarative Docker Compose stacks.</strong>

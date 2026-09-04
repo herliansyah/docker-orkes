@@ -1,4 +1,4 @@
-# Docker Orkes
+<h1 align="center">🐳 Docker Orkes</h1>
 
 <p align="center">
   <strong>Control plane multi-node Docker deployment dan observabilitas host berbasis template deklaratif Docker Compose tanpa agen (agentless).</strong>
