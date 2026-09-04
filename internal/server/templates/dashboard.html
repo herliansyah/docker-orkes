@@ -2935,7 +2935,8 @@
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         const relPath = file.webkitRelativePath || file.name;
-        formData.append('files', file, relPath);
+        formData.append('files', file);
+        formData.append('paths', relPath);
       }
 
       fetch(`/deployments/${currentDepId}/files/upload`, {
@@ -3044,12 +3045,71 @@
       if (dropZone) dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
     }
 
-    function handleDrop(e) {
+    async function handleDrop(e) {
       e.preventDefault();
       e.stopPropagation();
       const dropZone = document.getElementById('file-drop-zone');
       if (dropZone) dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
-      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+
+      if (!e.dataTransfer) return;
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0 && items[0].webkitGetAsEntry) {
+        const filesWithPaths = [];
+        async function traverseEntry(entry, currentPath) {
+          if (entry.isFile) {
+            await new Promise((resolve) => {
+              entry.file((file) => {
+                filesWithPaths.push({ file: file, path: currentPath + file.name });
+                resolve();
+              });
+            });
+          } else if (entry.isDirectory) {
+            const dirReader = entry.createReader();
+            const entries = await new Promise((resolve) => {
+              dirReader.readEntries((ents) => resolve(ents));
+            });
+            for (const child of entries) {
+              await traverseEntry(child, currentPath + entry.name + '/');
+            }
+          }
+        }
+
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry();
+          if (entry) {
+            await traverseEntry(entry, '');
+          }
+        }
+
+        if (filesWithPaths.length > 0) {
+          showFileUploadAlert(`⏳ Uploading ${filesWithPaths.length} file(s)...`, false);
+          const formData = new FormData();
+          formData.append('subpath', currentSubpath);
+          for (const item of filesWithPaths) {
+            formData.append('files', item.file);
+            formData.append('paths', item.path);
+          }
+          fetch(`/deployments/${currentDepId}/files/upload`, {
+            method: 'POST',
+            body: formData
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.error) {
+              showFileUploadAlert('Upload failed: ' + data.error, true);
+              return;
+            }
+            showFileUploadAlert(`✓ Successfully uploaded ${data.files_uploaded || filesWithPaths.length} file(s)!`, false);
+            loadRemoteFiles(currentSubpath);
+          })
+          .catch(err => {
+            showFileUploadAlert('Upload error: ' + err.message, true);
+          });
+          return;
+        }
+      }
+
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         uploadSelectedFiles(e.dataTransfer.files);
       }
     }

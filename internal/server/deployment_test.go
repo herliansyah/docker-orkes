@@ -319,6 +319,33 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 		t.Errorf("uploaded file not found in mockExec: %+v", mockExec.uploaded)
 	}
 
+	// 15b. Upload folder structure (e.g. ABCD/file.txt and ABCD/sub/file2.txt) via paths field
+	var bFolder bytes.Buffer
+	wFolder := multipart.NewWriter(&bFolder)
+	_ = wFolder.WriteField("paths", "ABCD/file.txt")
+	fw1, _ := wFolder.CreateFormFile("files", "file.txt")
+	_, _ = fw1.Write([]byte("abcd file"))
+	_ = wFolder.WriteField("paths", "ABCD/sub/file2.txt")
+	fw2, _ := wFolder.CreateFormFile("files", "file2.txt")
+	_, _ = fw2.Write([]byte("sub file"))
+	wFolder.Close()
+
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/upload", &bFolder)
+	req.Header.Set("Content-Type", wFolder.FormDataContentType())
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"files_uploaded":2`) {
+		t.Fatalf("expected 200 OK for folder upload, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/ABCD/file.txt"]) != "abcd file" {
+		t.Errorf("expected ABCD/file.txt in uploaded files, got: %+v", mockExec.uploaded)
+	}
+	if string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/ABCD/sub/file2.txt"]) != "sub file" {
+		t.Errorf("expected ABCD/sub/file2.txt in uploaded files, got: %+v", mockExec.uploaded)
+	}
+
 	// 16. Extract archive via POST /deployments/{id}/files/extract
 	extractForm := url.Values{
 		"file":       {"bundle.tar.gz"},

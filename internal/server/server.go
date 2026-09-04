@@ -878,8 +878,18 @@ func (s *Server) handleUploadDeploymentFiles(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	for _, fh := range fileHeaders {
-		fname := strings.TrimSpace(fh.Filename)
+	var paths []string
+	if p, ok := r.MultipartForm.Value["paths"]; ok {
+		paths = p
+	}
+
+	for i, fh := range fileHeaders {
+		var fname string
+		if i < len(paths) && strings.TrimSpace(paths[i]) != "" {
+			fname = strings.TrimSpace(paths[i])
+		} else {
+			fname = strings.TrimSpace(fh.Filename)
+		}
 		fname = strings.ReplaceAll(fname, "\\", "/")
 		if fname == "" || strings.Contains(fname, "..") || strings.HasPrefix(fname, "/") {
 			continue
