@@ -144,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/drift/adopt", s.requireAuth(http.HandlerFunc(s.handleAdoptDrift)))
 	mux.Handle("GET /deployments/{id}/files", s.requireAuth(http.HandlerFunc(s.handleListDeploymentFiles)))
 	mux.Handle("GET /deployments/{id}/files/view", s.requireAuth(http.HandlerFunc(s.handleViewDeploymentFile)))
+	mux.Handle("POST /deployments/{id}/files/save", s.requireAuth(http.HandlerFunc(s.handleSaveDeploymentFile)))
+
 
 
 	mux.Handle("POST /settings/git", s.requireAuth(http.HandlerFunc(s.handleUpdateGitSettings)))
@@ -858,6 +860,106 @@ func (s *Server) handleViewDeploymentFile(w http.ResponseWriter, r *http.Request
 		"content": string(content),
 	})
 }
+
+func (s *Server) handleSaveDeploymentFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	fileName := strings.TrimSpace(r.FormValue("file"))
+	content := r.FormValue("content")
+	redeploy := r.FormValue("redeploy") == "true"
+
+	if fileName == "" || strings.Contains(fileName, "..") || strings.Contains(fileName, "/") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	files := map[string][]byte{
+		fileName: []byte(content),
+	}
+
+	uploadCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	if err := s.executor.UploadFiles(uploadCtx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Failed to upload file to remote server: " + err.Error(),
+		})
+		return
+	}
+
+	var cmdOutput string
+	var redeployErr error
+	if redeploy {
+		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cmdCancel()
+
+		cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", remoteDir, remoteDir)
+		cmdOutput, redeployErr = s.executor.RunCommand(cmdCtx, node.Host, node.Port, node.User, s.privKey, cmd)
+		if redeployErr != nil {
+			_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", fmt.Sprintf("redeploy error: %v (out: %s)", redeployErr, cmdOutput))
+		} else {
+			_ = s.store.UpdateDeploymentStatus(dep.ID, "running", cmdOutput)
+		}
+	}
+
+	// Re-check drift for this deployment
+	remoteComposeBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/docker-compose.yml")
+	remoteEnvBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/.env")
+	remoteCompose := string(remoteComposeBytes)
+	remoteEnv := string(remoteEnvBytes)
+
+	composeDiff := diff.UnifiedDiff("Desired: stack/"+stack.Name, stack.ComposeYAML, "Remote: "+node.Name, remoteCompose)
+	envDiff := diff.UnifiedDiff("Desired: env", dep.EnvVars, "Remote: env", remoteEnv)
+
+
+	isDrifted := (composeDiff != "") || (envDiff != "")
+	driftStatus := "synced"
+	var diffReport strings.Builder
+	if composeDiff != "" {
+		diffReport.WriteString("--- docker-compose.yml diff ---\n" + composeDiff + "\n")
+	}
+	if envDiff != "" {
+		diffReport.WriteString("--- .env diff ---\n" + envDiff + "\n")
+	}
+	if isDrifted {
+		driftStatus = "drifted"
+	}
+	_ = s.store.UpdateDeploymentDrift(dep.ID, driftStatus, diffReport.String(), remoteCompose, remoteEnv)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"file":         fileName,
+		"redeploy":     redeploy,
+		"redeploy_err": func() string { if redeployErr != nil { return redeployErr.Error() }; return "" }(),
+		"output":       cmdOutput,
+		"drift_status": driftStatus,
+	})
+}
+
 
 
 

@@ -257,6 +257,31 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "nginx:alpine") {
 		t.Errorf("expected file content to contain nginx:alpine, got %s", rec.Body.String())
 	}
+
+	// 13. Direct edit & save file via POST /deployments/{id}/files/save with redeploy=true
+	saveForm := url.Values{
+		"file":     {"docker-compose.yml"},
+		"content":  {"services:\n  web:\n    image: nginx:latest\n"},
+		"redeploy": {"true"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/save", strings.NewReader(saveForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for file save, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"success":true`) {
+		t.Errorf("expected success:true in save response, got %s", rec.Body.String())
+	}
+
+	// Verify file was updated in mockExec
+	if string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/docker-compose.yml"]) != "services:\n  web:\n    image: nginx:latest\n" {
+		t.Errorf("expected updated compose file in mock executor, got: %s", string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/docker-compose.yml"]))
+	}
 }
+
 
 

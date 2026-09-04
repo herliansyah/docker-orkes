@@ -808,21 +808,41 @@
           </div>
         </div>
 
-        <!-- File Content Viewer -->
+        <!-- File Content Editor -->
         <div class="md:col-span-2 flex flex-col overflow-hidden bg-slate-950/60 p-4">
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-mono text-xs text-slate-300 font-semibold" id="file-viewer-name">Select a file to view</div>
-            <button id="copy-file-btn" onclick="copyCurrentFile()" class="hidden text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-0.5 rounded transition">
-              Copy Content
-            </button>
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs text-slate-200 font-semibold" id="file-viewer-name">Select a file</span>
+              <span id="file-edit-badge" class="hidden text-[10px] font-medium px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                ✏️ Live Editable
+              </span>
+            </div>
+            <div class="flex items-center gap-1.5" id="file-actions-bar">
+              <button id="copy-file-btn" onclick="copyCurrentFile()" class="hidden text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded transition">
+                Copy
+              </button>
+              <button id="save-file-btn" onclick="saveRemoteFile(false)" class="hidden text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1 rounded-lg transition flex items-center gap-1">
+                💾 Save
+              </button>
+              <button id="redeploy-file-btn" onclick="saveRemoteFile(true)" class="hidden text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded-lg transition flex items-center gap-1 shadow-sm">
+                🚀 Save & Redeploy
+              </button>
+            </div>
           </div>
-          <pre id="file-viewer-content" class="flex-1 font-mono text-xs text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-800/80 overflow-auto whitespace-pre leading-relaxed max-h-[420px]">Select a file from the left to view remote file content.</pre>
+
+          <textarea id="file-viewer-content" spellcheck="false" placeholder="Select a file from the left to view or edit remote file content."
+            class="flex-1 font-mono text-xs text-slate-200 bg-slate-950 p-3 rounded-lg border border-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 overflow-auto whitespace-pre leading-relaxed min-h-[350px] max-h-[420px] resize-none"></textarea>
+
+          <div id="file-save-status" class="hidden mt-2 p-2.5 rounded-lg text-xs flex items-center justify-between">
+            <span id="file-save-msg" class="truncate font-medium"></span>
+            <div id="file-save-actions" class="flex gap-2"></div>
+          </div>
         </div>
       </div>
 
       <!-- Modal Footer -->
       <div class="px-5 py-3 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
-        <span class="text-[11px] text-slate-500">Live file content read via secure agentless SSH / SFTP</span>
+        <span class="text-[11px] text-slate-500">Live SFTP Editor — Changes are applied directly on the target node.</span>
         <button onclick="closeFileBrowser()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-medium transition">
           Close
         </button>
@@ -843,6 +863,7 @@
     }
 
     let currentDepId = '';
+    let currentFileName = '';
     let currentRawFileContent = '';
 
     function openFileBrowser(depId, stackName, nodeName) {
@@ -850,9 +871,14 @@
       document.getElementById('file-browser-title').innerText = `Remote Files for ${stackName} on ${nodeName}`;
       document.getElementById('file-browser-path').innerText = `~/.docker-orkes/stacks/${stackName}/`;
       document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 py-3 text-center">Loading files from remote server...</div>';
-      document.getElementById('file-viewer-name').innerText = 'Select a file to view';
-      document.getElementById('file-viewer-content').innerText = 'Loading...';
+      document.getElementById('file-viewer-name').innerText = 'Select a file to view or edit';
+      document.getElementById('file-viewer-content').value = 'Loading...';
+      document.getElementById('file-viewer-content').disabled = true;
+      document.getElementById('file-edit-badge').classList.add('hidden');
       document.getElementById('copy-file-btn').classList.add('hidden');
+      document.getElementById('save-file-btn').classList.add('hidden');
+      document.getElementById('redeploy-file-btn').classList.add('hidden');
+      document.getElementById('file-save-status').classList.add('hidden');
       document.getElementById('file-browser-modal').classList.remove('hidden');
 
       fetch(`/deployments/${depId}/files`)
@@ -860,13 +886,13 @@
         .then(data => {
           if (data.error) {
             document.getElementById('file-browser-list').innerHTML = `<div class="text-rose-400 p-2">Error: ${data.error}</div>`;
-            document.getElementById('file-viewer-content').innerText = 'Failed to load remote directory.';
+            document.getElementById('file-viewer-content').value = 'Failed to load remote directory.';
             return;
           }
 
           if (!data.files || data.files.length === 0) {
             document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 p-2">No files found in directory.</div>';
-            document.getElementById('file-viewer-content').innerText = 'Directory is empty.';
+            document.getElementById('file-viewer-content').value = 'Directory is empty.';
             return;
           }
 
@@ -898,6 +924,7 @@
     }
 
     function viewRemoteFile(depId, fileName) {
+      currentFileName = fileName;
       document.querySelectorAll('.file-btn').forEach(b => b.classList.remove('bg-indigo-600/20', 'border', 'border-indigo-500/30'));
       const activeBtn = document.getElementById('file-item-' + fileName.replace(/[^a-zA-Z0-9]/g, '_'));
       if (activeBtn) {
@@ -905,36 +932,119 @@
       }
 
       document.getElementById('file-viewer-name').innerText = fileName;
-      document.getElementById('file-viewer-content').innerText = 'Reading remote file content...';
+      document.getElementById('file-viewer-content').value = 'Reading remote file content...';
+      document.getElementById('file-viewer-content').disabled = true;
+      document.getElementById('file-save-status').classList.add('hidden');
 
       fetch(`/deployments/${depId}/files/view?file=${encodeURIComponent(fileName)}`)
         .then(res => res.json())
         .then(data => {
           if (data.error) {
-            document.getElementById('file-viewer-content').innerText = `Error: ${data.error}`;
+            document.getElementById('file-viewer-content').value = `Error: ${data.error}`;
             document.getElementById('copy-file-btn').classList.add('hidden');
+            document.getElementById('save-file-btn').classList.add('hidden');
+            document.getElementById('redeploy-file-btn').classList.add('hidden');
             return;
           }
-          currentRawFileContent = data.content;
-          document.getElementById('file-viewer-content').innerText = data.content || '(empty file)';
+          currentRawFileContent = data.content || '';
+          const editor = document.getElementById('file-viewer-content');
+          editor.value = currentRawFileContent;
+          editor.disabled = false;
+
+          document.getElementById('file-edit-badge').classList.remove('hidden');
           document.getElementById('copy-file-btn').classList.remove('hidden');
+          document.getElementById('save-file-btn').classList.remove('hidden');
+          document.getElementById('redeploy-file-btn').classList.remove('hidden');
         })
         .catch(err => {
-          document.getElementById('file-viewer-content').innerText = `Failed to read file: ${err.message}`;
+          document.getElementById('file-viewer-content').value = `Failed to read file: ${err.message}`;
         });
     }
 
+    function saveRemoteFile(redeploy) {
+      if (!currentDepId || !currentFileName) return;
+      const content = document.getElementById('file-viewer-content').value;
+      const statusBox = document.getElementById('file-save-status');
+      const statusMsg = document.getElementById('file-save-msg');
+      const statusActions = document.getElementById('file-save-actions');
+
+      statusBox.classList.remove('hidden', 'bg-rose-500/10', 'border-rose-500/30', 'text-rose-300', 'bg-emerald-500/10', 'border-emerald-500/30', 'text-emerald-300', 'bg-indigo-500/10', 'border-indigo-500/30', 'text-indigo-300');
+      statusBox.classList.add('bg-indigo-500/10', 'border', 'border-indigo-500/30', 'text-indigo-300');
+      statusMsg.innerText = redeploy ? '💾 Saving file & running docker compose up -d on server...' : '💾 Saving file to remote server...';
+      statusActions.innerHTML = '';
+
+      const formData = new URLSearchParams();
+      formData.append('file', currentFileName);
+      formData.append('content', content);
+      formData.append('redeploy', redeploy ? 'true' : 'false');
+
+      fetch(`/deployments/${currentDepId}/files/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          statusBox.classList.remove('bg-indigo-500/10', 'border-indigo-500/30', 'text-indigo-300');
+          statusBox.classList.add('bg-rose-500/10', 'border', 'border-rose-500/30', 'text-rose-300');
+          statusMsg.innerText = 'Failed: ' + data.error;
+          return;
+        }
+
+        if (data.redeploy_err) {
+          statusBox.classList.remove('bg-indigo-500/10', 'border-indigo-500/30', 'text-indigo-300');
+          statusBox.classList.add('bg-amber-500/10', 'border', 'border-amber-500/30', 'text-amber-300');
+          statusMsg.innerText = `File saved, but redeploy failed: ${data.redeploy_err}`;
+          return;
+        }
+
+        statusBox.classList.remove('bg-indigo-500/10', 'border-indigo-500/30', 'text-indigo-300');
+        statusBox.classList.add('bg-emerald-500/10', 'border', 'border-emerald-500/30', 'text-emerald-300');
+        statusMsg.innerText = redeploy 
+          ? `✓ File saved and containers redeployed successfully! (${data.file})`
+          : `✓ File ${data.file} saved directly to server!`;
+
+        if (data.drift_status === 'drifted') {
+          statusActions.innerHTML = `
+            <form method="POST" action="/deployments/${currentDepId}/drift/adopt" onsubmit="return confirm('Adopt these remote changes as new Desired State and push to Git?');">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded text-[11px] font-medium transition">
+                Adopt to Git / Template
+              </button>
+            </form>
+          `;
+        }
+      })
+      .catch(err => {
+        statusBox.classList.remove('bg-indigo-500/10', 'border-indigo-500/30', 'text-indigo-300');
+        statusBox.classList.add('bg-rose-500/10', 'border', 'border-rose-500/30', 'text-rose-300');
+        statusMsg.innerText = 'Network error: ' + err.message;
+      });
+    }
+
     function copyCurrentFile() {
-      navigator.clipboard.writeText(currentRawFileContent).then(() => {
+      const content = document.getElementById('file-viewer-content').value;
+      navigator.clipboard.writeText(content).then(() => {
         const btn = document.getElementById('copy-file-btn');
         btn.innerText = 'Copied!';
-        setTimeout(() => { btn.innerText = 'Copy Content'; }, 2000);
+        setTimeout(() => { btn.innerText = 'Copy'; }, 2000);
       });
     }
 
     function closeFileBrowser() {
       document.getElementById('file-browser-modal').classList.add('hidden');
     }
+
+    // Support Tab key inside editor
+    document.getElementById('file-viewer-content').addEventListener('keydown', function(e) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = this.selectionStart;
+        const end = this.selectionEnd;
+        this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 2;
+      }
+    });
 
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
@@ -943,4 +1053,5 @@
   </script>
 </body>
 </html>
+
 
