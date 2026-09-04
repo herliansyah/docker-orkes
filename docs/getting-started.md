@@ -1,0 +1,106 @@
+# Getting Started with Docker Orkes
+
+This guide walks you through setting up and running **Docker Orkes** to manage your multi-node Docker deployments.
+
+---
+
+## 1. Prerequisites
+
+Before starting, ensure you have:
+1. **Control Plane Host**: A machine (local workstation or VPS) with Linux or macOS, running Go 1.22+ if compiling from source.
+2. **Target Nodes**: One or more remote Linux servers with:
+   - Docker Engine installed (`docker compose version` available).
+   - SSH server running and reachable.
+   - User account with permission to run `docker` commands (either `root` or a user in the `docker` group).
+
+---
+
+## 2. Installation and Running
+
+### Building from Source
+```bash
+git clone https://github.com/herliansyah/docker-orkes.git
+cd docker-orkes
+go build -o docker-orkes ./cmd/docker-orkes
+```
+
+### Starting the Control Plane
+```bash
+./docker-orkes -addr :9000 -pass your-secure-password
+```
+
+Open `http://localhost:9000` in your web browser and sign in with the password you specified.
+
+---
+
+## 3. Authorizing Remote Nodes
+
+When Docker Orkes starts for the first time, it automatically generates a persistent 4096-bit RSA key pair in the database (`docker-orkes.db`).
+
+You can authorize target nodes in one of two ways:
+
+### Option A: Automatic Key Injection (Recommended)
+1. On the dashboard, go to the **Managed Nodes** tab.
+2. Click **+ Add Node**.
+3. Fill in the server name, hostname or IP, SSH port, and user (e.g. `root`).
+4. In the **⚡ Auto-Inject SSH Key via Password** field, enter the remote server's SSH password.
+5. Click **Save & Setup Node**. Docker Orkes will connect once, append its public key to `~/.ssh/authorized_keys`, and verify the connection. The password is never saved to the database.
+
+### Option B: Manual Public Key Authorization
+1. Click **⚙️ Settings** in the top navigation bar.
+2. Click **Copy Key** on the **Control Plane SSH Public Key** card.
+3. On your target server, append the copied key to `~/.ssh/authorized_keys`:
+   ```bash
+   echo "ssh-rsa AAAA..." >> ~/.ssh/authorized_keys
+   chmod 600 ~/.ssh/authorized_keys
+   ```
+4. On the dashboard, click **+ Add Node**, enter your node details without a password, and click **Save & Setup Node**.
+5. In the Actions menu for the node, click **Test Connection** to confirm connectivity.
+
+---
+
+## 4. Creating a Stack Template
+
+1. Navigate to the **Stack Templates** tab.
+2. Click **+ Add Stack**.
+3. Enter a slug name (e.g. `nginx-proxy` or `redis-cache`).
+4. Paste your `docker-compose.yml` configuration:
+   ```yaml
+   services:
+     web:
+       image: nginx:alpine
+       ports:
+         - "${PORT:-80}:80"
+       restart: always
+   ```
+5. Specify default environment variables (e.g. `PORT=8080`) and optional notes.
+6. Click **Save Stack Template**.
+
+---
+
+## 5. Deploying Stacks to Nodes
+
+1. Navigate to the **Active Deployments** tab.
+2. Click **+ New Deployment**.
+3. Select the stack template and the target node.
+4. Supply any node-specific environment variables in the `.env` box.
+5. Click **Deploy to Node**.
+
+Docker Orkes will:
+- Connect to the remote node via SFTP.
+- Create the dedicated stack directory `~/.docker-orkes/stacks/<stack-name>/`.
+- Upload `docker-compose.yml` and `.env`.
+- Execute `docker compose up -d`.
+- Store the deployment status and desired state hash in the database.
+
+---
+
+## 6. Configuring Git Mirror Backup (Optional)
+
+1. Click **⚙️ Settings** in the top navigation bar.
+2. In the **Git Mirror Backup Sync** card, specify your remote Git repository URL:
+   - Example SSH: `git@github.com:myorg/docker-infra.git`
+   - Example HTTPS: `https://github.com/myorg/docker-infra.git`
+3. Set the target branch (e.g. `main`).
+4. If using SSH, copy the Control Plane SSH Public Key and add it as a **Deploy Key with Write Access** in your GitHub/GitLab repository settings.
+5. Click **Save & Sync Mirror**. Docker Orkes will commit all stacks and deployment manifests and push them to your repository.

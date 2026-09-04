@@ -1126,11 +1126,40 @@ func (s *Server) handleUpdateGitSettings(w http.ResponseWriter, r *http.Request)
 
 	_ = s.triggerGitSync(r.Context())
 
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		status, _ := s.store.GetSetting("git_mirror_status")
+		lastErr, _ := s.store.GetSetting("git_mirror_error")
+		lastSync, _ := s.store.GetSetting("git_mirror_last_sync")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   lastErr == "",
+			"status":    status,
+			"error":     lastErr,
+			"last_sync": lastSync,
+		})
+		return
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleSyncGitNow(w http.ResponseWriter, r *http.Request) {
 	_ = s.triggerGitSync(r.Context())
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		status, _ := s.store.GetSetting("git_mirror_status")
+		lastErr, _ := s.store.GetSetting("git_mirror_error")
+		lastSync, _ := s.store.GetSetting("git_mirror_last_sync")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   lastErr == "",
+			"status":    status,
+			"error":     lastErr,
+			"last_sync": lastSync,
+		})
+		return
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
