@@ -1517,38 +1517,68 @@
       filterStacks();
     }
 
-    // --- Action Dropdown Handlers ---
+    // --- Action Dropdown Handlers (Fixed Viewport Floating Menu to prevent table overflow clipping) ---
     let currentOpenDropdown = null;
 
     function toggleDropdown(id, event) {
-      if (event) event.stopPropagation();
+      if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
       const dropdown = document.getElementById(id);
+      const btn = event ? (event.currentTarget || event.target.closest('button')) : null;
       if (!dropdown) return;
 
-      if (currentOpenDropdown && currentOpenDropdown !== dropdown) {
-        currentOpenDropdown.classList.add('hidden');
-      }
+      const isHidden = dropdown.classList.contains('hidden');
+      closeAllDropdowns();
 
-      if (dropdown.classList.contains('hidden')) {
+      if (isHidden && btn) {
         dropdown.classList.remove('hidden');
+        dropdown.style.position = 'fixed';
+        dropdown.style.zIndex = '9999';
+
+        const rect = btn.getBoundingClientRect();
+        const dropdownWidth = 176; // w-44 = 176px
+        
+        // Align right edge of dropdown with right edge of button
+        let left = rect.right - dropdownWidth;
+        if (left < 10) left = 10;
+        dropdown.style.left = `${left}px`;
+        dropdown.style.right = 'auto';
+
+        // Vertical positioning: open upwards if near bottom of screen
+        const dropdownHeight = dropdown.offsetHeight || 190;
+        if (rect.bottom + dropdownHeight > window.innerHeight - 10 && rect.top > dropdownHeight) {
+          dropdown.style.top = `${rect.top - dropdownHeight - 4}px`;
+        } else {
+          dropdown.style.top = `${rect.bottom + 4}px`;
+        }
+
         currentOpenDropdown = dropdown;
-      } else {
-        dropdown.classList.add('hidden');
-        currentOpenDropdown = null;
       }
     }
 
     function closeAllDropdowns() {
-      document.querySelectorAll('.action-dropdown').forEach(d => d.classList.add('hidden'));
+      document.querySelectorAll('.action-dropdown').forEach(d => {
+        d.classList.add('hidden');
+        d.style.position = '';
+        d.style.top = '';
+        d.style.left = '';
+        d.style.zIndex = '';
+      });
       currentOpenDropdown = null;
     }
 
     // Close dropdowns on outside click
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.action-dropdown') && !e.target.closest('button[onclick^="toggleDropdown"]')) {
+      if (!e.target.closest('.action-dropdown') && !e.target.closest('button[onclick*="toggleDropdown"]')) {
         closeAllDropdowns();
       }
     });
+
+    // Close dropdowns on scroll or window resize so they don't detach from button
+    window.addEventListener('scroll', closeAllDropdowns, true);
+    window.addEventListener('resize', closeAllDropdowns);
 
     // --- SSH Key Copy ---
     function copySSHKey() {
