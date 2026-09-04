@@ -34,8 +34,11 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 - 🚀 **Arsitektur Agentless SSH**: Tanpa jejak software di server remote. Selama server tujuan dapat menjalankan Docker dan menerima koneksi SSH, server tersebut siap dikelola oleh Docker Orkes.
 - 📦 **Template Stack Deklaratif**: Definisikan template aplikasi `docker-compose.yml` yang dapat digunakan ulang ke berbagai server node dengan variabel lingkungan yang dapat disesuaikan.
 - 🔍 **Deteksi Configuration Drift Real-Time**: Verifikasi checksum SHA-256 dan tinjau diff baris-demi-baris antara *Desired State* di Control Plane dan *Actual State* di server remote. Anda dapat memilih untuk **Reconcile** (menimpa server remote) atau **Adopt** (mengadopsi perubahan remote ke Git/Control Plane).
-- 📂 **Live Remote SFTP Editor**: Jelajahi direktori stack remote (`~/.docker-orkes/stacks/<stack-name>/`), buka file, edit langsung, dan jalankan redeploy instan `docker compose up -d` langsung dari web browser.
-- 📊 **Observabilitas Host**: Pantau kapasitas penyimpanan root disk (`df -h`) dan ringkasan vital container Docker beserta pemetaan port jaringan secara langsung.
+- 💻 **100% Offline Interactive Web Terminal**: Buka sesi terminal PTY langsung melalui browser via WebSocket ke host server maupun ke dalam container (`docker exec`) menggunakan aset xterm.js offline mandiri tanpa dependensi internet.
+- 📜 **Deployment Revisions & 1-Click Rollback**: Riwayat snapshot konfigurasi dan environment variables *forward-only* yang *immutable* dengan retensi terkelola untuk rollback instan dalam satu klik.
+- 📂 **Remote Stack Filesystem & Runtime Assets**: Navigasi struktur folder remote, pembuatan file/folder baru, upload berkas secara drag-and-drop dan folder rekursif (`webkitdirectory`), ekstraksi arsip remote (`.tar.gz`, `.zip`), proteksi masking rahasia, serta live editor dengan redeploy instan.
+- 🔔 **Proactive Liveness Poller & Alerting**: Pemeriksaan latar belakang otomatis terhadap status node, kesehatan kontainer, dan drift konfigurasi dengan notifikasi langsung via Telegram Bot, Discord Webhook, atau HTTP Webhook.
+- 📊 **Observabilitas Host & Log Kontainer**: Pantau kapasitas penyimpanan disk (`df -h`), vital Docker engine, pemetaan port kontainer, dan peninjau live logs kontainer secara real-time.
 - 🔄 **Backup Otomatis ke Git Mirror**: Sinkronkan seluruh konfigurasi stack, env node, dan `inventory.json` ke repositori Git eksternal (GitHub, GitLab, Gitea) sebagai audit log berversi.
 - ⚡ **Auto-Inject SSH Key**: Pasang Control Plane SSH Public Key ke server target baru secara otomatis menggunakan password sementara sekali pakai (password tidak pernah disimpan ke database).
 - 🌐 **Antarmuka Bilingual**: Beralih antara Bahasa Indonesia dan Bahasa Inggris secara instan langsung dari antarmuka dashboard.
@@ -82,15 +85,18 @@ go build -o docker-orkes ./cmd/docker-orkes
 
 ### 2. Jalankan Control Plane
 ```bash
-./docker-orkes -addr :9000 -pass password-rahasia-anda
+./docker-orkes -addr :8080 -pass password-rahasia-anda
 ```
 
-Parameter yang didukung:
-- `-addr`: Alamat listen web server (default: `:9000`).
-- `-pass`: Password login master untuk dasbor control plane.
-- `-db`: Jalur file database SQLite (default: `docker-orkes.db`).
+Buka peramban (browser) Anda dan akses `http://localhost:8080`. Masuk menggunakan password yang telah Anda tetapkan.
 
-Buka peramban (browser) Anda dan akses `http://localhost:9000`. Masuk menggunakan password yang telah Anda tetapkan.
+### Parameter Opsi & Environment Variables
+
+| Flag CLI | Environment Variable | Nilai Default | Keterangan |
+| :--- | :--- | :--- | :--- |
+| `-addr` | `ADDR` | `:8080` | Alamat listen dan port web server |
+| `-pass` | `MASTER_PASSWORD` | `admin` | Password login master untuk dasbor |
+| `-db` | `DB_PATH` | `docker-orkes.db` | Jalur file database SQLite |
 
 ---
 
@@ -100,6 +106,7 @@ Panduan langkah demi langkah dan rincian teknis telah tersedia:
 
 - 📖 [Panduan Memulai (Bahasa Indonesia)](docs/getting-started.id.md) | [Getting Started Guide (English)](docs/getting-started.md)
 - 🛠️ [Rincian Fitur & Arsitektur (Bahasa Indonesia)](docs/features.id.md) | [Feature Deep Dive & Architecture (English)](docs/features.md)
+- 📦 [Panduan Setup Registry Internal (Bahasa Indonesia)](docs/internal-registry.id.md) | [Internal Hybrid Image Registry Setup (English)](docs/internal-registry.md)
 - 🛡️ [Panduan Disaster Recovery & Standby (Bahasa Indonesia)](docs/disaster-recovery.id.md) | [Disaster Recovery & Standby Setup (English)](docs/disaster-recovery.md)
 - 📐 [Architecture Decision Records (ADRs)](docs/adr/)
   - [ADR 0001: Agentless SSH Architecture](docs/adr/0001-agentless-ssh-architecture.md)
@@ -108,6 +115,9 @@ Panduan langkah demi langkah dan rincian teknis telah tersedia:
   - [ADR 0004: Lightweight Liveness Poller and Edge-Triggered Alerting](docs/adr/0004-lightweight-poller-and-edge-triggered-alerting.md)
   - [ADR 0005: Forward-Only Deployment Revisions with Bounded Retention](docs/adr/0005-forward-only-deployment-revisions-with-bounded-retention.md)
   - [ADR 0006: Active-Passive Control Plane Replication](docs/adr/0006-active-passive-control-plane-replication.md)
+  - [ADR 0007: Internal Hybrid Image Registry Architecture](docs/adr/0007-internal-hybrid-image-registry.md)
+  - [ADR 0008: Remote Stack Filesystem and Runtime Assets Management](docs/adr/0008-remote-stack-filesystem-and-runtime-assets.md)
+  - [ADR 0009: Offline Web Terminal Architecture via WebSocket and PTY](docs/adr/0009-offline-web-terminal-pty.md)
 
 ---
 

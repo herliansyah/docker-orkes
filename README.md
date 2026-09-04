@@ -34,8 +34,11 @@ Everything is performed over secure, agentless **SSH**:
 - 🚀 **Agentless SSH Architecture**: Zero software footprint on target nodes. If the target server can run Docker and accept SSH connections, it can be managed by Docker Orkes.
 - 📦 **Declarative Stack Templates**: Define reusable `docker-compose.yml` templates and deploy them across any target node with customized environment variables.
 - 🔍 **Real-Time Configuration Drift Detection**: Verify SHA-256 checksums and review line-by-line diffs between the Control Plane's Desired State and the Actual State on remote nodes. Choose to either **Reconcile** (overwrite remote) or **Adopt** (pull remote changes into Git).
-- 📂 **Live Remote SFTP Editor**: Browse remote stack directories (`~/.docker-orkes/stacks/<stack-name>/`), view files, edit them directly, and trigger instant `docker compose up -d` redeployments without leaving the web UI.
-- 📊 **Host Observability**: Live disk usage utilization graphs (`df -h`) and Docker container vitals with real-time status and port bindings.
+- 💻 **100% Offline Interactive Web Terminal**: Launch low-latency browser PTY terminal sessions over WebSocket directly into node host shells or running container environments (`docker exec`) with bundled offline xterm.js assets.
+- 📜 **Deployment Revisions & 1-Click Rollback**: Maintain forward-only, immutable snapshot histories of compose configurations and environment variables with bounded retention for instant rollbacks.
+- 📂 **Remote Stack Filesystem & Runtime Assets**: Full remote directory browser, file creation, drag-and-drop & recursive folder upload (`webkitdirectory`), remote archive extraction (`.tar.gz`, `.zip`), secret masking, and live code editing with instant redeployment.
+- 🔔 **Proactive Liveness Poller & Alerting**: Automatic background auditing of host reachability, container health, and drift with edge-triggered webhook dispatches to Telegram, Discord, or generic endpoints.
+- 📊 **Host Observability & Container Logs**: Real-time disk usage telemetry (`df -h`), Docker engine vitals, container port mappings, and live container logs viewer.
 - 🔄 **Automated Git Mirror Backup**: Maintain an external Git repository (GitHub, GitLab, Gitea) as a versioned audit log of all stack templates, deployment variables, and inventory.
 - ⚡ **Auto-Inject SSH Key**: Bootstrap new nodes automatically using temporary SSH passwords—the password is used once to append the Control Plane's public key to `~/.ssh/authorized_keys` and is never saved.
 - 🌐 **Bilingual Interface**: Seamlessly switch between English and Bahasa Indonesia with instant client-side localization.
@@ -82,15 +85,18 @@ go build -o docker-orkes ./cmd/docker-orkes
 
 ### 2. Launch Control Plane
 ```bash
-./docker-orkes -addr :9000 -pass your-secure-password
+./docker-orkes -addr :8080 -pass your-secure-password
 ```
 
-Parameters:
-- `-addr`: Web server listening address (default: `:9000`).
-- `-pass`: Master login password for the control plane dashboard.
-- `-db`: SQLite database file path (default: `docker-orkes.db`).
+Open your browser and navigate to `http://localhost:8080`. Log in with your password.
 
-Open your browser and navigate to `http://localhost:9000`. Log in with your password.
+### Configuration Flags & Environment Variables
+
+| Flag | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-addr` | `ADDR` | `:8080` | Web server listening address and port |
+| `-pass` | `MASTER_PASSWORD` | `admin` | Master login password for the control plane |
+| `-db` | `DB_PATH` | `docker-orkes.db` | SQLite database file path |
 
 ---
 
@@ -100,6 +106,7 @@ Comprehensive guides and technical documentation are available:
 
 - 📖 [Getting Started Guide (English)](docs/getting-started.md) | [Panduan Memulai (Bahasa Indonesia)](docs/getting-started.id.md)
 - 🛠️ [Feature Deep Dive & Architecture (English)](docs/features.md) | [Rincian Fitur & Arsitektur (Bahasa Indonesia)](docs/features.id.md)
+- 📦 [Internal Hybrid Image Registry Setup (English)](docs/internal-registry.md) | [Panduan Setup Registry Internal (Bahasa Indonesia)](docs/internal-registry.id.md)
 - 🛡️ [Disaster Recovery & Standby Setup (English)](docs/disaster-recovery.md) | [Disaster Recovery & Standby Setup (Bahasa Indonesia)](docs/disaster-recovery.id.md)
 - 📐 [Architecture Decision Records (ADRs)](docs/adr/)
   - [ADR 0001: Agentless SSH Architecture](docs/adr/0001-agentless-ssh-architecture.md)
@@ -108,6 +115,9 @@ Comprehensive guides and technical documentation are available:
   - [ADR 0004: Lightweight Liveness Poller and Edge-Triggered Alerting](docs/adr/0004-lightweight-poller-and-edge-triggered-alerting.md)
   - [ADR 0005: Forward-Only Deployment Revisions with Bounded Retention](docs/adr/0005-forward-only-deployment-revisions-with-bounded-retention.md)
   - [ADR 0006: Active-Passive Control Plane Replication](docs/adr/0006-active-passive-control-plane-replication.md)
+  - [ADR 0007: Internal Hybrid Image Registry Architecture](docs/adr/0007-internal-hybrid-image-registry.md)
+  - [ADR 0008: Remote Stack Filesystem and Runtime Assets Management](docs/adr/0008-remote-stack-filesystem-and-runtime-assets.md)
+  - [ADR 0009: Offline Web Terminal Architecture via WebSocket and PTY](docs/adr/0009-offline-web-terminal-pty.md)
 
 ---
 

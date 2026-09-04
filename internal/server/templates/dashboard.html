@@ -1560,6 +1560,40 @@
               <a href="https://github.com/herliansyah/docker-orkes/blob/main/docs/features.id.md" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">Bahasa Indonesia (ID) ↗</a>
             </div>
           </div>
+
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
+            <h4 class="font-semibold text-indigo-400 flex items-center gap-1.5 text-sm">
+              <span>🛡️</span> <span data-i18n="doc_dr">Disaster Recovery</span>
+            </h4>
+            <p class="text-slate-400 text-[11px]" data-i18n="doc_dr_desc">Active-Passive warm standby replication topology, automated SQLite sync, and emergency failover runbook.</p>
+            <div class="flex items-center gap-3 pt-2">
+              <a href="https://github.com/herliansyah/docker-orkes/blob/main/docs/disaster-recovery.md" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">English (EN) ↗</a>
+              <span class="text-slate-700">|</span>
+              <a href="https://github.com/herliansyah/docker-orkes/blob/main/docs/disaster-recovery.id.md" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">Bahasa Indonesia (ID) ↗</a>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
+            <h4 class="font-semibold text-indigo-400 flex items-center gap-1.5 text-sm">
+              <span>📦</span> <span data-i18n="doc_registry">Internal Hybrid Registry</span>
+            </h4>
+            <p class="text-slate-400 text-[11px]" data-i18n="doc_registry_desc">Deploy lightweight Zot OCI registry with on-demand Docker Hub caching and private image storage.</p>
+            <div class="flex items-center gap-3 pt-2">
+              <a href="https://github.com/herliansyah/docker-orkes/blob/main/docs/internal-registry.md" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">English (EN) ↗</a>
+              <span class="text-slate-700">|</span>
+              <a href="https://github.com/herliansyah/docker-orkes/blob/main/docs/internal-registry.id.md" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">Bahasa Indonesia (ID) ↗</a>
+            </div>
+          </div>
+
+          <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-2">
+            <h4 class="font-semibold text-indigo-400 flex items-center gap-1.5 text-sm">
+              <span>📐</span> <span data-i18n="doc_adrs">Architecture Decision Records</span>
+            </h4>
+            <p class="text-slate-400 text-[11px]" data-i18n="doc_adrs_desc">Formal technical decisions (ADR 0001 - 0009) covering agentless SSH, revisions, offline terminal PTY, and assets.</p>
+            <div class="flex items-center gap-3 pt-2">
+              <a href="https://github.com/herliansyah/docker-orkes/tree/main/docs/adr" target="_blank" rel="noopener" class="text-indigo-400 hover:underline">Browse ADRs (0001–0009) ↗</a>
+            </div>
+          </div>
         </div>
 
         <!-- Architecture Digest -->
@@ -1931,6 +1965,12 @@
         doc_gs_desc: "Step-by-step tutorial on bootstrapping target nodes, creating compose stacks, and deploying applications.",
         doc_features: "Features & Architecture",
         doc_feat_desc: "Deep dive into Agentless SSH transport, Drift Detection, Live SFTP Editor, and Git Mirror backup mechanics.",
+        doc_dr: "Disaster Recovery",
+        doc_dr_desc: "Active-Passive warm standby replication topology, automated SQLite sync, and emergency failover runbook.",
+        doc_registry: "Internal Hybrid Registry",
+        doc_registry_desc: "Deploy lightweight Zot OCI registry with on-demand Docker Hub caching and private image storage.",
+        doc_adrs: "Architecture Decision Records",
+        doc_adrs_desc: "Formal technical decisions (ADR 0001 - 0009) covering agentless SSH, revisions, offline terminal PTY, and assets.",
         doc_workflow_title: "Core Operational Workflow",
         doc_wf_1_t: "Register Node",
         doc_wf_1_d: "Add server host/IP and user. Use Auto-Inject SSH Key or authorize manually in ~/.ssh/authorized_keys.",
@@ -2075,6 +2115,12 @@
         doc_gs_desc: "Tutorial langkah demi langkah mendaftarkan server, membuat stack, hingga menjalankan deployment pertama.",
         doc_features: "Fitur & Arsitektur",
         doc_feat_desc: "Penjelasan mendalam mekanisme SSH tanpa agen, deteksi drift, live SFTP editor, dan backup Git mirror.",
+        doc_dr: "Disaster Recovery",
+        doc_dr_desc: "Topologi replikasi warm standby Active-Passive, sinkronisasi otomatis SQLite, dan failover darurat.",
+        doc_registry: "Registry Hybrid Internal",
+        doc_registry_desc: "Deploy OCI registry Zot yang ringan dengan caching on-demand Docker Hub dan penyimpanan image privat.",
+        doc_adrs: "Architecture Decision Records",
+        doc_adrs_desc: "Spesifikasi ADR formal (0001 - 0009) mencakup agentless SSH, revisi, terminal web offline PTY, dan assets.",
         doc_workflow_title: "Alur Kerja Operasional Utama",
         doc_wf_1_t: "Daftarkan Node",
         doc_wf_1_d: "Masukkan IP/Host server dan user SSH. Pasang kunci otomatis atau manual via authorized_keys.",

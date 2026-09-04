@@ -26,10 +26,18 @@ go build -o docker-orkes ./cmd/docker-orkes
 
 ### Menjalankan Control Plane
 ```bash
-./docker-orkes -addr :9000 -pass password-rahasia-anda
+./docker-orkes -addr :8080 -pass password-rahasia-anda
 ```
 
-Akses `http://localhost:9000` melalui browser Anda dan login dengan password yang telah Anda masukkan.
+Atau menggunakan variabel lingkungan (*environment variables*):
+```bash
+export ADDR=":8080"
+export MASTER_PASSWORD="password-rahasia-anda"
+export DB_PATH="docker-orkes.db"
+./docker-orkes
+```
+
+Akses `http://localhost:8080` melalui browser Anda dan login dengan password yang telah Anda masukkan.
 
 ---
 
@@ -91,7 +99,7 @@ Docker Orkes akan secara otomatis:
 - Membuat direktori stack `~/.docker-orkes/stacks/<stack-name>/`.
 - Mengunggah file `docker-compose.yml` dan `.env`.
 - Menjalankan `docker compose up -d`.
-- Mencatat status dan hash Desired State di database.
+- Mencatat status, hash Desired State, dan entri snapshot revisi awal di database.
 
 ---
 
@@ -104,3 +112,45 @@ Docker Orkes akan secara otomatis:
 3. Tentukan nama branch (misal `main`).
 4. Jika menggunakan SSH, salin Control Plane SSH Public Key dan tambahkan sebagai **Deploy Key dengan akses Write** di repositori GitHub/GitLab Anda.
 5. Klik tombol **Save & Sync Mirror**. Docker Orkes akan melakukan commit dan push seluruh konfigurasi secara otomatis.
+
+---
+
+## 7. Mengelola File Remote & Runtime Assets
+
+1. Pada tabel **Active Deployments**, klik tombol **📁 Files** pada salah satu baris deployment.
+2. Jelajahi struktur file dan folder di dalam direktori `~/.docker-orkes/stacks/<stack-name>/`.
+3. Buat file baru (misal `nginx.conf`) atau subdirektori melalui tombol `+File` / `+Folder`.
+4. Unggah berkas atau folder bersarang sekaligus menggunakan tombol **Upload** atau fitur *drag-and-drop*.
+5. Unggah arsip `.tar.gz` atau `.zip`, lalu klik tombol **Extract** untuk mengekstrak aset di server remote.
+6. Sunting file teks langsung di editor web dan klik **Save & Redeploy** untuk memuat ulang kontainer seketika.
+
+---
+
+## 8. Membuka Web Terminal Interaktif (PTY)
+
+1. **Terminal Host**:
+   - Pada tab **Managed Nodes**, klik tombol **Terminal** pada kartu server tujuan.
+   - Sesi terminal browser berlatensi rendah akan terhubung via WebSocket langsung ke shell sistem operasi remote host.
+2. **Terminal Kontainer**:
+   - Pada tab **Active Deployments** atau halaman **Node Detail**, buka menu dropdown **Terminal** lalu pilih **Container Terminal**.
+   - Pilih kontainer target; Docker Orkes membuka sesi interaktif langsung di dalam kontainer (`docker exec -it /bin/sh` atau `/bin/bash`).
+
+---
+
+## 9. Riwayat Revisi Deployment & Rollback Instan
+
+1. Pada tab **Active Deployments**, klik tombol **📜 Revisions** pada deployment yang diinginkan.
+2. Tinjau rekaman snapshot konfigurasi compose, nilai variabel lingkungan, dan timestamp sebelumnya.
+3. Klik tombol **Rollback** pada revisi yang ingin dipulihkan. Sistem akan membuat entri revisi baru (*forward-only*) dan langsung mendeploykannya ke server host.
+
+---
+
+## 10. Konfigurasi Notifikasi & Poller Latar Belakang
+
+1. Klik tombol **⚙️ Settings** di bilah navigasi atas.
+2. Pada bagian **Liveness Poller Settings**, tentukan interval polling (misal `2m`).
+3. Pada bagian **Notification Channels**, pilih platform notifikasi Anda:
+   - **Telegram**: Masukkan Bot Token dan Chat ID penerima.
+   - **Discord**: Masukkan Webhook URL dari channel Discord Anda.
+   - **Custom Webhook**: Masukkan URL HTTP endpoint yang menerima payload JSON.
+4. Klik tombol **Send Test Alert** untuk memastikan notifikasi terkirim, lalu simpan pengaturan.

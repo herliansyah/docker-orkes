@@ -26,10 +26,18 @@ go build -o docker-orkes ./cmd/docker-orkes
 
 ### Starting the Control Plane
 ```bash
-./docker-orkes -addr :9000 -pass your-secure-password
+./docker-orkes -addr :8080 -pass your-secure-password
 ```
 
-Open `http://localhost:9000` in your web browser and sign in with the password you specified.
+Or via environment variables:
+```bash
+export ADDR=":8080"
+export MASTER_PASSWORD="your-secure-password"
+export DB_PATH="docker-orkes.db"
+./docker-orkes
+```
+
+Open `http://localhost:8080` in your web browser and sign in with the password you specified.
 
 ---
 
@@ -91,7 +99,7 @@ Docker Orkes will:
 - Create the dedicated stack directory `~/.docker-orkes/stacks/<stack-name>/`.
 - Upload `docker-compose.yml` and `.env`.
 - Execute `docker compose up -d`.
-- Store the deployment status and desired state hash in the database.
+- Store the deployment status, desired state hash, and initial revision snapshot in the database.
 
 ---
 
@@ -104,3 +112,45 @@ Docker Orkes will:
 3. Set the target branch (e.g. `main`).
 4. If using SSH, copy the Control Plane SSH Public Key and add it as a **Deploy Key with Write Access** in your GitHub/GitLab repository settings.
 5. Click **Save & Sync Mirror**. Docker Orkes will commit all stacks and deployment manifests and push them to your repository.
+
+---
+
+## 7. Managing Remote Files & Runtime Assets
+
+1. On the **Active Deployments** table, click the **📁 Files** button on any deployment.
+2. Browse files and folders under `~/.docker-orkes/stacks/<stack-name>/`.
+3. Create auxiliary files (e.g. `nginx.conf`) or subdirectories (`+File` / `+Folder`).
+4. Upload files or entire nested directories using the **Upload** menu or by dragging and dropping them into the window.
+5. Upload `.tar.gz` or `.zip` archives and click **Extract** to unpack assets on the remote server.
+6. Edit configuration files in the integrated editor and click **Save & Redeploy** to reload containers immediately.
+
+---
+
+## 8. Opening Interactive Web Terminal (PTY)
+
+1. **Host Terminal**:
+   - On the **Managed Nodes** tab, click **Terminal** on any node card.
+   - A low-latency browser terminal connects over WebSocket directly to the remote server shell.
+2. **Container Terminal**:
+   - On the **Active Deployments** tab or **Node Detail** page, open the **Terminal** dropdown menu and select **Container Terminal**.
+   - Pick the target container; Docker Orkes launches an interactive session directly inside the container (`docker exec -it /bin/sh` or `/bin/bash`).
+
+---
+
+## 9. Deployment Revisions & Instant Rollback
+
+1. On the **Active Deployments** tab, click the **📜 Revisions** button on any deployment.
+2. Review historical snapshots of compose manifests, environment variables, and timestamps.
+3. Click **Rollback** on any previous revision to restore that exact state. A new forward-only revision is created and immediately redeployed to the host node.
+
+---
+
+## 10. Configuring Alerts & Background Poller
+
+1. Click **⚙️ Settings** in the navigation bar.
+2. Under **Liveness Poller Settings**, customize the audit polling interval (e.g. `2m`).
+3. Under **Notification Channels**, select your alert provider:
+   - **Telegram**: Provide Bot Token and Chat ID.
+   - **Discord**: Provide Discord Webhook URL.
+   - **Custom Webhook**: Provide generic JSON HTTP URL.
+4. Click **Send Test Alert** to verify connectivity, then save settings.
