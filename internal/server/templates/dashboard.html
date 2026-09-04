@@ -15,773 +15,967 @@
         <span class="font-bold text-lg tracking-tight">Docker Orkes</span>
         <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">Control Plane</span>
       </div>
-      <form method="POST" action="/logout">
-        <button type="submit" class="text-sm text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 transition">
-          Sign Out
+      <div class="flex items-center gap-3">
+        <button type="button" onclick="openSettingsModal()"
+          class="inline-flex items-center gap-1.5 text-sm text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition shadow-sm">
+          <span>⚙️</span>
+          <span>Settings</span>
         </button>
-      </form>
+        <form method="POST" action="/logout">
+          <button type="submit" class="text-sm text-slate-400 hover:text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-slate-600 transition">
+            Sign Out
+          </button>
+        </form>
+      </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-    <!-- SSH Public Key Banner -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
-      <div class="flex items-start justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-slate-100 flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            Control Plane SSH Public Key
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">
-            Authorize this key on your remote nodes by appending it to <code class="text-indigo-400 bg-slate-950 px-1.5 py-0.5 rounded">~/.ssh/authorized_keys</code>.
-          </p>
-        </div>
-        <button onclick="copySSHKey()" id="copy-btn"
-          class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-          </svg>
-          <span id="copy-text">Copy Key</span>
-        </button>
-      </div>
-      <div class="mt-4">
-        <pre id="ssh-pub-key" class="bg-slate-950 border border-slate-800 p-3 rounded-lg text-xs font-mono text-emerald-400 select-all overflow-x-auto whitespace-pre-wrap break-all">{{.PublicKeySSH}}</pre>
-      </div>
-    </div>
-
-    <!-- Quick Stats Grid -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <!-- Quick Stats Grid (Clickable to switch tabs) -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Managed Nodes</div>
-        <div class="mt-2 flex items-baseline justify-between">
-          <div class="text-2xl font-bold text-slate-100">{{.NodeCount}}</div>
-          <span class="text-xs text-slate-500">Target Servers</span>
+      <div onclick="switchTab('deployments')"
+        class="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 cursor-pointer transition shadow-sm group">
+        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider group-hover:text-indigo-400 transition flex items-center justify-between">
+          <span>Active Deployments</span>
+          <span class="text-slate-600 group-hover:text-indigo-400">↗</span>
         </div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Stack Templates</div>
-        <div class="mt-2 flex items-baseline justify-between">
-          <div class="text-2xl font-bold text-slate-100">{{.StackCount}}</div>
-          <span class="text-xs text-slate-500">Compose Definitions</span>
-        </div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider">Active Deployments</div>
         <div class="mt-2 flex items-baseline justify-between">
           <div class="text-2xl font-bold text-slate-100">{{.DeploymentCount}}</div>
           <span class="text-xs text-slate-500">Running on Nodes</span>
         </div>
       </div>
+
+      <div onclick="switchTab('nodes')"
+        class="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 cursor-pointer transition shadow-sm group">
+        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider group-hover:text-indigo-400 transition flex items-center justify-between">
+          <span>Managed Nodes</span>
+          <span class="text-slate-600 group-hover:text-indigo-400">↗</span>
+        </div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <div class="text-2xl font-bold text-slate-100">{{.NodeCount}}</div>
+          <span class="text-xs text-slate-500">Target Servers</span>
+        </div>
+      </div>
+
+      <div onclick="switchTab('stacks')"
+        class="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 cursor-pointer transition shadow-sm group">
+        <div class="text-xs font-medium text-slate-400 uppercase tracking-wider group-hover:text-indigo-400 transition flex items-center justify-between">
+          <span>Stack Templates</span>
+          <span class="text-slate-600 group-hover:text-indigo-400">↗</span>
+        </div>
+        <div class="mt-2 flex items-baseline justify-between">
+          <div class="text-2xl font-bold text-slate-100">{{.StackCount}}</div>
+          <span class="text-xs text-slate-500">Compose Definitions</span>
+        </div>
+      </div>
     </div>
 
-    <!-- Global Operator Runbook & Scratchpad Card -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm">📋</div>
-          <div>
-            <h2 class="text-base font-semibold text-slate-100">Operator Runbook & Global Notes</h2>
-            <p class="text-xs text-slate-400 mt-0.5">Shared operational checklist, maintenance reminders, and infrastructure notes (synced to Git as RUNBOOK.md).</p>
-          </div>
-        </div>
-        <button type="button" onclick="document.getElementById('runbook-editor').classList.toggle('hidden')"
-          class="text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition">
-          ✏️ Edit Runbook
+    <!-- Tab Navigation Bar -->
+    <div class="border-b border-slate-800 flex items-center justify-between gap-4 overflow-x-auto">
+      <nav class="flex space-x-2" aria-label="Tabs">
+        <button type="button" onclick="switchTab('deployments')" id="tab-btn-deployments"
+          class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
+          <span>🚀 Active Deployments</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">{{.DeploymentCount}}</span>
         </button>
-      </div>
-
-      <!-- Preview when closed -->
-      {{if .RunbookNotes}}
-      <div class="bg-slate-950/60 border border-slate-800/80 rounded-lg p-4 font-mono text-xs text-slate-300 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
-{{.RunbookNotes}}
-      </div>
-      {{else}}
-      <div class="bg-slate-950/40 border border-dashed border-slate-800 rounded-lg p-4 text-xs text-slate-500 italic">
-        Belum ada catatan global. Klik 'Edit Runbook' untuk menulis panduan operasional, jadwal maintenance, atau checklist tim.
-      </div>
-      {{end}}
-
-      <!-- Collapsible Editor Form -->
-      <form id="runbook-editor" method="POST" action="/settings/runbook" class="hidden space-y-3 pt-2">
-        <textarea name="runbook_notes" rows="6" placeholder="Tuliskan catatan checklist operasional, jadwal maintenance server, atau nomor kontak tim di sini..."
-          class="w-full font-mono bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed">{{.RunbookNotes}}</textarea>
-        <div class="flex justify-end gap-2">
-          <button type="button" onclick="document.getElementById('runbook-editor').classList.add('hidden')"
-            class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Batal</button>
-          <button type="submit"
-            class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-sm">Simpan Runbook</button>
-        </div>
-      </form>
+        <button type="button" onclick="switchTab('nodes')" id="tab-btn-nodes"
+          class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
+          <span>🖥️ Managed Nodes</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">{{.NodeCount}}</span>
+        </button>
+        <button type="button" onclick="switchTab('stacks')" id="tab-btn-stacks"
+          class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
+          <span>📦 Stack Templates</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">{{.StackCount}}</span>
+        </button>
+        <button type="button" onclick="switchTab('runbook')" id="tab-btn-runbook"
+          class="tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition">
+          <span>📋 Runbook & Notes</span>
+        </button>
+      </nav>
     </div>
 
-    <!-- Nodes Inventory Section -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-slate-100">Managed Nodes</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Remote servers running Docker managed by this control plane.</p>
-        </div>
-        <button onclick="document.getElementById('add-node-modal').classList.toggle('hidden')"
-          class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm">
-          + Add Node
-        </button>
-      </div>
-
-      <!-- Add Node Form (collapsible) -->
-      <div id="add-node-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5 space-y-4">
-        <h3 class="text-sm font-semibold text-slate-200">Register New Remote Node</h3>
-        <form method="POST" action="/nodes" class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">Friendly Name</label>
-              <input type="text" name="name" required placeholder="e.g. Production US-East"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">Hostname or IP</label>
-              <input type="text" name="host" required placeholder="192.168.1.100 or vps.example.com"
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">SSH Port</label>
-              <input type="number" name="port" value="22" required
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">SSH User</label>
-              <input type="text" name="user" value="root" required
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            </div>
-          </div>
-
+    <!-- TAB 1: Deployments Panel -->
+    <section id="tab-panel-deployments" class="tab-panel space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">
-              Notes / Catatan Server <span class="text-slate-500 font-normal">(Opsional — Lokasi datacenter, spesifikasi RAM/CPU, PIC, dsb)</span>
-            </label>
-            <input type="text" name="notes" placeholder="Contoh: Hetzner Falkenstein (4 vCPU, 8GB RAM). PIC: Budi. Nginx reverse proxy di port 80."
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <h2 class="text-base font-semibold text-slate-100">Active Deployments</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Instances of stacks running across your remote nodes.</p>
           </div>
+          <button onclick="document.getElementById('new-deployment-modal').classList.toggle('hidden')"
+            class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm self-start sm:self-auto">
+            + New Deployment
+          </button>
+        </div>
 
-
-          <!-- Auto Key Injection (Password) -->
-          <div class="bg-indigo-950/20 border border-indigo-500/20 rounded-lg p-3.5 space-y-2">
-            <div class="flex items-center justify-between">
-              <label class="block text-xs font-semibold text-indigo-300">
-                ⚡ Auto-Inject SSH Key via Password <span class="font-normal text-slate-400">(Opsional — Pasang Key Otomatis Sekali Saja)</span>
-              </label>
+        <!-- Filter & Search Toolbar for Deployments -->
+        <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+            <div class="relative flex-1 max-w-md">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">🔍</span>
+              <input type="text" id="deployments-search" oninput="filterDeployments()"
+                placeholder="Search by stack, target node, notes..."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
             </div>
-            <input type="password" name="ssh_password" placeholder="Masukkan password SSH server tujuan jika ingin key dipasang otomatis"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <p class="text-[11px] text-slate-400">
-              Jika diisi, Docker Orkes akan otomatis login sekali saja ke server tujuan, memasang public key ke <code class="text-indigo-400">~/.ssh/authorized_keys</code>, dan langsung mengaktifkan server. Password ini <strong>tidak pernah disimpan</strong> di database.
-            </p>
+
+            <div class="flex items-center gap-2">
+              <select id="deployments-status-filter" onchange="filterDeployments()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all">All Status</option>
+                <option value="running">Running</option>
+                <option value="stopped">Stopped</option>
+                <option value="failed">Failed</option>
+              </select>
+
+              <select id="deployments-drift-filter" onchange="filterDeployments()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all">All Drift</option>
+                <option value="synced">Synced</option>
+                <option value="drifted">Drifted</option>
+                <option value="untested">Untested</option>
+              </select>
+            </div>
           </div>
 
-          <div class="flex gap-2 justify-end">
-            <button type="button" onclick="document.getElementById('add-node-modal').classList.add('hidden')"
-              class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
-              Cancel
-            </button>
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
-              Save & Setup Node
+          <div class="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+            <span id="deployments-count" class="text-slate-400 text-[11px] font-mono whitespace-nowrap"></span>
+            <button type="button" id="deployments-reset-btn" onclick="resetDeploymentsFilter()"
+              class="hidden text-[11px] text-slate-400 hover:text-indigo-400 underline transition">
+              Reset
             </button>
           </div>
-        </form>
-      </div>
+        </div>
 
-
-      <!-- Nodes Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              <th class="py-3 px-4">Node</th>
-              <th class="py-3 px-4">Endpoint</th>
-              <th class="py-3 px-4">Status</th>
-              <th class="py-3 px-4">Docker Info</th>
-              <th class="py-3 px-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-800/60 text-xs">
-            {{range .Nodes}}
-            <tr class="hover:bg-slate-800/30 transition">
-              <td class="py-3.5 px-4 font-medium text-slate-200">
-                <div class="font-semibold text-slate-100">{{.Name}}</div>
-                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
-                <div class="text-[11px] text-slate-500 font-mono">ID: {{.ID}}</div>
-              </td>
-              <td class="py-3.5 px-4 font-mono text-slate-300">
-                {{.User}}@{{.Host}}:{{.Port}}
-              </td>
-              <td class="py-3.5 px-4">
-                {{if eq .Status "online"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
-                </span>
-                {{else if eq .Status "offline"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
-                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
-                </span>
-                {{else}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Untested
-                </span>
-                {{end}}
-              </td>
-              <td class="py-3.5 px-4 text-slate-400">
-                {{if .DockerVersion}}
-                  <span class="font-mono text-[11px] text-slate-300">{{.DockerVersion}}</span>
-                {{else if .LastError}}
-                  <span class="text-rose-400 text-[11px] truncate max-w-xs block" title="{{.LastError}}">{{.LastError}}</span>
-                {{else}}
-                  <span class="text-slate-500 italic">Run test connection</span>
-                {{end}}
-              </td>
-              <td class="py-3.5 px-4 text-right">
-                <div class="inline-flex items-center gap-2">
-                  <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded text-xs transition">
-                    Metrics & Containers
-                  </a>
-                  <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.toggle('hidden')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition">
-                    Edit
-                  </button>
-                  {{if ne .Status "online"}}
-                  <button type="button" onclick="document.getElementById('inject-key-{{.ID}}').classList.toggle('hidden')" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded text-xs transition" title="Auto-install SSH public key using password once">
-                    ⚡ Auto-Inject Key
-                  </button>
+        <!-- New Deployment Form (collapsible) -->
+        <div id="new-deployment-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-4">Deploy Stack to Node</h3>
+          <form method="POST" action="/deployments" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Select Stack</label>
+                <select name="stack_id" required
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <option value="">-- Choose a stack template --</option>
+                  {{range .Stacks}}
+                  <option value="{{.ID}}">{{.Name}}</option>
                   {{end}}
-                  <form method="POST" action="/nodes/{{.ID}}/test">
-                    <button type="submit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
-                      Test Connection
-                    </button>
-                  </form>
-                  <form method="POST" action="/nodes/{{.ID}}/delete" onsubmit="return confirm('Are you sure you want to remove node {{.Name}}? All associated deployments will also be removed.');">
-                    <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded text-xs transition">
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-            <!-- Inline Edit Node Row -->
-            <tr id="edit-node-{{.ID}}" class="hidden bg-slate-950/90 border-b border-slate-800">
-              <td colspan="5" class="p-4">
-                <form method="POST" action="/nodes/{{.ID}}/update" class="space-y-3">
-                  <div class="font-semibold text-slate-200 text-xs">Edit Node Configuration</div>
-                  <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <div>
-                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Friendly Name</label>
-                      <input type="text" name="name" value="{{.Name}}" required
-                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Hostname or IP</label>
-                      <input type="text" name="host" value="{{.Host}}" required
-                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                      <label class="block text-[11px] font-medium text-slate-400 mb-1">SSH Port</label>
-                      <input type="number" name="port" value="{{.Port}}" required
-                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                    <div>
-                      <label class="block text-[11px] font-medium text-slate-400 mb-1">SSH User</label>
-                      <input type="text" name="user" value="{{.User}}" required
-                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Catatan Server</label>
-                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Lokasi server, spek hardware, kontak PIC, dsb"
-                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  </div>
-                  <div class="flex gap-2 justify-end">
-                    <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.add('hidden')"
-                      class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
-                    <button type="submit"
-                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Node Changes</button>
-                  </div>
-                </form>
-              </td>
-            </tr>
-            {{if ne .Status "online"}}
-
-            <tr id="inject-key-{{.ID}}" class="hidden bg-slate-950/80 border-b border-slate-800">
-              <td colspan="5" class="p-3.5">
-                <form method="POST" action="/nodes/{{.ID}}/bootstrap" class="flex items-center gap-3">
-                  <span class="text-xs font-medium text-amber-300 whitespace-nowrap">⚡ Auto-Inject SSH Key:</span>
-                  <input type="password" name="ssh_password" required placeholder="Masukkan SSH password untuk {{.User}}@{{.Host}}"
-                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 flex-1 max-w-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 px-3 rounded-lg text-xs transition">
-                    Pasang Key & Test
-                  </button>
-                  <button type="button" onclick="document.getElementById('inject-key-{{.ID}}').classList.add('hidden')"
-                    class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs transition">
-                    Batal
-                  </button>
-                </form>
-              </td>
-            </tr>
-            {{end}}
-
-
-            {{else}}
-            <tr>
-              <td colspan="5" class="py-8 text-center text-slate-500">
-                No managed nodes registered yet. Click <span class="text-indigo-400 font-medium">+ Add Node</span> to register your first server.
-              </td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Stack Templates Section -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-slate-100">Stack Templates</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Reusable docker-compose definitions ready to deploy to nodes.</p>
-        </div>
-        <button onclick="document.getElementById('add-stack-modal').classList.toggle('hidden')"
-          class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm">
-          + Add Stack
-        </button>
-      </div>
-
-      <!-- Add Stack Form (collapsible) -->
-      <div id="add-stack-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5">
-        <h3 class="text-sm font-semibold text-slate-200 mb-4">Create New Stack Template</h3>
-        <form method="POST" action="/stacks" class="space-y-4">
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Stack Name / Slug</label>
-            <input type="text" name="name" required placeholder="e.g. redis-cache or web-app"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">docker-compose.yml</label>
-            <textarea name="compose_yaml" rows="8" required placeholder="services:&#10;  app:&#10;    image: nginx:alpine&#10;    ports:&#10;      - '80:80'"
-              class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Default Environment Variables (optional, KEY=val per line)</label>
-            <textarea name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
-              class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Notes / Dokumentasi Template <span class="text-slate-500 font-normal">(Opsional — Prasyarat network, deskripsi service, port)</span></label>
-            <input type="text" name="notes" placeholder="Contoh: Butuh network 'proxy-net'. Default expose port 3000."
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          </div>
-          <div class="flex gap-2 justify-end">
-            <button type="button" onclick="document.getElementById('add-stack-modal').classList.add('hidden')"
-              class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
-              Cancel
-            </button>
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
-              Save Stack Template
-            </button>
-          </div>
-        </form>
-      </div>
-
-      <!-- Stacks Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              <th class="py-3 px-4">Stack Name</th>
-              <th class="py-3 px-4">Compose Definition</th>
-              <th class="py-3 px-4">Default Env</th>
-              <th class="py-3 px-4">Updated</th>
-              <th class="py-3 px-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-800/60 text-xs">
-            {{range .Stacks}}
-            <tr class="hover:bg-slate-800/30 transition">
-              <td class="py-3.5 px-4 font-semibold text-slate-100">
-                <div>{{.Name}}</div>
-                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
-                <div class="text-[11px] text-slate-500 font-mono font-normal">ID: {{.ID}}</div>
-              </td>
-              <td class="py-3.5 px-4">
-                <pre class="bg-slate-950 p-2 rounded text-[11px] font-mono text-emerald-400/90 max-h-20 overflow-y-auto max-w-sm whitespace-pre">{{.ComposeYAML}}</pre>
-              </td>
-              <td class="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
-                {{if .DefaultEnv}}
-                  <pre class="bg-slate-950 p-1.5 rounded text-[11px] font-mono text-slate-300 max-h-16 overflow-y-auto max-w-xs whitespace-pre">{{.DefaultEnv}}</pre>
-                {{else}}
-                  <span class="text-slate-600 italic">None</span>
-                {{end}}
-              </td>
-              <td class="py-3.5 px-4 text-slate-400 text-[11px]">
-                {{.UpdatedAt.Format "Jan 02, 15:04"}}
-              </td>
-              <td class="py-3.5 px-4 text-right">
-                <div class="inline-flex items-center gap-2">
-                  <button onclick="document.getElementById('edit-stack-{{.ID}}').classList.toggle('hidden')"
-                    class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
-                    Edit
-                  </button>
-                  <form method="POST" action="/stacks/{{.ID}}/delete" onsubmit="return confirm('Are you sure you want to delete stack {{.Name}}?');">
-                    <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded text-xs transition">
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-            <!-- Inline Edit Modal/Row -->
-            <tr id="edit-stack-{{.ID}}" class="hidden bg-slate-950/90">
-              <td colspan="5" class="p-4 border-b border-slate-800">
-                <form method="POST" action="/stacks/{{.ID}}/update" class="space-y-3">
-                  <div class="font-semibold text-slate-200 text-xs">Edit Stack: {{.Name}}</div>
-                  <input type="hidden" name="name" value="{{.Name}}">
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Compose YAML</label>
-                    <textarea name="compose_yaml" rows="6" required
-                      class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-emerald-400">{{.ComposeYAML}}</textarea>
-                  </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Env</label>
-                    <textarea name="default_env" rows="2"
-                      class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300">{{.DefaultEnv}}</textarea>
-                  </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Dokumentasi</label>
-                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Prasyarat network, deskripsi service, port, dsb"
-                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  </div>
-                  <div class="flex gap-2 justify-end">
-                    <button type="button" onclick="document.getElementById('edit-stack-{{.ID}}').classList.add('hidden')"
-                      class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded text-xs">Cancel</button>
-                    <button type="submit"
-                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Save Changes</button>
-                  </div>
-                </form>
-              </td>
-            </tr>
-            {{else}}
-
-            <tr>
-              <td colspan="5" class="py-8 text-center text-slate-500">
-                No stack templates created yet. Click <span class="text-indigo-400 font-medium">+ Add Stack</span> to create your first template.
-              </td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Deployments Section -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <h2 class="text-base font-semibold text-slate-100">Active Deployments</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Instances of stacks running across your remote nodes.</p>
-        </div>
-        <button onclick="document.getElementById('new-deployment-modal').classList.toggle('hidden')"
-          class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm">
-          + New Deployment
-        </button>
-      </div>
-
-      <!-- New Deployment Form (collapsible) -->
-      <div id="new-deployment-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5">
-        <h3 class="text-sm font-semibold text-slate-200 mb-4">Deploy Stack to Node</h3>
-        <form method="POST" action="/deployments" class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">Select Stack</label>
-              <select name="stack_id" required
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="">-- Choose a stack template --</option>
-                {{range .Stacks}}
-                <option value="{{.ID}}">{{.Name}}</option>
-                {{end}}
-              </select>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Target Node</label>
+                <select name="node_id" required
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <option value="">-- Choose a target node --</option>
+                  {{range .Nodes}}
+                  <option value="{{.ID}}">{{.Name}} ({{.Host}})</option>
+                  {{end}}
+                </select>
+              </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">Target Node</label>
-              <select name="node_id" required
-                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="">-- Choose a target node --</option>
-                {{range .Nodes}}
-                <option value="{{.ID}}">{{.Name}} ({{.Host}})</option>
-                {{end}}
-              </select>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Node-Specific Environment Variables (.env, KEY=val per line)</label>
+              <textarea name="env_vars" rows="4" placeholder="PORT=8080&#10;NODE_ENV=production"
+                class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
             </div>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Node-Specific Environment Variables (.env, KEY=val per line)</label>
-            <textarea name="env_vars" rows="4" placeholder="PORT=8080&#10;NODE_ENV=production"
-              class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Deployment Notes <span class="text-slate-500 font-normal">(Opsional — Nama klien, domain URL, info SSL, dsb)</span></label>
-            <input type="text" name="notes" placeholder="Contoh: Website PT Maju (Domain: https://maju.com), reverse proxy Cloudflare"
-              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-          </div>
-          <div class="flex gap-2 justify-end">
-            <button type="button" onclick="document.getElementById('new-deployment-modal').classList.add('hidden')"
-              class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
-              Cancel
-            </button>
-            <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
-              Deploy to Node
-            </button>
-          </div>
-        </form>
-      </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Deployment Notes <span class="text-slate-500 font-normal">(Opsional — Nama klien, domain URL, info SSL, dsb)</span></label>
+              <input type="text" name="notes" placeholder="Contoh: Website PT Maju (Domain: https://maju.com), reverse proxy Cloudflare"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button type="button" onclick="document.getElementById('new-deployment-modal').classList.add('hidden')"
+                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
+                Cancel
+              </button>
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+                Deploy to Node
+              </button>
+            </div>
+          </form>
+        </div>
 
-      <!-- Deployments Table -->
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              <th class="py-3 px-4">Stack</th>
-              <th class="py-3 px-4">Target Node</th>
-              <th class="py-3 px-4">Status</th>
-              <th class="py-3 px-4">Drift</th>
-              <th class="py-3 px-4">Last Updated</th>
-              <th class="py-3 px-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-800/60 text-xs">
-            {{range .Deployments}}
-            <tr class="hover:bg-slate-800/30 transition">
-              <td class="py-3.5 px-4 font-semibold text-slate-100">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm">📦</span>
-                  <span>{{.StackName}}</span>
-                </div>
-                {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
-                <div class="text-[11px] font-mono text-indigo-400 mt-0.5 flex items-center gap-1" title="Remote Directory Path"><span class="text-slate-500">📁</span> ~/.docker-orkes/stacks/{{.StackName}}/</div>
-                <div class="text-[11px] text-slate-500 font-mono font-normal">Deployment: {{.ID}}</div>
-              </td>
-
-              <td class="py-3.5 px-4 font-medium text-slate-300">
-                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px]">
-                  🖥️ {{.NodeName}}
-                </span>
-              </td>
-              <td class="py-3.5 px-4">
-                {{if eq .Status "running"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
-                </span>
-                {{else if eq .Status "stopped"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Stopped
-                </span>
-                {{else if eq .Status "failed"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Failed
-                </span>
-                {{else}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse">
-                  <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> {{.Status}}
-                </span>
-                {{end}}
-              </td>
-              <td class="py-3.5 px-4">
-                {{if eq .DriftStatus "synced"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  ✓ Synced
-                </span>
-                {{else if eq .DriftStatus "drifted"}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
-                  ⚠️ Drifted
-                </span>
-                {{else}}
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                  Untested
-                </span>
-                {{end}}
-              </td>
-              <td class="py-3.5 px-4 text-slate-400 text-[11px]">
-                {{.UpdatedAt.Format "Jan 02, 15:04"}}
-              </td>
-              <td class="py-3.5 px-4 text-right">
-                <div class="inline-flex items-center gap-1.5">
-                  <button type="button" onclick="openFileBrowser('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')"
-                    class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition" title="Browse files in remote directory">
-                    📂 Files
-                  </button>
-                  <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden')"
-                    class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition" title="Edit deployment environment variables">
-                    Edit Env
-                  </button>
-
-                  <form method="POST" action="/deployments/{{.ID}}/drift/check">
-                    <button type="submit" title="Compare remote files with desired state" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded text-xs transition">
-                      Check Drift
-                    </button>
-                  </form>
-                  <form method="POST" action="/deployments/{{.ID}}/up">
-                    <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition">
-                      Up
-                    </button>
-                  </form>
-                  <form method="POST" action="/deployments/{{.ID}}/restart">
-                    <button type="submit" title="Restart containers" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition">
-                      Restart
-                    </button>
-                  </form>
-                  <form method="POST" action="/deployments/{{.ID}}/down">
-                    <button type="submit" title="Stop stack" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-1 rounded text-xs transition">
-                      Down
-                    </button>
-                  </form>
-                  <form method="POST" action="/deployments/{{.ID}}/delete" onsubmit="return confirm('Delete this deployment record?');">
-                    <button type="submit" title="Delete deployment" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded text-xs transition">
-                      Delete
-                    </button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-            <!-- Inline Edit Deployment Env Row -->
-            <tr id="edit-dep-{{.ID}}" class="hidden bg-slate-950/90 border-b border-slate-800">
-              <td colspan="6" class="p-4">
-                <form method="POST" action="/deployments/{{.ID}}/update" class="space-y-3">
-                  <div class="flex items-center justify-between">
-                    <span class="font-semibold text-slate-200 text-xs">Edit Node Environment Variables (.env) for {{.StackName}} on {{.NodeName}}</span>
-                    <span class="text-[11px] text-slate-400">After saving, click 'Up' to redeploy to the remote node.</span>
+        <!-- Deployments Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse" id="deployments-table">
+            <thead>
+              <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <th class="py-3 px-4">Stack</th>
+                <th class="py-3 px-4">Target Node</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Drift</th>
+                <th class="py-3 px-4">Last Updated</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 text-xs">
+              {{range .Deployments}}
+              <tr class="deployment-row hover:bg-slate-800/30 transition"
+                data-id="{{.ID}}"
+                data-search="{{.StackName}} {{.NodeName}} {{.Notes}}"
+                data-status="{{.Status}}"
+                data-drift="{{.DriftStatus}}">
+                <td class="py-3.5 px-4 font-semibold text-slate-100">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm">📦</span>
+                    <span>{{.StackName}}</span>
                   </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Environment Variables (.env)</label>
-                    <textarea name="env_vars" rows="4" placeholder="KEY=value"
-                      class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">{{.EnvVars}}</textarea>
-                  </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Deployment Notes</label>
-                    <input type="text" name="notes" value="{{.Notes}}" placeholder="Keterangan project/klien, URL domain, dsb"
-                      class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  </div>
-                  <div class="flex gap-2 justify-end">
-                    <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.add('hidden')"
-                      class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
-                    <button type="submit"
-                      class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Changes</button>
-                  </div>
+                  {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                  <div class="text-[11px] font-mono text-indigo-400 mt-0.5 flex items-center gap-1" title="Remote Directory Path"><span class="text-slate-500">📁</span> ~/.docker-orkes/stacks/{{.StackName}}/</div>
+                  <div class="text-[11px] text-slate-500 font-mono font-normal">Deployment: {{.ID}}</div>
+                </td>
 
-                </form>
-              </td>
-            </tr>
-
-            {{if eq .DriftStatus "drifted"}}
-            <tr class="bg-amber-500/5 border-l-2 border-amber-500">
-              <td colspan="6" class="p-4 border-b border-slate-800">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
-                    ⚠️ Configuration Drift Detected on Remote Node
+                <td class="py-3.5 px-4 font-medium text-slate-300">
+                  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px]">
+                    🖥️ {{.NodeName}}
                   </span>
-                  <div class="inline-flex gap-2">
-                    <form method="POST" action="/deployments/{{.ID}}/drift/reconcile" onsubmit="return confirm('Overwrite remote server with Desired State?');">
-                      <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-medium transition">
-                        Reconcile (Overwrite Remote)
+                </td>
+                <td class="py-3.5 px-4">
+                  {{if eq .Status "running"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
+                  </span>
+                  {{else if eq .Status "stopped"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Stopped
+                  </span>
+                  {{else if eq .Status "failed"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Failed
+                  </span>
+                  {{else}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 animate-pulse">
+                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> {{.Status}}
+                  </span>
+                  {{end}}
+                </td>
+                <td class="py-3.5 px-4">
+                  {{if eq .DriftStatus "synced"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    ✓ Synced
+                  </span>
+                  {{else if eq .DriftStatus "drifted"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                    ⚠️ Drifted
+                  </span>
+                  {{else}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                    Untested
+                  </span>
+                  {{end}}
+                </td>
+                <td class="py-3.5 px-4 text-slate-400 text-[11px]">
+                  {{.UpdatedAt.Format "Jan 02, 15:04"}}
+                </td>
+                <td class="py-3.5 px-4 text-right">
+                  <div class="inline-flex items-center gap-1.5">
+                    <button type="button" onclick="openFileBrowser('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')"
+                      class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition" title="Browse files in remote directory">
+                      📂 Files
+                    </button>
+                    <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden')"
+                      class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition" title="Edit deployment environment variables">
+                      Edit Env
+                    </button>
+
+                    <form method="POST" action="/deployments/{{.ID}}/drift/check">
+                      <button type="submit" title="Compare remote files with desired state" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded text-xs transition">
+                        Check Drift
                       </button>
                     </form>
-                    <form method="POST" action="/deployments/{{.ID}}/drift/adopt" onsubmit="return confirm('Adopt remote changes as new Desired State?');">
-                      <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-medium transition">
-                        Adopt Remote
+                    <form method="POST" action="/deployments/{{.ID}}/up">
+                      <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition">
+                        Up
+                      </button>
+                    </form>
+                    <form method="POST" action="/deployments/{{.ID}}/restart">
+                      <button type="submit" title="Restart containers" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition">
+                        Restart
+                      </button>
+                    </form>
+                    <form method="POST" action="/deployments/{{.ID}}/down">
+                      <button type="submit" title="Stop stack" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-1 rounded text-xs transition">
+                        Down
+                      </button>
+                    </form>
+                    <form method="POST" action="/deployments/{{.ID}}/delete" onsubmit="return confirm('Delete this deployment record?');">
+                      <button type="submit" title="Delete deployment" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded text-xs transition">
+                        Delete
                       </button>
                     </form>
                   </div>
-                </div>
-                <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] font-mono max-h-48 overflow-y-auto whitespace-pre-wrap text-slate-300">{{.DiffOutput}}</div>
-              </td>
-            </tr>
-            {{end}}
-            {{if .LastLog}}
-            <tr class="bg-slate-950/40">
-              <td colspan="6" class="py-2 px-4 border-b border-slate-800/40">
-                <details class="text-[11px] text-slate-400">
-                  <summary class="cursor-pointer hover:text-slate-200">View Deployment Output Log</summary>
-                  <pre class="mt-2 bg-slate-950 p-2.5 rounded border border-slate-800 text-[11px] font-mono text-slate-300 max-h-32 overflow-y-auto whitespace-pre-wrap">{{.LastLog}}</pre>
-                </details>
-              </td>
-            </tr>
-            {{end}}
+                </td>
+              </tr>
+              <!-- Inline Edit Deployment Env Row -->
+              <tr id="edit-dep-{{.ID}}" class="hidden bg-slate-950/90 border-b border-slate-800 child-dep-{{.ID}}">
+                <td colspan="6" class="p-4">
+                  <form method="POST" action="/deployments/{{.ID}}/update" class="space-y-3">
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-slate-200 text-xs">Edit Node Environment Variables (.env) for {{.StackName}} on {{.NodeName}}</span>
+                      <span class="text-[11px] text-slate-400">After saving, click 'Up' to redeploy to the remote node.</span>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Environment Variables (.env)</label>
+                      <textarea name="env_vars" rows="4" placeholder="KEY=value"
+                        class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">{{.EnvVars}}</textarea>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Deployment Notes</label>
+                      <input type="text" name="notes" value="{{.Notes}}" placeholder="Keterangan project/klien, URL domain, dsb"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                      <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.add('hidden')"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
+                      <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Changes</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
 
-            {{else}}
-            <tr>
-              <td colspan="5" class="py-8 text-center text-slate-500">
-                No active deployments yet. Click <span class="text-indigo-400 font-medium">+ New Deployment</span> to deploy a stack to a node.
-              </td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
+              {{if eq .DriftStatus "drifted"}}
+              <tr class="bg-amber-500/5 border-l-2 border-amber-500 child-dep-{{.ID}}">
+                <td colspan="6" class="p-4 border-b border-slate-800">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                      ⚠️ Configuration Drift Detected on Remote Node
+                    </span>
+                    <div class="inline-flex gap-2">
+                      <form method="POST" action="/deployments/{{.ID}}/drift/reconcile" onsubmit="return confirm('Overwrite remote server with Desired State?');">
+                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded text-xs font-medium transition">
+                          Reconcile (Overwrite Remote)
+                        </button>
+                      </form>
+                      <form method="POST" action="/deployments/{{.ID}}/drift/adopt" onsubmit="return confirm('Adopt remote changes as new Desired State?');">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1 rounded text-xs font-medium transition">
+                          Adopt Remote
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                  <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-[11px] font-mono max-h-48 overflow-y-auto whitespace-pre-wrap text-slate-300">{{.DiffOutput}}</div>
+                </td>
+              </tr>
+              {{end}}
 
-    <!-- Git Mirror Backup Section -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <h2 class="text-base font-semibold text-slate-100">Git Mirror Backup Sync</h2>
-            {{if eq .GitMirrorStatus "synced"}}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Synced
-            </span>
-            {{else if eq .GitMirrorStatus "failed"}}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.GitMirrorError}}">
-              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Sync Failed
-            </span>
-            {{else}}
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
-              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Idle
-            </span>
-            {{end}}
-          </div>
-          <p class="text-xs text-slate-400 mt-0.5">
-            Automated Git commit & push of all Stacks, node deployment envs, and <code class="text-indigo-400">inventory.json</code>.
-            {{if .GitMirrorLastSync}}<span class="text-slate-500 ml-1">Last synced: {{.GitMirrorLastSync}}</span>{{end}}
-          </p>
+              {{if .LastLog}}
+              <tr class="bg-slate-950/40 child-dep-{{.ID}}">
+                <td colspan="6" class="py-2 px-4 border-b border-slate-800/40">
+                  <details class="text-[11px] text-slate-400">
+                    <summary class="cursor-pointer hover:text-slate-200">View Deployment Output Log</summary>
+                    <pre class="mt-2 bg-slate-950 p-2.5 rounded border border-slate-800 text-[11px] font-mono text-slate-300 max-h-32 overflow-y-auto whitespace-pre-wrap">{{.LastLog}}</pre>
+                  </details>
+                </td>
+              </tr>
+              {{end}}
+
+              {{else}}
+              <tr>
+                <td colspan="6" class="py-8 text-center text-slate-500">
+                  No active deployments yet. Click <span class="text-indigo-400 font-medium">+ New Deployment</span> to deploy a stack to a node.
+                </td>
+              </tr>
+              {{end}}
+
+              <!-- Dynamic No-Results Row -->
+              <tr id="deployments-no-results" class="hidden">
+                <td colspan="6" class="py-8 text-center text-slate-500">
+                  No deployments match your search and filter criteria.
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        {{if .GitMirrorURL}}
-        <form method="POST" action="/settings/git/sync">
-          <button type="submit" class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3.5 py-2 rounded-lg transition shadow-sm">
-            🔄 Sync Now
+      </div>
+    </section>
+
+    <!-- TAB 2: Nodes Panel -->
+    <section id="tab-panel-nodes" class="tab-panel hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-100">Managed Nodes</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Remote servers running Docker managed by this control plane.</p>
+          </div>
+          <button onclick="document.getElementById('add-node-modal').classList.toggle('hidden')"
+            class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm self-start sm:self-auto">
+            + Add Node
           </button>
-        </form>
+        </div>
+
+        <!-- Filter & Search Toolbar for Nodes -->
+        <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+            <div class="relative flex-1 max-w-md">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">🔍</span>
+              <input type="text" id="nodes-search" oninput="filterNodes()"
+                placeholder="Search by node name, IP, SSH user, notes..."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+
+            <div class="flex items-center gap-2">
+              <select id="nodes-status-filter" onchange="filterNodes()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="all">All Status</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="untested">Untested</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+            <span id="nodes-count" class="text-slate-400 text-[11px] font-mono whitespace-nowrap"></span>
+            <button type="button" id="nodes-reset-btn" onclick="resetNodesFilter()"
+              class="hidden text-[11px] text-slate-400 hover:text-indigo-400 underline transition">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Add Node Form (collapsible) -->
+        <div id="add-node-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5 space-y-4">
+          <h3 class="text-sm font-semibold text-slate-200">Register New Remote Node</h3>
+          <form method="POST" action="/nodes" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Friendly Name</label>
+                <input type="text" name="name" required placeholder="e.g. Production US-East"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Hostname or IP</label>
+                <input type="text" name="host" required placeholder="192.168.1.100 or vps.example.com"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">SSH Port</label>
+                <input type="number" name="port" value="22" required
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">SSH User</label>
+                <input type="text" name="user" value="root" required
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">
+                Notes / Catatan Server <span class="text-slate-500 font-normal">(Opsional — Lokasi datacenter, spesifikasi RAM/CPU, PIC, dsb)</span>
+              </label>
+              <input type="text" name="notes" placeholder="Contoh: Hetzner Falkenstein (4 vCPU, 8GB RAM). PIC: Budi. Nginx reverse proxy di port 80."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+
+            <!-- Auto Key Injection (Password) -->
+            <div class="bg-indigo-950/20 border border-indigo-500/20 rounded-lg p-3.5 space-y-2">
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-semibold text-indigo-300">
+                  ⚡ Auto-Inject SSH Key via Password <span class="font-normal text-slate-400">(Opsional — Pasang Key Otomatis Sekali Saja)</span>
+                </label>
+              </div>
+              <input type="password" name="ssh_password" placeholder="Masukkan password SSH server tujuan jika ingin key dipasang otomatis"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <p class="text-[11px] text-slate-400">
+                Jika diisi, Docker Orkes akan otomatis login sekali saja ke server tujuan, memasang public key ke <code class="text-indigo-400">~/.ssh/authorized_keys</code>, dan langsung mengaktifkan server. Password ini <strong>tidak pernah disimpan</strong> di database.
+              </p>
+            </div>
+
+            <div class="flex gap-2 justify-end">
+              <button type="button" onclick="document.getElementById('add-node-modal').classList.add('hidden')"
+                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
+                Cancel
+              </button>
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                Save & Setup Node
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Nodes Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse" id="nodes-table">
+            <thead>
+              <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <th class="py-3 px-4">Node</th>
+                <th class="py-3 px-4">Endpoint</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Docker Info</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 text-xs">
+              {{range .Nodes}}
+              <tr class="node-row hover:bg-slate-800/30 transition"
+                data-id="{{.ID}}"
+                data-search="{{.Name}} {{.Host}} {{.User}} {{.Port}} {{.Notes}}"
+                data-status="{{.Status}}">
+                <td class="py-3.5 px-4 font-medium text-slate-200">
+                  <div class="font-semibold text-slate-100">{{.Name}}</div>
+                  {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                  <div class="text-[11px] text-slate-500 font-mono">ID: {{.ID}}</div>
+                </td>
+                <td class="py-3.5 px-4 font-mono text-slate-300">
+                  {{.User}}@{{.Host}}:{{.Port}}
+                </td>
+                <td class="py-3.5 px-4">
+                  {{if eq .Status "online"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
+                  </span>
+                  {{else if eq .Status "offline"}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
+                    <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+                  </span>
+                  {{else}}
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Untested
+                  </span>
+                  {{end}}
+                </td>
+                <td class="py-3.5 px-4 text-slate-400">
+                  {{if .DockerVersion}}
+                    <span class="font-mono text-[11px] text-slate-300">{{.DockerVersion}}</span>
+                  {{else if .LastError}}
+                    <span class="text-rose-400 text-[11px] truncate max-w-xs block" title="{{.LastError}}">{{.LastError}}</span>
+                  {{else}}
+                    <span class="text-slate-500 italic">Run test connection</span>
+                  {{end}}
+                </td>
+                <td class="py-3.5 px-4 text-right">
+                  <div class="inline-flex items-center gap-2">
+                    <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded text-xs transition">
+                      Metrics & Containers
+                    </a>
+                    <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.toggle('hidden')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition">
+                      Edit
+                    </button>
+                    {{if ne .Status "online"}}
+                    <button type="button" onclick="document.getElementById('inject-key-{{.ID}}').classList.toggle('hidden')" class="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded text-xs transition" title="Auto-install SSH public key using password once">
+                      ⚡ Auto-Inject Key
+                    </button>
+                    {{end}}
+                    <form method="POST" action="/nodes/{{.ID}}/test">
+                      <button type="submit" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                        Test Connection
+                      </button>
+                    </form>
+                    <form method="POST" action="/nodes/{{.ID}}/delete" onsubmit="return confirm('Are you sure you want to remove node {{.Name}}? All associated deployments will also be removed.');">
+                      <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded text-xs transition">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <!-- Inline Edit Node Row -->
+              <tr id="edit-node-{{.ID}}" class="hidden bg-slate-950/90 border-b border-slate-800 child-node-{{.ID}}">
+                <td colspan="5" class="p-4">
+                  <form method="POST" action="/nodes/{{.ID}}/update" class="space-y-3">
+                    <div class="font-semibold text-slate-200 text-xs">Edit Node Configuration</div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Friendly Name</label>
+                        <input type="text" name="name" value="{{.Name}}" required
+                          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      </div>
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Hostname or IP</label>
+                        <input type="text" name="host" value="{{.Host}}" required
+                          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      </div>
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">SSH Port</label>
+                        <input type="number" name="port" value="{{.Port}}" required
+                          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      </div>
+                      <div>
+                        <label class="block text-[11px] font-medium text-slate-400 mb-1">SSH User</label>
+                        <input type="text" name="user" value="{{.User}}" required
+                          class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Catatan Server</label>
+                      <input type="text" name="notes" value="{{.Notes}}" placeholder="Lokasi server, spek hardware, kontak PIC, dsb"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                      <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.add('hidden')"
+                        class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Cancel</button>
+                      <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition">Save Node Changes</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+              {{if ne .Status "online"}}
+              <tr id="inject-key-{{.ID}}" class="hidden bg-slate-950/80 border-b border-slate-800 child-node-{{.ID}}">
+                <td colspan="5" class="p-3.5">
+                  <form method="POST" action="/nodes/{{.ID}}/bootstrap" class="flex items-center gap-3">
+                    <span class="text-xs font-medium text-amber-300 whitespace-nowrap">⚡ Auto-Inject SSH Key:</span>
+                    <input type="password" name="ssh_password" required placeholder="Masukkan SSH password untuk {{.User}}@{{.Host}}"
+                      class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 flex-1 max-w-sm focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 px-3 rounded-lg text-xs transition">
+                      Pasang Key & Test
+                    </button>
+                    <button type="button" onclick="document.getElementById('inject-key-{{.ID}}').classList.add('hidden')"
+                      class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs transition">
+                      Batal
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {{end}}
+              {{else}}
+              <tr>
+                <td colspan="5" class="py-8 text-center text-slate-500">
+                  No managed nodes registered yet. Click <span class="text-indigo-400 font-medium">+ Add Node</span> to register your first server.
+                </td>
+              </tr>
+              {{end}}
+
+              <!-- Dynamic No-Results Row -->
+              <tr id="nodes-no-results" class="hidden">
+                <td colspan="5" class="py-8 text-center text-slate-500">
+                  No managed nodes match your search and filter criteria.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Stacks Panel -->
+    <section id="tab-panel-stacks" class="tab-panel hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-base font-semibold text-slate-100">Stack Templates</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Reusable docker-compose definitions ready to deploy to nodes.</p>
+          </div>
+          <button onclick="document.getElementById('add-stack-modal').classList.toggle('hidden')"
+            class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm self-start sm:self-auto">
+            + Add Stack
+          </button>
+        </div>
+
+        <!-- Filter & Search Toolbar for Stacks -->
+        <div class="bg-slate-950/60 border border-slate-800 rounded-lg p-3 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+          <div class="flex-1 max-w-md">
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-500">🔍</span>
+              <input type="text" id="stacks-search" oninput="filterStacks()"
+                placeholder="Search by stack name, compose content, notes..."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between md:justify-end gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+            <span id="stacks-count" class="text-slate-400 text-[11px] font-mono whitespace-nowrap"></span>
+            <button type="button" id="stacks-reset-btn" onclick="resetStacksFilter()"
+              class="hidden text-[11px] text-slate-400 hover:text-indigo-400 underline transition">
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Add Stack Form (collapsible) -->
+        <div id="add-stack-modal" class="hidden bg-slate-950/80 border border-slate-800 rounded-lg p-5">
+          <h3 class="text-sm font-semibold text-slate-200 mb-4">Create New Stack Template</h3>
+          <form method="POST" action="/stacks" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Stack Name / Slug</label>
+              <input type="text" name="name" required placeholder="e.g. redis-cache or web-app"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">docker-compose.yml</label>
+              <textarea name="compose_yaml" rows="8" required placeholder="services:&#10;  app:&#10;    image: nginx:alpine&#10;    ports:&#10;      - '80:80'"
+                class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-emerald-400 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Default Environment Variables (optional, KEY=val per line)</label>
+              <textarea name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
+                class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-300 mb-1">Notes / Dokumentasi Template <span class="text-slate-500 font-normal">(Opsional — Prasyarat network, deskripsi service, port)</span></label>
+              <input type="text" name="notes" placeholder="Contoh: Butuh network 'proxy-net'. Default expose port 3000."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button type="button" onclick="document.getElementById('add-stack-modal').classList.add('hidden')"
+                class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition">
+                Cancel
+              </button>
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition">
+                Save Stack Template
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Stacks Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse" id="stacks-table">
+            <thead>
+              <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                <th class="py-3 px-4">Stack Name</th>
+                <th class="py-3 px-4">Compose Definition</th>
+                <th class="py-3 px-4">Default Env</th>
+                <th class="py-3 px-4">Updated</th>
+                <th class="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 text-xs">
+              {{range .Stacks}}
+              <tr class="stack-row hover:bg-slate-800/30 transition"
+                data-id="{{.ID}}"
+                data-search="{{.Name}} {{.Notes}} {{.ComposeYAML}}">
+                <td class="py-3.5 px-4 font-semibold text-slate-100">
+                  <div>{{.Name}}</div>
+                  {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                  <div class="text-[11px] text-slate-500 font-mono font-normal">ID: {{.ID}}</div>
+                </td>
+                <td class="py-3.5 px-4">
+                  <pre class="bg-slate-950 p-2 rounded text-[11px] font-mono text-emerald-400/90 max-h-20 overflow-y-auto max-w-sm whitespace-pre">{{.ComposeYAML}}</pre>
+                </td>
+                <td class="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
+                  {{if .DefaultEnv}}
+                    <pre class="bg-slate-950 p-1.5 rounded text-[11px] font-mono text-slate-300 max-h-16 overflow-y-auto max-w-xs whitespace-pre">{{.DefaultEnv}}</pre>
+                  {{else}}
+                    <span class="text-slate-600 italic">None</span>
+                  {{end}}
+                </td>
+                <td class="py-3.5 px-4 text-slate-400 text-[11px]">
+                  {{.UpdatedAt.Format "Jan 02, 15:04"}}
+                </td>
+                <td class="py-3.5 px-4 text-right">
+                  <div class="inline-flex items-center gap-2">
+                    <button onclick="document.getElementById('edit-stack-{{.ID}}').classList.toggle('hidden')"
+                      class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                      Edit
+                    </button>
+                    <form method="POST" action="/stacks/{{.ID}}/delete" onsubmit="return confirm('Are you sure you want to delete stack {{.Name}}?');">
+                      <button type="submit" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2.5 py-1 rounded text-xs transition">
+                        Delete
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              <!-- Inline Edit Modal/Row -->
+              <tr id="edit-stack-{{.ID}}" class="hidden bg-slate-950/90 child-stack-{{.ID}}">
+                <td colspan="5" class="p-4 border-b border-slate-800">
+                  <form method="POST" action="/stacks/{{.ID}}/update" class="space-y-3">
+                    <div class="font-semibold text-slate-200 text-xs">Edit Stack: {{.Name}}</div>
+                    <input type="hidden" name="name" value="{{.Name}}">
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Compose YAML</label>
+                      <textarea name="compose_yaml" rows="6" required
+                        class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-emerald-400">{{.ComposeYAML}}</textarea>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Default Env</label>
+                      <textarea name="default_env" rows="2"
+                        class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300">{{.DefaultEnv}}</textarea>
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-slate-400 mb-1">Notes / Dokumentasi</label>
+                      <input type="text" name="notes" value="{{.Notes}}" placeholder="Prasyarat network, deskripsi service, port, dsb"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="flex gap-2 justify-end">
+                      <button type="button" onclick="document.getElementById('edit-stack-{{.ID}}').classList.add('hidden')"
+                        class="bg-slate-800 text-slate-300 px-3 py-1.5 rounded text-xs">Cancel</button>
+                      <button type="submit"
+                        class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Save Changes</button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+              {{else}}
+              <tr>
+                <td colspan="5" class="py-8 text-center text-slate-500">
+                  No stack templates created yet. Click <span class="text-indigo-400 font-medium">+ Add Stack</span> to create your first template.
+                </td>
+              </tr>
+              {{end}}
+
+              <!-- Dynamic No-Results Row -->
+              <tr id="stacks-no-results" class="hidden">
+                <td colspan="5" class="py-8 text-center text-slate-500">
+                  No stack templates match your search query.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: Operator Runbook Panel -->
+    <section id="tab-panel-runbook" class="tab-panel hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 text-sm">📋</div>
+            <div>
+              <h2 class="text-base font-semibold text-slate-100">Operator Runbook & Global Notes</h2>
+              <p class="text-xs text-slate-400 mt-0.5">Shared operational checklist, maintenance reminders, and infrastructure notes (synced to Git as RUNBOOK.md).</p>
+            </div>
+          </div>
+          <button type="button" onclick="document.getElementById('runbook-editor').classList.toggle('hidden')"
+            class="text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg transition">
+            ✏️ Edit Runbook
+          </button>
+        </div>
+
+        <!-- Preview when closed -->
+        {{if .RunbookNotes}}
+        <div class="bg-slate-950/60 border border-slate-800/80 rounded-lg p-4 font-mono text-xs text-slate-300 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">
+{{.RunbookNotes}}
+        </div>
+        {{else}}
+        <div class="bg-slate-950/40 border border-dashed border-slate-800 rounded-lg p-4 text-xs text-slate-500 italic">
+          Belum ada catatan global. Klik 'Edit Runbook' untuk menulis panduan operasional, jadwal maintenance, atau checklist tim.
+        </div>
         {{end}}
+
+        <!-- Collapsible Editor Form -->
+        <form id="runbook-editor" method="POST" action="/settings/runbook" class="hidden space-y-3 pt-2">
+          <textarea name="runbook_notes" rows="10" placeholder="Tuliskan catatan checklist operasional, jadwal maintenance server, atau nomor kontak tim di sini..."
+            class="w-full font-mono bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed">{{.RunbookNotes}}</textarea>
+          <div class="flex justify-end gap-2">
+            <button type="button" onclick="document.getElementById('runbook-editor').classList.add('hidden')"
+              class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition">Batal</button>
+            <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-1.5 rounded-lg text-xs transition shadow-sm">Simpan Runbook</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- Settings Modal (Control Plane SSH Public Key & Git Mirror Backup) -->
+  <div id="settings-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">⚙️</span>
+          <div>
+            <h3 class="text-base font-semibold text-slate-100">Control Plane Settings</h3>
+            <p class="text-xs text-slate-400">SSH authorization key and automated Git Mirror repository backup.</p>
+          </div>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-200 text-lg p-1.5 rounded-lg hover:bg-slate-800 transition">✕</button>
       </div>
 
-      {{if .GitMirrorError}}
-      <div class="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 text-xs text-rose-300">
-        <strong>Last Sync Error:</strong> {{.GitMirrorError}}
-      </div>
-      {{end}}
-
-      <form method="POST" action="/settings/git" class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="md:col-span-2">
-            <label class="block text-xs font-medium text-slate-300 mb-1">Git Repository URL (SSH or HTTPS)</label>
-            <input type="text" name="git_mirror_url" value="{{.GitMirrorURL}}" placeholder="git@github.com:myorg/infrastructure-backup.git"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <p class="text-[11px] text-slate-500 mt-1">If using SSH, add Control Plane public key above as a deploy key with write access.</p>
+      <!-- Modal Body -->
+      <div class="p-6 space-y-6 overflow-y-auto">
+        <!-- Card 1: SSH Public Key -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h4 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Control Plane SSH Public Key
+              </h4>
+              <p class="text-xs text-slate-400 mt-1">
+                Authorize this key on your remote nodes by appending it to <code class="text-indigo-400 bg-slate-900 px-1.5 py-0.5 rounded">~/.ssh/authorized_keys</code>, or use it as a Deploy Key on your Git mirror with write access.
+              </p>
+            </div>
+            <button onclick="copySSHKey()" id="copy-btn"
+              class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition shrink-0">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+              </svg>
+              <span id="copy-text">Copy Key</span>
+            </button>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-300 mb-1">Target Branch</label>
-            <input type="text" name="git_mirror_branch" value="{{.GitMirrorBranch}}" placeholder="main"
-              class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <pre id="ssh-pub-key" class="bg-slate-900 border border-slate-800 p-3 rounded-lg text-xs font-mono text-emerald-400 select-all overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">{{.PublicKeySSH}}</pre>
           </div>
         </div>
-        <div class="flex justify-end">
-          <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
-            Save & Sync Mirror
-          </button>
+
+        <!-- Card 2: Git Mirror Backup Sync -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2.5">
+                <h4 class="text-sm font-semibold text-slate-100">Git Mirror Backup Sync</h4>
+                {{if eq .GitMirrorStatus "synced"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Synced
+                </span>
+                {{else if eq .GitMirrorStatus "failed"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.GitMirrorError}}">
+                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Sync Failed
+                </span>
+                {{else}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                  <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Idle
+                </span>
+                {{end}}
+              </div>
+              <p class="text-xs text-slate-400 mt-1">
+                Automated Git commit & push of Stacks, deployment environment variables, and <code class="text-indigo-400">inventory.json</code>.
+                {{if .GitMirrorLastSync}}<span class="text-slate-500 ml-1">Last synced: {{.GitMirrorLastSync}}</span>{{end}}
+              </p>
+            </div>
+            {{if .GitMirrorURL}}
+            <form method="POST" action="/settings/git/sync" class="shrink-0">
+              <button type="submit" class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition shadow-sm">
+                🔄 Sync Now
+              </button>
+            </form>
+            {{end}}
+          </div>
+
+          {{if .GitMirrorError}}
+          <div class="bg-rose-500/10 border border-rose-500/30 rounded-lg p-3 text-xs text-rose-300">
+            <strong>Last Sync Error:</strong> {{.GitMirrorError}}
+          </div>
+          {{end}}
+
+          <form method="POST" action="/settings/git" class="space-y-4 pt-1">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-slate-300 mb-1">Git Repository URL (SSH or HTTPS)</label>
+                <input type="text" name="git_mirror_url" value="{{.GitMirrorURL}}" placeholder="git@github.com:myorg/infrastructure-backup.git"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <p class="text-[11px] text-slate-500 mt-1">If using SSH, authorize the Control Plane public key above as a deploy key with write access.</p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Target Branch</label>
+                <input type="text" name="git_mirror_branch" value="{{.GitMirrorBranch}}" placeholder="main"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+            </div>
+            <div class="flex justify-end">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                Save & Sync Mirror
+              </button>
+            </div>
+          </form>
         </div>
-      </form>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-end">
+        <button type="button" onclick="closeSettingsModal()"
+          class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 py-1.5 rounded-lg text-xs font-medium transition">
+          Close
+        </button>
+      </div>
     </div>
-  </main>
+  </div>
 
   <!-- Remote File Browser Modal -->
   <div id="file-browser-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -851,6 +1045,7 @@
   </div>
 
   <script>
+    // --- SSH Key Copy ---
     function copySSHKey() {
       const keyText = document.getElementById('ssh-pub-key').innerText.trim();
       navigator.clipboard.writeText(keyText).then(() => {
@@ -862,6 +1057,234 @@
       });
     }
 
+    // --- Settings Modal ---
+    function openSettingsModal() {
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+
+    // --- Tab Switching with Persistence ---
+    const availableTabs = ['deployments', 'nodes', 'stacks', 'runbook'];
+
+    function switchTab(tabId) {
+      if (!availableTabs.includes(tabId)) tabId = 'deployments';
+
+      availableTabs.forEach(t => {
+        const panel = document.getElementById(`tab-panel-${t}`);
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (!panel || !btn) return;
+
+        if (t === tabId) {
+          panel.classList.remove('hidden');
+          btn.className = 'tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 border-indigo-500 text-indigo-400 font-semibold text-sm transition bg-indigo-500/10 rounded-t-lg';
+        } else {
+          panel.classList.add('hidden');
+          btn.className = 'tab-btn inline-flex items-center gap-2 px-4 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700 font-medium text-sm transition';
+        }
+      });
+
+      // Save tab to URL hash and localStorage
+      if (window.location.hash !== '#' + tabId) {
+        history.replaceState(null, null, '#' + tabId);
+      }
+      try {
+        localStorage.setItem('docker_orkes_active_tab', tabId);
+      } catch (e) {}
+    }
+
+    // --- Table Filtering & Searching ---
+
+    // 1. Deployments Filter
+    function filterDeployments() {
+      const query = (document.getElementById('deployments-search')?.value || '').toLowerCase().trim();
+      const statusFilter = document.getElementById('deployments-status-filter')?.value || 'all';
+      const driftFilter = document.getElementById('deployments-drift-filter')?.value || 'all';
+
+      const rows = document.querySelectorAll('.deployment-row');
+      let visibleCount = 0;
+      const totalCount = rows.length;
+
+      rows.forEach(row => {
+        const depId = row.getAttribute('data-id');
+        const text = (row.getAttribute('data-search') || '').toLowerCase();
+        const status = (row.getAttribute('data-status') || '').toLowerCase();
+        const drift = (row.getAttribute('data-drift') || '').toLowerCase();
+
+        const matchQuery = !query || text.includes(query);
+        const matchStatus = (statusFilter === 'all') || (status === statusFilter);
+        const matchDrift = (driftFilter === 'all') || (drift === driftFilter);
+
+        const isVisible = matchQuery && matchStatus && matchDrift;
+        if (isVisible) {
+          row.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          row.classList.add('hidden');
+          // Hide any expanded child rows for this deployment when parent is hidden
+          document.querySelectorAll(`.child-dep-${depId}`).forEach(child => {
+            child.classList.add('hidden');
+          });
+        }
+      });
+
+      // Update counter and reset button
+      const countEl = document.getElementById('deployments-count');
+      const resetBtn = document.getElementById('deployments-reset-btn');
+      if (countEl) {
+        countEl.innerText = (query || statusFilter !== 'all' || driftFilter !== 'all')
+          ? `Showing ${visibleCount} of ${totalCount} deployments`
+          : `${totalCount} deployments`;
+      }
+      if (resetBtn) {
+        if (query || statusFilter !== 'all' || driftFilter !== 'all') {
+          resetBtn.classList.remove('hidden');
+        } else {
+          resetBtn.classList.add('hidden');
+        }
+      }
+
+      // Show/hide no results row
+      const noResults = document.getElementById('deployments-no-results');
+      if (noResults) {
+        if (visibleCount === 0 && totalCount > 0) {
+          noResults.classList.remove('hidden');
+        } else {
+          noResults.classList.add('hidden');
+        }
+      }
+    }
+
+    function resetDeploymentsFilter() {
+      const search = document.getElementById('deployments-search');
+      const status = document.getElementById('deployments-status-filter');
+      const drift = document.getElementById('deployments-drift-filter');
+      if (search) search.value = '';
+      if (status) status.value = 'all';
+      if (drift) drift.value = 'all';
+      filterDeployments();
+    }
+
+    // 2. Nodes Filter
+    function filterNodes() {
+      const query = (document.getElementById('nodes-search')?.value || '').toLowerCase().trim();
+      const statusFilter = document.getElementById('nodes-status-filter')?.value || 'all';
+
+      const rows = document.querySelectorAll('.node-row');
+      let visibleCount = 0;
+      const totalCount = rows.length;
+
+      rows.forEach(row => {
+        const nodeId = row.getAttribute('data-id');
+        const text = (row.getAttribute('data-search') || '').toLowerCase();
+        const status = (row.getAttribute('data-status') || '').toLowerCase();
+
+        const matchQuery = !query || text.includes(query);
+        const matchStatus = (statusFilter === 'all') || (status === statusFilter);
+
+        const isVisible = matchQuery && matchStatus;
+        if (isVisible) {
+          row.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          row.classList.add('hidden');
+          document.querySelectorAll(`.child-node-${nodeId}`).forEach(child => {
+            child.classList.add('hidden');
+          });
+        }
+      });
+
+      const countEl = document.getElementById('nodes-count');
+      const resetBtn = document.getElementById('nodes-reset-btn');
+      if (countEl) {
+        countEl.innerText = (query || statusFilter !== 'all')
+          ? `Showing ${visibleCount} of ${totalCount} nodes`
+          : `${totalCount} nodes`;
+      }
+      if (resetBtn) {
+        if (query || statusFilter !== 'all') {
+          resetBtn.classList.remove('hidden');
+        } else {
+          resetBtn.classList.add('hidden');
+        }
+      }
+
+      const noResults = document.getElementById('nodes-no-results');
+      if (noResults) {
+        if (visibleCount === 0 && totalCount > 0) {
+          noResults.classList.remove('hidden');
+        } else {
+          noResults.classList.add('hidden');
+        }
+      }
+    }
+
+    function resetNodesFilter() {
+      const search = document.getElementById('nodes-search');
+      const status = document.getElementById('nodes-status-filter');
+      if (search) search.value = '';
+      if (status) status.value = 'all';
+      filterNodes();
+    }
+
+    // 3. Stacks Filter
+    function filterStacks() {
+      const query = (document.getElementById('stacks-search')?.value || '').toLowerCase().trim();
+
+      const rows = document.querySelectorAll('.stack-row');
+      let visibleCount = 0;
+      const totalCount = rows.length;
+
+      rows.forEach(row => {
+        const stackId = row.getAttribute('data-id');
+        const text = (row.getAttribute('data-search') || '').toLowerCase();
+
+        const isVisible = !query || text.includes(query);
+        if (isVisible) {
+          row.classList.remove('hidden');
+          visibleCount++;
+        } else {
+          row.classList.add('hidden');
+          document.querySelectorAll(`.child-stack-${stackId}`).forEach(child => {
+            child.classList.add('hidden');
+          });
+        }
+      });
+
+      const countEl = document.getElementById('stacks-count');
+      const resetBtn = document.getElementById('stacks-reset-btn');
+      if (countEl) {
+        countEl.innerText = query
+          ? `Showing ${visibleCount} of ${totalCount} stacks`
+          : `${totalCount} stacks`;
+      }
+      if (resetBtn) {
+        if (query) {
+          resetBtn.classList.remove('hidden');
+        } else {
+          resetBtn.classList.add('hidden');
+        }
+      }
+
+      const noResults = document.getElementById('stacks-no-results');
+      if (noResults) {
+        if (visibleCount === 0 && totalCount > 0) {
+          noResults.classList.remove('hidden');
+        } else {
+          noResults.classList.add('hidden');
+        }
+      }
+    }
+
+    function resetStacksFilter() {
+      const search = document.getElementById('stacks-search');
+      if (search) search.value = '';
+      filterStacks();
+    }
+
+    // --- Remote File Browser ---
     let currentDepId = '';
     let currentFileName = '';
     let currentRawFileContent = '';
@@ -897,7 +1320,7 @@
           }
 
           let listHtml = '';
-          data.files.forEach((f, idx) => {
+          data.files.forEach((f) => {
             const icon = f.is_dir ? '📁' : (f.name.endsWith('.yml') || f.name.endsWith('.yaml') ? '📄' : (f.name.startsWith('.env') ? '⚙️' : '📝'));
             listHtml += `
               <button onclick="viewRemoteFile('${depId}', '${f.name}')" id="file-item-${f.name.replace(/[^a-zA-Z0-9]/g, '_')}"
@@ -1035,23 +1458,83 @@
       document.getElementById('file-browser-modal').classList.add('hidden');
     }
 
-    // Support Tab key inside editor
-    document.getElementById('file-viewer-content').addEventListener('keydown', function(e) {
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = this.selectionStart;
-        const end = this.selectionEnd;
-        this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
-        this.selectionStart = this.selectionEnd = start + 2;
+    // --- Global Event Handlers ---
+    document.addEventListener('DOMContentLoaded', () => {
+      // Determine initial tab: hash > localStorage > 'deployments'
+      let initialTab = 'deployments';
+      const hash = window.location.hash.replace('#', '');
+      if (availableTabs.includes(hash)) {
+        initialTab = hash;
+      } else {
+        try {
+          const saved = localStorage.getItem('docker_orkes_active_tab');
+          if (saved && availableTabs.includes(saved)) {
+            initialTab = saved;
+          }
+        } catch (e) {}
+      }
+      switchTab(initialTab);
+
+      // Initial filter calculation
+      filterDeployments();
+      filterNodes();
+      filterStacks();
+    });
+
+    // Handle back/forward navigation
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.replace('#', '');
+      if (availableTabs.includes(hash)) {
+        switchTab(hash);
       }
     });
 
-    // Close on Escape key
+    // Support Tab key inside code editor
+    const fileContentArea = document.getElementById('file-viewer-content');
+    if (fileContentArea) {
+      fileContentArea.addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const start = this.selectionStart;
+          const end = this.selectionEnd;
+          this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+          this.selectionStart = this.selectionEnd = start + 2;
+        }
+      });
+    }
+
+    // Close Modals on Escape key or backdrop click
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeFileBrowser();
+      if (e.key === 'Escape') {
+        const fileModal = document.getElementById('file-browser-modal');
+        const settingsModal = document.getElementById('settings-modal');
+        if (fileModal && !fileModal.classList.contains('hidden')) {
+          closeFileBrowser();
+        } else if (settingsModal && !settingsModal.classList.contains('hidden')) {
+          closeSettingsModal();
+        }
+      }
     });
+
+    // Close Settings Modal when clicking backdrop
+    const settingsModal = document.getElementById('settings-modal');
+    if (settingsModal) {
+      settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+          closeSettingsModal();
+        }
+      });
+    }
+
+    // Close File Browser Modal when clicking backdrop
+    const fileBrowserModal = document.getElementById('file-browser-modal');
+    if (fileBrowserModal) {
+      fileBrowserModal.addEventListener('click', (e) => {
+        if (e.target === fileBrowserModal) {
+          closeFileBrowser();
+        }
+      });
+    }
   </script>
 </body>
 </html>
-
-
