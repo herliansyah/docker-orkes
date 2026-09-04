@@ -36,8 +36,12 @@ type Client interface {
 	RestartStack(ctx context.Context, stackName string) (output string, err error)
 	DownStack(ctx context.Context, stackName string) (output string, err error)
 	ReadStackFile(ctx context.Context, stackName string, filename string) ([]byte, error)
-	ListStackFiles(ctx context.Context, stackName string) ([]ssh.RemoteFileEntry, error)
+	ListStackFiles(ctx context.Context, stackName string, subpath ...string) ([]ssh.RemoteFileEntry, error)
 	SaveStackFile(ctx context.Context, stackName string, filename string, content []byte) error
+	CreateStackDir(ctx context.Context, stackName string, dirPath string) error
+	DeleteStackPath(ctx context.Context, stackName string, relPath string) error
+	ExtractStackArchive(ctx context.Context, stackName string, archiveFilename string, targetDir string) error
+	UploadStackFiles(ctx context.Context, stackName string, files map[string][]byte) error
 	GetTelemetry(ctx context.Context) (diskUsage string, containers []ContainerInfo, err error)
 	GetContainerLogs(ctx context.Context, containerID string) (string, error)
 	TestConnection(ctx context.Context) (dockerVersion string, err error)
@@ -91,6 +95,29 @@ func validateFilename(filename string) error {
 	}
 	return nil
 }
+
+func validateSubpath(subpath string) (string, error) {
+	trimmed := strings.TrimSpace(subpath)
+	if trimmed == "" || trimmed == "." {
+		return "", nil
+	}
+	trimmed = strings.ReplaceAll(trimmed, "\\", "/")
+	if strings.Contains(trimmed, "..") {
+		return "", errors.New("path traversal '..' is not allowed")
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return "", errors.New("absolute paths are not allowed")
+	}
+	clean := path.Clean(trimmed)
+	if clean == "." || clean == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(clean, "..") {
+		return "", errors.New("invalid subpath")
+	}
+	return clean, nil
+}
+
 
 func (c *nodeClient) DeployStack(ctx context.Context, stackName string, files map[string][]byte) (string, error) {
 	if err := validateSegment(stackName); err != nil {
@@ -163,11 +190,21 @@ func (c *nodeClient) ReadStackFile(ctx context.Context, stackName string, filena
 	return c.cfg.Executor.ReadRemoteFile(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, remotePath)
 }
 
-func (c *nodeClient) ListStackFiles(ctx context.Context, stackName string) ([]ssh.RemoteFileEntry, error) {
+func (c *nodeClient) ListStackFiles(ctx context.Context, stackName string, subpath ...string) ([]ssh.RemoteFileEntry, error) {
 	if err := validateSegment(stackName); err != nil {
 		return nil, fmt.Errorf("invalid stack name: %w", err)
 	}
-	return c.cfg.Executor.ListRemoteFiles(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, stackDirPath(stackName))
+	targetDir := stackDirPath(stackName)
+	if len(subpath) > 0 && subpath[0] != "" {
+		cleanSub, err := validateSubpath(subpath[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid subpath: %w", err)
+		}
+		if cleanSub != "" {
+			targetDir = fmt.Sprintf("%s/%s", targetDir, cleanSub)
+		}
+	}
+	return c.cfg.Executor.ListRemoteFiles(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, targetDir)
 }
 
 func (c *nodeClient) SaveStackFile(ctx context.Context, stackName string, filename string, content []byte) error {
@@ -182,6 +219,89 @@ func (c *nodeClient) SaveStackFile(ctx context.Context, stackName string, filena
 	}
 	return c.cfg.Executor.UploadFiles(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, stackDirPath(stackName), files)
 }
+
+func (c *nodeClient) CreateStackDir(ctx context.Context, stackName string, dirPath string) error {
+	if err := validateSegment(stackName); err != nil {
+		return fmt.Errorf("invalid stack name: %w", err)
+	}
+	cleanSub, err := validateSubpath(dirPath)
+	if err != nil || cleanSub == "" {
+		return fmt.Errorf("invalid directory path: %v", err)
+	}
+	fullPath := fmt.Sprintf("%s/%s", stackDirPath(stackName), cleanSub)
+	cmd := fmt.Sprintf("mkdir -p %q", fullPath)
+	_, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	return err
+}
+
+func (c *nodeClient) DeleteStackPath(ctx context.Context, stackName string, relPath string) error {
+	if err := validateSegment(stackName); err != nil {
+		return fmt.Errorf("invalid stack name: %w", err)
+	}
+	cleanRel, err := validateSubpath(relPath)
+	if err != nil || cleanRel == "" {
+		return fmt.Errorf("invalid path to delete: %v", err)
+	}
+	if cleanRel == "docker-compose.yml" {
+		return errors.New("cannot delete docker-compose.yml: core deployment file is protected")
+	}
+	fullPath := fmt.Sprintf("%s/%s", stackDirPath(stackName), cleanRel)
+	cmd := fmt.Sprintf("rm -rf -- %q", fullPath)
+	_, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	return err
+}
+
+func (c *nodeClient) ExtractStackArchive(ctx context.Context, stackName string, archiveFilename string, targetDir string) error {
+	if err := validateSegment(stackName); err != nil {
+		return fmt.Errorf("invalid stack name: %w", err)
+	}
+	cleanArchive, err := validateSubpath(archiveFilename)
+	if err != nil || cleanArchive == "" {
+		return fmt.Errorf("invalid archive filename: %v", err)
+	}
+	cleanTarget, err := validateSubpath(targetDir)
+	if err != nil {
+		return fmt.Errorf("invalid target directory: %v", err)
+	}
+
+	stackRoot := stackDirPath(stackName)
+	fullArchive := fmt.Sprintf("%s/%s", stackRoot, cleanArchive)
+	destDir := stackRoot
+	if cleanTarget != "" {
+		destDir = fmt.Sprintf("%s/%s", stackRoot, cleanTarget)
+	}
+
+	lower := strings.ToLower(cleanArchive)
+	var cmd string
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar") || strings.HasSuffix(lower, ".tar.bz2") || strings.HasSuffix(lower, ".tar.xz") {
+		cmd = fmt.Sprintf("mkdir -p %q && tar -xf %q -C %q", destDir, fullArchive, destDir)
+	} else if strings.HasSuffix(lower, ".zip") {
+		// ponytail: unzip with fallback to python3/python zipfile module if unzip is not installed on remote node
+		cmd = fmt.Sprintf("mkdir -p %q && if command -v unzip >/dev/null 2>&1; then unzip -o %q -d %q; elif command -v python3 >/dev/null 2>&1; then python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('%s')\"; elif command -v python >/dev/null 2>&1; then python -c \"import zipfile; zipfile.ZipFile('%s').extractall('%s')\"; else echo 'Neither unzip nor python found on remote node to extract zip archive' >&2; exit 1; fi",
+			destDir, fullArchive, destDir, fullArchive, destDir, fullArchive, destDir)
+	} else {
+		return fmt.Errorf("unsupported archive format: %s (supported: .tar.gz, .tgz, .tar, .zip)", cleanArchive)
+	}
+
+	out, err := c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	if err != nil {
+		return fmt.Errorf("extraction failed: %w (output: %s)", err, out)
+	}
+	return nil
+}
+
+func (c *nodeClient) UploadStackFiles(ctx context.Context, stackName string, files map[string][]byte) error {
+	if err := validateSegment(stackName); err != nil {
+		return fmt.Errorf("invalid stack name: %w", err)
+	}
+	for f := range files {
+		if err := validateFilename(f); err != nil {
+			return fmt.Errorf("invalid file path %q: %w", f, err)
+		}
+	}
+	return c.cfg.Executor.UploadFiles(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, stackDirPath(stackName), files)
+}
+
 
 func (c *nodeClient) GetTelemetry(ctx context.Context) (string, []ContainerInfo, error) {
 	dfOut, err := c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, "df -h /")

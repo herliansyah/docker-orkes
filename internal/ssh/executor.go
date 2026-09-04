@@ -172,6 +172,9 @@ func (e *RealExecutor) UploadFiles(ctx context.Context, host string, port int, u
 
 	for filename, content := range files {
 		targetPath := path.Join(remoteDir, filename)
+		if err := sftpClient.MkdirAll(path.Dir(targetPath)); err != nil {
+			return fmt.Errorf("failed to create directory for %s: %w", targetPath, err)
+		}
 		file, err := sftpClient.Create(targetPath)
 		if err != nil {
 			return fmt.Errorf("failed to create remote file %s: %w", targetPath, err)

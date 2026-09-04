@@ -98,7 +98,7 @@ func (f *fakeEngine) AdoptDrift(ctx context.Context, deploymentID string) error 
 	return nil
 }
 
-func (f *fakeEngine) ListDeploymentFiles(ctx context.Context, deploymentID string) (string, []ssh.RemoteFileEntry, error) {
+func (f *fakeEngine) ListDeploymentFiles(ctx context.Context, deploymentID string, subpath ...string) (string, []ssh.RemoteFileEntry, error) {
 	return "", nil, nil
 }
 
@@ -108,6 +108,22 @@ func (f *fakeEngine) ViewDeploymentFile(ctx context.Context, deploymentID string
 
 func (f *fakeEngine) SaveDeploymentFile(ctx context.Context, deploymentID string, filename string, content []byte, redeploy bool) (*controlplane.SaveFileResult, error) {
 	return nil, nil
+}
+
+func (f *fakeEngine) CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error {
+	return nil
+}
+
+func (f *fakeEngine) DeleteDeploymentPath(ctx context.Context, deploymentID string, path string) error {
+	return nil
+}
+
+func (f *fakeEngine) ExtractDeploymentArchive(ctx context.Context, deploymentID string, archiveFilename string, targetDir string) error {
+	return nil
+}
+
+func (f *fakeEngine) UploadDeploymentFiles(ctx context.Context, deploymentID string, files map[string][]byte) error {
+	return nil
 }
 
 func (f *fakeEngine) SyncGitMirror(ctx context.Context) error {

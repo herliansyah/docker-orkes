@@ -1,8 +1,10 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -280,6 +282,81 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 	// Verify file was updated in mockExec
 	if string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/docker-compose.yml"]) != "services:\n  web:\n    image: nginx:latest\n" {
 		t.Errorf("expected updated compose file in mock executor, got: %s", string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/docker-compose.yml"]))
+	}
+
+	// 14. Create folder via POST /deployments/{id}/files/mkdir
+	mkdirForm := url.Values{
+		"path": {"conf.d/vhosts"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/mkdir", strings.NewReader(mkdirForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"success":true`) {
+		t.Fatalf("expected 200 OK for mkdir, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// 15. Upload files/folders via POST /deployments/{id}/files/upload
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	_ = w.WriteField("subpath", "conf.d")
+	fw, _ := w.CreateFormFile("files", "site.conf")
+	_, _ = fw.Write([]byte("server { listen 80; }"))
+	w.Close()
+
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/upload", &b)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"files_uploaded":1`) {
+		t.Fatalf("expected 200 OK for upload, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if string(mockExec.uploaded[".docker-orkes/stacks/web-proxy/conf.d/site.conf"]) != "server { listen 80; }" {
+		t.Errorf("uploaded file not found in mockExec: %+v", mockExec.uploaded)
+	}
+
+	// 16. Extract archive via POST /deployments/{id}/files/extract
+	extractForm := url.Values{
+		"file":       {"bundle.tar.gz"},
+		"target_dir": {"extracted"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/extract", strings.NewReader(extractForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"success":true`) {
+		t.Fatalf("expected 200 OK for extract, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	// 17. Delete file via POST /deployments/{id}/files/delete
+	// 17a. Protected check: cannot delete docker-compose.yml
+	delForm := url.Values{"path": {"docker-compose.yml"}}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/delete", strings.NewReader(delForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "protected") {
+		t.Fatalf("expected 400 Bad Request for protected docker-compose.yml delete, got %d", rec.Code)
+	}
+
+	// 17b. Delete auxiliary file
+	delForm = url.Values{"path": {"conf.d/site.conf"}}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/"+deployID+"/files/delete", strings.NewReader(delForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"success":true`) {
+		t.Fatalf("expected 200 OK for auxiliary file delete, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }
 

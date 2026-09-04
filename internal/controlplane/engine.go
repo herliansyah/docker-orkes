@@ -48,9 +48,13 @@ type Engine interface {
 	CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error)
 	ReconcileDrift(ctx context.Context, deploymentID string) error
 	AdoptDrift(ctx context.Context, deploymentID string) error
-	ListDeploymentFiles(ctx context.Context, deploymentID string) (remoteDir string, files []ssh.RemoteFileEntry, err error)
+	ListDeploymentFiles(ctx context.Context, deploymentID string, subpath ...string) (remoteDir string, files []ssh.RemoteFileEntry, err error)
 	ViewDeploymentFile(ctx context.Context, deploymentID string, filename string) (remoteFilePath string, content []byte, err error)
 	SaveDeploymentFile(ctx context.Context, deploymentID string, filename string, content []byte, redeploy bool) (*SaveFileResult, error)
+	CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error
+	DeleteDeploymentPath(ctx context.Context, deploymentID string, path string) error
+	ExtractDeploymentArchive(ctx context.Context, deploymentID string, archiveFilename string, targetDir string) error
+	UploadDeploymentFiles(ctx context.Context, deploymentID string, files map[string][]byte) error
 
 	// Git Mirror operations
 	SyncGitMirror(ctx context.Context) error
@@ -354,7 +358,7 @@ func (e *engine) AdoptDrift(ctx context.Context, deploymentID string) error {
 	return nil
 }
 
-func (e *engine) ListDeploymentFiles(ctx context.Context, deploymentID string) (string, []ssh.RemoteFileEntry, error) {
+func (e *engine) ListDeploymentFiles(ctx context.Context, deploymentID string, subpath ...string) (string, []ssh.RemoteFileEntry, error) {
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return "", nil, fmt.Errorf("deployment not found: %w", err)
@@ -368,9 +372,17 @@ func (e *engine) ListDeploymentFiles(ctx context.Context, deploymentID string) (
 		return "", nil, fmt.Errorf("node not found: %w", err)
 	}
 
+	sub := ""
+	if len(subpath) > 0 && subpath[0] != "" {
+		sub = subpath[0]
+	}
+
 	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	if sub != "" {
+		remoteDir = fmt.Sprintf(".docker-orkes/stacks/%s/%s", stack.Name, sub)
+	}
 	client := e.getNodeClient(node)
-	files, err := client.ListStackFiles(ctx, stack.Name)
+	files, err := client.ListStackFiles(ctx, stack.Name, sub)
 	if err != nil {
 		return remoteDir, nil, err
 	}
@@ -449,6 +461,74 @@ func (e *engine) SaveDeploymentFile(ctx context.Context, deploymentID string, fi
 	}
 
 	return res, nil
+}
+
+func (e *engine) CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	client := e.getNodeClient(node)
+	return client.CreateStackDir(ctx, stack.Name, dirPath)
+}
+
+func (e *engine) DeleteDeploymentPath(ctx context.Context, deploymentID string, path string) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	client := e.getNodeClient(node)
+	return client.DeleteStackPath(ctx, stack.Name, path)
+}
+
+func (e *engine) ExtractDeploymentArchive(ctx context.Context, deploymentID string, archiveFilename string, targetDir string) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	client := e.getNodeClient(node)
+	return client.ExtractStackArchive(ctx, stack.Name, archiveFilename, targetDir)
+}
+
+func (e *engine) UploadDeploymentFiles(ctx context.Context, deploymentID string, files map[string][]byte) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	client := e.getNodeClient(node)
+	return client.UploadStackFiles(ctx, stack.Name, files)
 }
 
 func (e *engine) BuildGitMirrorFiles() (map[string][]byte, error) {

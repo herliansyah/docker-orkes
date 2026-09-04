@@ -1597,9 +1597,9 @@
 
   <!-- Remote File Browser Modal -->
   <div id="file-browser-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
       <!-- Modal Header -->
-      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+      <div class="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
         <div>
           <div class="flex items-center gap-2">
             <span class="text-base">📂</span>
@@ -1612,11 +1612,50 @@
 
       <!-- Modal Body -->
       <div class="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-800">
-        <!-- File List -->
-        <div class="p-4 overflow-y-auto bg-slate-950/30">
-          <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2" data-i18n="files_on_server">Files on Server</div>
-          <div id="file-browser-list" class="space-y-1 text-xs">
-            <div class="text-slate-500 py-3 text-center" data-i18n="loading_files">Loading files...</div>
+        <!-- File List & Toolbar -->
+        <div class="p-4 overflow-y-auto bg-slate-950/30 flex flex-col min-h-0">
+          <!-- Action Toolbar -->
+          <div class="flex flex-wrap items-center justify-between gap-1.5 mb-2.5">
+            <div class="flex items-center gap-1">
+              <button onclick="promptCreateFile()" title="Create New File" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-[11px] font-medium transition flex items-center gap-1">
+                <span>+📄</span> <span>File</span>
+              </button>
+              <button onclick="promptCreateFolder()" title="Create New Folder" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-[11px] font-medium transition flex items-center gap-1">
+                <span>+📁</span> <span>Folder</span>
+              </button>
+            </div>
+            <div class="relative inline-block text-left">
+              <button onclick="toggleUploadDropdown(event)" class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-2.5 py-1 rounded text-[11px] font-medium transition flex items-center gap-1 shadow-sm">
+                <span>⬆️</span> <span>Upload</span> <span class="text-[9px]">▼</span>
+              </button>
+              <div id="file-upload-dropdown" class="hidden absolute right-0 mt-1 w-36 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-30 py-1 text-xs">
+                <button onclick="document.getElementById('file-upload-input').click(); closeUploadDropdown();" class="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-slate-200 flex items-center gap-2">
+                  <span>📄</span> Files
+                </button>
+                <button onclick="document.getElementById('folder-upload-input').click(); closeUploadDropdown();" class="w-full text-left px-3 py-1.5 hover:bg-slate-800 text-slate-200 flex items-center gap-2">
+                  <span>📁</span> Folder
+                </button>
+              </div>
+            </div>
+            <!-- Hidden inputs -->
+            <input type="file" id="file-upload-input" multiple class="hidden" onchange="uploadSelectedFiles(this.files)">
+            <input type="file" id="folder-upload-input" webkitdirectory directory multiple class="hidden" onchange="uploadSelectedFiles(this.files, true)">
+          </div>
+
+          <!-- Breadcrumb Navigation -->
+          <div id="file-browser-breadcrumbs" class="text-[11px] font-mono text-slate-300 flex flex-wrap items-center gap-1 mb-2 bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800">
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <!-- Upload Status / Alert -->
+          <div id="file-upload-alert" class="hidden mb-2 p-2 rounded text-[11px] flex items-center justify-between"></div>
+
+          <!-- File List Drop Zone -->
+          <div id="file-drop-zone" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)"
+            class="flex-1 overflow-y-auto space-y-1 text-xs border border-transparent rounded-lg p-0.5 transition">
+            <div id="file-browser-list" class="space-y-1">
+              <div class="text-slate-500 py-3 text-center" data-i18n="loading_files">Loading files...</div>
+            </div>
           </div>
         </div>
 
@@ -2036,6 +2075,8 @@
         d.style.left = '';
         d.style.zIndex = '';
       });
+      const uploadDd = document.getElementById('file-upload-dropdown');
+      if (uploadDd) uploadDd.classList.add('hidden');
       currentOpenDropdown = null;
     }
 
@@ -2043,6 +2084,10 @@
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.action-dropdown') && !e.target.closest('button[onclick*="toggleDropdown"]')) {
         closeAllDropdowns();
+      }
+      if (!e.target.closest('#file-upload-dropdown') && !e.target.closest('button[onclick*="toggleUploadDropdown"]')) {
+        const uploadDd = document.getElementById('file-upload-dropdown');
+        if (uploadDd) uploadDd.classList.add('hidden');
       }
     });
 
@@ -2582,69 +2627,173 @@
 
     // --- Remote File Browser ---
     let currentDepId = '';
+    let currentStackName = '';
+    let currentNodeName = '';
+    let currentSubpath = '';
     let currentFileName = '';
     let currentRawFileContent = '';
 
     function openFileBrowser(depId, stackName, nodeName) {
       currentDepId = depId;
+      currentStackName = stackName;
+      currentNodeName = nodeName;
+      currentSubpath = '';
+      currentFileName = '';
+
       document.getElementById('file-browser-title').innerText = `Remote Files for ${stackName} on ${nodeName}`;
       document.getElementById('file-browser-path').innerText = `~/.docker-orkes/stacks/${stackName}/`;
-      document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 py-3 text-center">Loading files from remote server...</div>';
       document.getElementById('file-viewer-name').innerText = 'Select a file to view or edit';
-      document.getElementById('file-viewer-content').value = 'Loading...';
+      document.getElementById('file-viewer-content').value = 'Select a file from the list...';
       document.getElementById('file-viewer-content').disabled = true;
       document.getElementById('file-edit-badge').classList.add('hidden');
       document.getElementById('copy-file-btn').classList.add('hidden');
       document.getElementById('save-file-btn').classList.add('hidden');
       document.getElementById('redeploy-file-btn').classList.add('hidden');
       document.getElementById('file-save-status').classList.add('hidden');
+      hideFileUploadAlert();
       document.getElementById('file-browser-modal').classList.remove('hidden');
 
-      fetch(`/deployments/${depId}/files`)
+      loadRemoteFiles('', 'docker-compose.yml');
+    }
+
+    function renderBreadcrumbs() {
+      const container = document.getElementById('file-browser-breadcrumbs');
+      if (!container) return;
+
+      let html = `<button onclick="navigateToSubpath('')" class="text-indigo-400 hover:text-indigo-200 font-semibold flex items-center gap-1">
+        <span>🏠</span> <span>${escapeHtml(currentStackName || 'root')}</span>
+      </button>`;
+
+      if (currentSubpath) {
+        const parts = currentSubpath.split('/');
+        let accumulated = '';
+        for (let i = 0; i < parts.length; i++) {
+          accumulated = accumulated ? `${accumulated}/${parts[i]}` : parts[i];
+          const isLast = (i === parts.length - 1);
+          const target = accumulated;
+          html += `<span class="text-slate-600">/</span>`;
+          if (isLast) {
+            html += `<span class="text-slate-200 font-medium">${escapeHtml(parts[i])}</span>`;
+          } else {
+            html += `<button onclick="navigateToSubpath('${escapeHtml(target)}')" class="text-indigo-400 hover:text-indigo-200">${escapeHtml(parts[i])}</button>`;
+          }
+        }
+      }
+      container.innerHTML = html;
+      document.getElementById('file-browser-path').innerText = `~/.docker-orkes/stacks/${currentStackName}/${currentSubpath ? currentSubpath + '/' : ''}`;
+    }
+
+    function navigateToSubpath(subpath) {
+      loadRemoteFiles(subpath);
+    }
+
+    function loadRemoteFiles(subpath, autoSelectFileName) {
+      currentSubpath = subpath ? subpath.replace(/^\/+|\/+$/g, '') : '';
+      renderBreadcrumbs();
+      const listElem = document.getElementById('file-browser-list');
+      listElem.innerHTML = '<div class="text-slate-500 py-3 text-center">Loading files from remote server...</div>';
+
+      fetch(`/deployments/${currentDepId}/files?path=${encodeURIComponent(currentSubpath)}`)
         .then(res => res.json())
         .then(data => {
           if (data.error) {
-            document.getElementById('file-browser-list').innerHTML = `<div class="text-rose-400 p-2">Error: ${data.error}</div>`;
-            document.getElementById('file-viewer-content').value = 'Failed to load remote directory.';
+            listElem.innerHTML = `<div class="text-rose-400 p-2 text-xs">Error: ${escapeHtml(data.error)}</div>`;
             return;
           }
 
-          if (!data.files || data.files.length === 0) {
-            document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 p-2">No files found in directory.</div>';
-            document.getElementById('file-viewer-content').value = 'Directory is empty.';
-            return;
-          }
+          const files = data.files || [];
+          files.sort((a, b) => {
+            if (a.is_dir && !b.is_dir) return -1;
+            if (!a.is_dir && b.is_dir) return 1;
+            return a.name.localeCompare(b.name);
+          });
 
           let listHtml = '';
-          data.files.forEach((f) => {
-            const icon = f.is_dir ? '📁' : (f.name.endsWith('.yml') || f.name.endsWith('.yaml') ? '📄' : (f.name.startsWith('.env') ? '⚙️' : '📝'));
+
+          if (currentSubpath) {
+            const parentSubpath = currentSubpath.split('/').slice(0, -1).join('/');
             listHtml += `
-              <button onclick="viewRemoteFile('${depId}', '${f.name}')" id="file-item-${f.name.replace(/[^a-zA-Z0-9]/g, '_')}"
-                class="file-btn w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 transition flex items-center justify-between group">
-                <span class="font-mono text-slate-200 flex items-center gap-1.5 truncate">
-                  <span>${icon}</span>
-                  <span class="truncate">${f.name}</span>
-                </span>
-                <span class="text-[10px] text-slate-500 font-mono">${f.size} B</span>
+              <button onclick="navigateToSubpath('${escapeHtml(parentSubpath)}')"
+                class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 transition flex items-center gap-2 text-indigo-300 font-mono text-xs">
+                <span>⬆️</span> <span>.. (Parent Directory)</span>
               </button>
             `;
-          });
-          document.getElementById('file-browser-list').innerHTML = listHtml;
+          }
 
-          const first = data.files.find(f => f.name === 'docker-compose.yml') || data.files[0];
-          if (first && !first.is_dir) {
-            viewRemoteFile(depId, first.name);
+          if (files.length === 0) {
+            listHtml += '<div class="text-slate-500 p-2 text-center text-xs">Directory is empty.</div>';
+          } else {
+            files.forEach((f) => {
+              const fullItemPath = currentSubpath ? `${currentSubpath}/${f.name}` : f.name;
+              const sanitizedId = fullItemPath.replace(/[^a-zA-Z0-9]/g, '_');
+
+              if (f.is_dir) {
+                listHtml += `
+                  <div class="flex items-center justify-between group px-2 py-1.5 rounded-lg hover:bg-slate-800 transition">
+                    <button onclick="navigateToSubpath('${escapeHtml(fullItemPath)}')" class="flex-1 text-left flex items-center gap-1.5 truncate">
+                      <span class="text-sm">📁</span>
+                      <span class="font-mono text-amber-200/90 truncate font-medium text-xs">${escapeHtml(f.name)}</span>
+                    </button>
+                    <button onclick="deleteRemoteItem('${escapeHtml(fullItemPath)}', true)" title="Delete folder"
+                      class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 p-1 text-xs transition">
+                      🗑️
+                    </button>
+                  </div>
+                `;
+              } else {
+                const isArchive = f.name.endsWith('.tar.gz') || f.name.endsWith('.tgz') || f.name.endsWith('.tar') || f.name.endsWith('.zip') || f.name.endsWith('.tar.bz2') || f.name.endsWith('.tar.xz');
+                const isProtected = (currentSubpath === '' && f.name === 'docker-compose.yml');
+                const icon = isArchive ? '📦' : (f.name.endsWith('.yml') || f.name.endsWith('.yaml') ? '📄' : (f.name.startsWith('.env') ? '⚙️' : '📝'));
+
+                listHtml += `
+                  <div id="file-item-${sanitizedId}" class="file-btn flex items-center justify-between group px-2 py-1.5 rounded-lg hover:bg-slate-800 transition">
+                    <button onclick="viewRemoteFile('${currentDepId}', '${escapeHtml(fullItemPath)}')" class="flex-1 text-left flex items-center gap-1.5 truncate">
+                      <span class="text-sm">${icon}</span>
+                      <span class="font-mono text-slate-200 truncate text-xs">${escapeHtml(f.name)}</span>
+                    </button>
+                    <div class="flex items-center gap-1">
+                      <span class="text-[10px] text-slate-500 font-mono">${f.size} B</span>
+                      ${isArchive ? `
+                        <button onclick="extractArchive('${escapeHtml(fullItemPath)}')" title="Extract archive"
+                          class="opacity-0 group-hover:opacity-100 text-indigo-400 hover:text-indigo-300 px-1.5 py-0.5 rounded text-[10px] bg-slate-900 border border-slate-700 hover:border-indigo-500 transition">
+                          📦 Extract
+                        </button>
+                      ` : ''}
+                      ${!isProtected ? `
+                        <button onclick="deleteRemoteItem('${escapeHtml(fullItemPath)}', false)" title="Delete file"
+                          class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 p-1 text-xs transition">
+                          🗑️
+                        </button>
+                      ` : ''}
+                    </div>
+                  </div>
+                `;
+              }
+            });
+          }
+
+          listElem.innerHTML = listHtml;
+
+          if (autoSelectFileName) {
+            const fullAutoPath = currentSubpath ? `${currentSubpath}/${autoSelectFileName}` : autoSelectFileName;
+            viewRemoteFile(currentDepId, fullAutoPath);
+          } else if (currentSubpath === '') {
+            const first = files.find(f => f.name === 'docker-compose.yml') || files.find(f => !f.is_dir);
+            if (first && !first.is_dir) {
+              viewRemoteFile(currentDepId, first.name);
+            }
           }
         })
         .catch(err => {
-          document.getElementById('file-browser-list').innerHTML = `<div class="text-rose-400 p-2">Request error: ${err.message}</div>`;
+          listElem.innerHTML = `<div class="text-rose-400 p-2 text-xs">Request error: ${escapeHtml(err.message)}</div>`;
         });
     }
 
     function viewRemoteFile(depId, fileName) {
       currentFileName = fileName;
       document.querySelectorAll('.file-btn').forEach(b => b.classList.remove('bg-indigo-600/20', 'border', 'border-indigo-500/30'));
-      const activeBtn = document.getElementById('file-item-' + fileName.replace(/[^a-zA-Z0-9]/g, '_'));
+      const sanitizedId = fileName.replace(/[^a-zA-Z0-9]/g, '_');
+      const activeBtn = document.getElementById('file-item-' + sanitizedId);
       if (activeBtn) {
         activeBtn.classList.add('bg-indigo-600/20', 'border', 'border-indigo-500/30');
       }
@@ -2689,6 +2838,220 @@
         .catch(err => {
           document.getElementById('file-viewer-content').value = `Failed to read file: ${err.message}`;
         });
+    }
+
+    function promptCreateFile() {
+      const fileName = prompt('Enter new file name (e.g. nginx.conf or custom.env):');
+      if (!fileName || !fileName.trim()) return;
+      const cleanName = fileName.trim();
+      const fullPath = currentSubpath ? `${currentSubpath}/${cleanName}` : cleanName;
+
+      const formData = new URLSearchParams();
+      formData.append('file', fullPath);
+      formData.append('content', '');
+      formData.append('redeploy', 'false');
+
+      fetch(`/deployments/${currentDepId}/files/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showFileUploadAlert('Failed to create file: ' + data.error, true);
+          return;
+        }
+        showFileUploadAlert(`✓ File "${cleanName}" created!`, false);
+        loadRemoteFiles(currentSubpath, cleanName);
+      })
+      .catch(err => {
+        showFileUploadAlert('Network error creating file: ' + err.message, true);
+      });
+    }
+
+    function promptCreateFolder() {
+      const folderName = prompt('Enter new folder name (e.g. conf.d or certs):');
+      if (!folderName || !folderName.trim()) return;
+      const cleanName = folderName.trim();
+      const fullPath = currentSubpath ? `${currentSubpath}/${cleanName}` : cleanName;
+
+      const formData = new URLSearchParams();
+      formData.append('path', fullPath);
+
+      fetch(`/deployments/${currentDepId}/files/mkdir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showFileUploadAlert('Failed to create folder: ' + data.error, true);
+          return;
+        }
+        showFileUploadAlert(`✓ Folder "${cleanName}" created!`, false);
+        loadRemoteFiles(currentSubpath);
+      })
+      .catch(err => {
+        showFileUploadAlert('Network error creating folder: ' + err.message, true);
+      });
+    }
+
+    function toggleUploadDropdown(e) {
+      if (e) e.stopPropagation();
+      const dd = document.getElementById('file-upload-dropdown');
+      if (dd) dd.classList.toggle('hidden');
+    }
+
+    function closeUploadDropdown() {
+      const dd = document.getElementById('file-upload-dropdown');
+      if (dd) dd.classList.add('hidden');
+    }
+
+    function showFileUploadAlert(msg, isError) {
+      const alert = document.getElementById('file-upload-alert');
+      if (!alert) return;
+      alert.classList.remove('hidden', 'bg-rose-500/10', 'border-rose-500/30', 'text-rose-300', 'bg-emerald-500/10', 'border-emerald-500/30', 'text-emerald-300');
+      alert.classList.add(isError ? 'bg-rose-500/10' : 'bg-emerald-500/10', 'border', isError ? 'border-rose-500/30' : 'border-emerald-500/30', isError ? 'text-rose-300' : 'text-emerald-300');
+      alert.innerHTML = `<span class="truncate font-medium">${escapeHtml(msg)}</span><button onclick="hideFileUploadAlert()" class="text-xs hover:opacity-75 ml-2">✕</button>`;
+      if (!isError) {
+        setTimeout(hideFileUploadAlert, 5000);
+      }
+    }
+
+    function hideFileUploadAlert() {
+      const alert = document.getElementById('file-upload-alert');
+      if (alert) alert.classList.add('hidden');
+    }
+
+    function uploadSelectedFiles(fileList, isFolder) {
+      if (!fileList || fileList.length === 0) return;
+      showFileUploadAlert(`⏳ Uploading ${fileList.length} file(s)...`, false);
+
+      const formData = new FormData();
+      formData.append('subpath', currentSubpath);
+
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const relPath = file.webkitRelativePath || file.name;
+        formData.append('files', file, relPath);
+      }
+
+      fetch(`/deployments/${currentDepId}/files/upload`, {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('file-upload-input').value = '';
+        document.getElementById('folder-upload-input').value = '';
+
+        if (data.error) {
+          showFileUploadAlert('Upload failed: ' + data.error, true);
+          return;
+        }
+        showFileUploadAlert(`✓ Successfully uploaded ${data.files_uploaded || fileList.length} file(s)!`, false);
+        loadRemoteFiles(currentSubpath);
+      })
+      .catch(err => {
+        document.getElementById('file-upload-input').value = '';
+        document.getElementById('folder-upload-input').value = '';
+        showFileUploadAlert('Upload error: ' + err.message, true);
+      });
+    }
+
+    function extractArchive(fullArchivePath) {
+      const fileName = fullArchivePath.split('/').pop();
+      const dest = prompt(`Extract "${fileName}" to directory:\n(Leave blank for current directory, or enter subfolder name):`, '');
+      if (dest === null) return;
+
+      const targetDir = dest.trim() ? (currentSubpath ? `${currentSubpath}/${dest.trim()}` : dest.trim()) : currentSubpath;
+      showFileUploadAlert(`⏳ Extracting archive on remote node...`, false);
+
+      const formData = new URLSearchParams();
+      formData.append('file', fullArchivePath);
+      formData.append('target_dir', targetDir);
+
+      fetch(`/deployments/${currentDepId}/files/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showFileUploadAlert('Extraction failed: ' + data.error, true);
+          return;
+        }
+        showFileUploadAlert(`✓ Archive extracted successfully into "${targetDir || 'current folder'}"!`, false);
+        loadRemoteFiles(currentSubpath);
+      })
+      .catch(err => {
+        showFileUploadAlert('Network error during extraction: ' + err.message, true);
+      });
+    }
+
+    function deleteRemoteItem(fullItemPath, isDir) {
+      const name = fullItemPath.split('/').pop();
+      if (!confirm(`Are you sure you want to delete ${isDir ? 'folder' : 'file'} "${name}" on remote node?\nThis action cannot be undone.`)) {
+        return;
+      }
+
+      const formData = new URLSearchParams();
+      formData.append('path', fullItemPath);
+
+      fetch(`/deployments/${currentDepId}/files/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showFileUploadAlert('Delete failed: ' + data.error, true);
+          return;
+        }
+        showFileUploadAlert(`✓ Deleted ${name}`, false);
+        if (currentFileName === fullItemPath) {
+          currentFileName = '';
+          document.getElementById('file-viewer-name').innerText = 'Select a file';
+          document.getElementById('file-viewer-content').value = 'File was deleted.';
+          document.getElementById('file-viewer-content').disabled = true;
+          document.getElementById('file-edit-badge').classList.add('hidden');
+          document.getElementById('copy-file-btn').classList.add('hidden');
+          document.getElementById('save-file-btn').classList.add('hidden');
+          document.getElementById('redeploy-file-btn').classList.add('hidden');
+        }
+        loadRemoteFiles(currentSubpath);
+      })
+      .catch(err => {
+        showFileUploadAlert('Delete error: ' + err.message, true);
+      });
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dropZone = document.getElementById('file-drop-zone');
+      if (dropZone) dropZone.classList.add('border-indigo-500', 'bg-indigo-500/10');
+    }
+
+    function handleDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dropZone = document.getElementById('file-drop-zone');
+      if (dropZone) dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const dropZone = document.getElementById('file-drop-zone');
+      if (dropZone) dropZone.classList.remove('border-indigo-500', 'bg-indigo-500/10');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        uploadSelectedFiles(e.dataTransfer.files);
+      }
     }
 
     function saveRemoteFile(redeploy) {

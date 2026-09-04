@@ -379,3 +379,83 @@ func TestClient_FileOpsAndDelegations(t *testing.T) {
 		t.Errorf("BootstrapKey failed: %v", err)
 	}
 }
+
+func TestClient_FileManagementFeatures(t *testing.T) {
+	var executedCmds []string
+	mock := &mockExecutor{
+		runCmdFunc: func(ctx context.Context, host string, port int, user string, privKey string, cmd string) (string, error) {
+			executedCmds = append(executedCmds, cmd)
+			return "success", nil
+		},
+	}
+	cli := New(Config{
+		Host:       "10.0.0.1",
+		Port:       22,
+		User:       "admin",
+		PrivKeyPEM: "key",
+		Executor:   mock,
+	})
+
+	ctx := context.Background()
+
+	// 1. CreateStackDir
+	if err := cli.CreateStackDir(ctx, "app", "conf.d/sub"); err != nil {
+		t.Fatalf("CreateStackDir failed: %v", err)
+	}
+	if len(executedCmds) == 0 || !strings.Contains(executedCmds[0], "mkdir -p \".docker-orkes/stacks/app/conf.d/sub\"") {
+		t.Errorf("unexpected mkdir command: %v", executedCmds)
+	}
+
+	// 2. DeleteStackPath with protection
+	err := cli.DeleteStackPath(ctx, "app", "docker-compose.yml")
+	if err == nil || !strings.Contains(err.Error(), "protected") {
+		t.Fatalf("expected error deleting protected docker-compose.yml, got %v", err)
+	}
+
+	// Delete non-protected file
+	if err := cli.DeleteStackPath(ctx, "app", "conf.d/old.conf"); err != nil {
+		t.Fatalf("DeleteStackPath failed: %v", err)
+	}
+	if !strings.Contains(executedCmds[len(executedCmds)-1], "rm -rf -- \".docker-orkes/stacks/app/conf.d/old.conf\"") {
+		t.Errorf("unexpected rm command: %v", executedCmds[len(executedCmds)-1])
+	}
+
+	// 3. ExtractStackArchive
+	if err := cli.ExtractStackArchive(ctx, "app", "assets.tar.gz", "public"); err != nil {
+		t.Fatalf("ExtractStackArchive failed: %v", err)
+	}
+	lastCmd := executedCmds[len(executedCmds)-1]
+	if !strings.Contains(lastCmd, "tar -xf") || !strings.Contains(lastCmd, ".docker-orkes/stacks/app/public") {
+		t.Errorf("unexpected tar extract command: %s", lastCmd)
+	}
+
+	if err := cli.ExtractStackArchive(ctx, "app", "bundle.zip", ""); err != nil {
+		t.Fatalf("ExtractStackArchive zip failed: %v", err)
+	}
+	lastCmd = executedCmds[len(executedCmds)-1]
+	if !strings.Contains(lastCmd, "unzip") {
+		t.Errorf("unexpected zip extract command: %s", lastCmd)
+	}
+
+	// 4. UploadStackFiles
+	files := map[string][]byte{
+		"nginx/default.conf": []byte("server {}"),
+		"static/index.html":  []byte("<h1>Hi</h1>"),
+	}
+	if err := cli.UploadStackFiles(ctx, "app", files); err != nil {
+		t.Fatalf("UploadStackFiles failed: %v", err)
+	}
+	uploaded := mock.uploaded[".docker-orkes/stacks/app"]
+	if uploaded == nil || string(uploaded["nginx/default.conf"]) != "server {}" {
+		t.Errorf("expected uploaded files in mock: %+v", uploaded)
+	}
+
+	// 5. Path traversal checks
+	if err := cli.CreateStackDir(ctx, "app", "../etc"); err == nil {
+		t.Errorf("expected error on path traversal in CreateStackDir")
+	}
+	if err := cli.DeleteStackPath(ctx, "app", "../../etc/shadow"); err == nil {
+		t.Errorf("expected error on path traversal in DeleteStackPath")
+	}
+}
+

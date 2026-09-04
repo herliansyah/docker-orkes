@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -196,6 +199,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /deployments/{id}/files", s.requireAuth(http.HandlerFunc(s.handleListDeploymentFiles)))
 	mux.Handle("GET /deployments/{id}/files/view", s.requireAuth(http.HandlerFunc(s.handleViewDeploymentFile)))
 	mux.Handle("POST /deployments/{id}/files/save", s.requireAuth(http.HandlerFunc(s.handleSaveDeploymentFile)))
+	mux.Handle("POST /deployments/{id}/files/mkdir", s.requireAuth(http.HandlerFunc(s.handleCreateDeploymentDir)))
+	mux.Handle("POST /deployments/{id}/files/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeploymentFile)))
+	mux.Handle("POST /deployments/{id}/files/extract", s.requireAuth(http.HandlerFunc(s.handleExtractDeploymentArchive)))
+	mux.Handle("POST /deployments/{id}/files/upload", s.requireAuth(http.HandlerFunc(s.handleUploadDeploymentFiles)))
 
 
 
@@ -658,7 +665,8 @@ func (s *Server) handleAdoptDrift(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListDeploymentFiles(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	remoteDir, files, err := s.cp.ListDeploymentFiles(r.Context(), id)
+	subpath := strings.TrimSpace(r.URL.Query().Get("path"))
+	remoteDir, files, err := s.cp.ListDeploymentFiles(r.Context(), id, subpath)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -672,6 +680,7 @@ func (s *Server) handleListDeploymentFiles(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"remote_dir": remoteDir,
+		"subpath":    subpath,
 		"files":      files,
 	})
 }
@@ -679,7 +688,7 @@ func (s *Server) handleListDeploymentFiles(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleViewDeploymentFile(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	fileName := strings.TrimSpace(r.URL.Query().Get("file"))
-	if fileName == "" || strings.Contains(fileName, "..") {
+	if fileName == "" || strings.Contains(fileName, "..") || strings.HasPrefix(fileName, "/") {
 		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
@@ -713,7 +722,7 @@ func (s *Server) handleSaveDeploymentFile(w http.ResponseWriter, r *http.Request
 	content := r.FormValue("content")
 	redeploy := r.FormValue("redeploy") == "true"
 
-	if fileName == "" || strings.Contains(fileName, "..") || strings.Contains(fileName, "/") {
+	if fileName == "" || strings.Contains(fileName, "..") || strings.HasPrefix(fileName, "/") {
 		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
@@ -736,6 +745,179 @@ func (s *Server) handleSaveDeploymentFile(w http.ResponseWriter, r *http.Request
 		"redeploy_err": saveRes.RedeployErr,
 		"output":       saveRes.Output,
 		"drift_status": saveRes.DriftStatus,
+	})
+}
+
+func (s *Server) handleCreateDeploymentDir(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	dirPath := strings.TrimSpace(r.FormValue("path"))
+	if dirPath == "" || strings.Contains(dirPath, "..") || strings.HasPrefix(dirPath, "/") {
+		http.Error(w, "Invalid directory path", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.cp.CreateDeploymentDir(r.Context(), id, dirPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"path":    dirPath,
+	})
+}
+
+func (s *Server) handleDeleteDeploymentFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	filePath := strings.TrimSpace(r.FormValue("path"))
+	if filePath == "" || strings.Contains(filePath, "..") || strings.HasPrefix(filePath, "/") {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
+	if filePath == "docker-compose.yml" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "cannot delete docker-compose.yml: core deployment file is protected",
+		})
+		return
+	}
+
+	if err := s.cp.DeleteDeploymentPath(r.Context(), id, filePath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"path":    filePath,
+	})
+}
+
+func (s *Server) handleExtractDeploymentArchive(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	archiveFile := strings.TrimSpace(r.FormValue("file"))
+	targetDir := strings.TrimSpace(r.FormValue("target_dir"))
+	if archiveFile == "" || strings.Contains(archiveFile, "..") || strings.HasPrefix(archiveFile, "/") {
+		http.Error(w, "Invalid archive filename", http.StatusBadRequest)
+		return
+	}
+	if targetDir != "" && (strings.Contains(targetDir, "..") || strings.HasPrefix(targetDir, "/")) {
+		http.Error(w, "Invalid target directory", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.cp.ExtractDeploymentArchive(r.Context(), id, archiveFile, targetDir); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"file":       archiveFile,
+		"target_dir": targetDir,
+	})
+}
+
+func (s *Server) handleUploadDeploymentFiles(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	// ponytail: Limit upload batch to 100MB as agreed in architecture decision
+	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		http.Error(w, "Request too large or invalid multipart form (max 100MB)", http.StatusBadRequest)
+		return
+	}
+
+	prefixDir := strings.TrimSpace(r.FormValue("subpath"))
+	if prefixDir != "" && (strings.Contains(prefixDir, "..") || strings.HasPrefix(prefixDir, "/")) {
+		http.Error(w, "Invalid subpath", http.StatusBadRequest)
+		return
+	}
+
+	filesMap := make(map[string][]byte)
+	var fileHeaders []*multipart.FileHeader
+	if fhs, ok := r.MultipartForm.File["files"]; ok {
+		fileHeaders = append(fileHeaders, fhs...)
+	}
+	if fhs, ok := r.MultipartForm.File["file"]; ok {
+		fileHeaders = append(fileHeaders, fhs...)
+	}
+
+	if len(fileHeaders) == 0 {
+		http.Error(w, "No files uploaded", http.StatusBadRequest)
+		return
+	}
+
+	for _, fh := range fileHeaders {
+		fname := strings.TrimSpace(fh.Filename)
+		fname = strings.ReplaceAll(fname, "\\", "/")
+		if fname == "" || strings.Contains(fname, "..") || strings.HasPrefix(fname, "/") {
+			continue
+		}
+		destName := fname
+		if prefixDir != "" {
+			destName = path.Join(prefixDir, fname)
+		}
+		f, err := fh.Open()
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(f)
+		_ = f.Close()
+		if err != nil {
+			continue
+		}
+		filesMap[destName] = data
+	}
+
+	if len(filesMap) == 0 {
+		http.Error(w, "No valid files found in upload", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.cp.UploadDeploymentFiles(r.Context(), id, filesMap); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"files_uploaded": len(filesMap),
 	})
 }
 
