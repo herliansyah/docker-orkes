@@ -61,5 +61,10 @@ _Avoid_: Daemon, watcher, heartbeat agent, cron job
 An outbound messaging integration (such as an HTTP webhook, Telegram bot, or Discord channel) configured in the Control Plane to dispatch alerts when a Node goes offline, a container crashes, or Drift is detected.
 _Avoid_: Alert manager, notifier service, webhook emitter
 
+**Primary Control Plane**:
+The active Control Plane instance that serves the dashboard, runs the background Poller, and executes deployments against remote Nodes.
+_Avoid_: Active node, master node, main server
 
-
+**Standby Control Plane**:
+A passive replica instance of the Control Plane that receives periodic database state updates from the Primary Control Plane and remains stopped to prevent split-brain polling until manually promoted during an incident.
+_Avoid_: Backup node, slave, secondary worker

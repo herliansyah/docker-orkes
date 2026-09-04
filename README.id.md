@@ -100,10 +100,14 @@ Panduan langkah demi langkah dan rincian teknis telah tersedia:
 
 - 📖 [Panduan Memulai (Bahasa Indonesia)](docs/getting-started.id.md) | [Getting Started Guide (English)](docs/getting-started.md)
 - 🛠️ [Rincian Fitur & Arsitektur (Bahasa Indonesia)](docs/features.id.md) | [Feature Deep Dive & Architecture (English)](docs/features.md)
+- 🛡️ [Panduan Disaster Recovery & Standby (Bahasa Indonesia)](docs/disaster-recovery.id.md) | [Disaster Recovery & Standby Setup (English)](docs/disaster-recovery.md)
 - 📐 [Architecture Decision Records (ADRs)](docs/adr/)
   - [ADR 0001: Agentless SSH Architecture](docs/adr/0001-agentless-ssh-architecture.md)
   - [ADR 0002: Control Plane Tech Stack](docs/adr/0002-control-plane-tech-stack.md)
   - [ADR 0003: Stack Template and Deployment Model](docs/adr/0003-stack-template-and-deployment-model.md)
+  - [ADR 0004: Lightweight Liveness Poller and Edge-Triggered Alerting](docs/adr/0004-lightweight-poller-and-edge-triggered-alerting.md)
+  - [ADR 0005: Forward-Only Deployment Revisions with Bounded Retention](docs/adr/0005-forward-only-deployment-revisions-with-bounded-retention.md)
+  - [ADR 0006: Active-Passive Control Plane Replication](docs/adr/0006-active-passive-control-plane-replication.md)
 
 ---
 
