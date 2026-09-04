@@ -33,11 +33,12 @@ func main() {
 	defer srv.Close()
 
 	httpServer := &http.Server{
-		Addr:         *addr,
-		Handler:      srv.Handler(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		Addr:              *addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
+
 
 	fmt.Println("==================================================")
 	fmt.Printf("🐳 Docker Orkes Control Plane started on %s\n", *addr)

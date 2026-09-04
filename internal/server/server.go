@@ -653,6 +653,10 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) deployStack(ctx context.Context, dep *store.Deployment) error {
+	// Allow up to 10 minutes for image download and container startup
+	deployCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	stack, err := s.store.GetStack(dep.StackID)
 	if err != nil {
 		return fmt.Errorf("stack not found: %w", err)
@@ -668,17 +672,18 @@ func (s *Server) deployStack(ctx context.Context, dep *store.Deployment) error {
 		".env":               []byte(dep.EnvVars),
 	}
 
-	if err := s.executor.UploadFiles(ctx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
+	if err := s.executor.UploadFiles(deployCtx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
 		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
 		return fmt.Errorf("failed to upload files: %w", err)
 	}
 
 	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", remoteDir, remoteDir)
-	out, err := s.executor.RunCommand(ctx, node.Host, node.Port, node.User, s.privKey, cmd)
+	out, err := s.executor.RunCommand(deployCtx, node.Host, node.Port, node.User, s.privKey, cmd)
 	if err != nil {
 		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", fmt.Sprintf("command error: %v (out: %s)", err, out))
 		return fmt.Errorf("failed to run docker compose up: %w", err)
 	}
+
 
 	hash := computeDesiredHash(stack.ComposeYAML, dep.EnvVars)
 	_ = s.store.UpdateDeploymentDesiredHash(dep.ID, hash)
