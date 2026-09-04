@@ -75,6 +75,17 @@ type Deployment struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+type DeploymentRevision struct {
+	ID             string    `json:"id"`
+	DeploymentID   string    `json:"deployment_id"`
+	RevisionNumber int       `json:"revision_number"`
+	ComposeYAML    string    `json:"compose_yaml"`
+	EnvVars        string    `json:"env_vars"`
+	DesiredHash    string    `json:"desired_hash"`
+	Reason         string    `json:"reason"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -128,6 +139,17 @@ func (s *Store) initSchema() error {
 		remote_compose TEXT NOT NULL DEFAULT '',
 		remote_env TEXT NOT NULL DEFAULT '',
 		updated_at DATETIME NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS deployment_revisions (
+		id TEXT PRIMARY KEY,
+		deployment_id TEXT NOT NULL REFERENCES deployments(id) ON DELETE CASCADE,
+		revision_number INTEGER NOT NULL,
+		compose_yaml TEXT NOT NULL,
+		env_vars TEXT NOT NULL DEFAULT '',
+		desired_hash TEXT NOT NULL DEFAULT '',
+		reason TEXT NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL
 	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
@@ -413,6 +435,86 @@ func (s *Store) DeleteDeployment(id string) error {
 	_, err := s.db.Exec(`DELETE FROM deployments WHERE id = ?`, id)
 	return err
 }
+
+func (s *Store) GetNextRevisionNumber(deploymentID string) (int, error) {
+	var maxRev sql.NullInt64
+	err := s.db.QueryRow(`SELECT MAX(revision_number) FROM deployment_revisions WHERE deployment_id = ?`, deploymentID).Scan(&maxRev)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if !maxRev.Valid {
+		return 1, nil
+	}
+	return int(maxRev.Int64) + 1, nil
+}
+
+func (s *Store) CreateDeploymentRevision(rev DeploymentRevision) error {
+	if rev.ID == "" {
+		rev.ID = fmt.Sprintf("rev_%d", time.Now().UnixNano())
+	}
+	if rev.CreatedAt.IsZero() {
+		rev.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO deployment_revisions (id, deployment_id, revision_number, compose_yaml, env_vars, desired_hash, reason, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, rev.ID, rev.DeploymentID, rev.RevisionNumber, rev.ComposeYAML, rev.EnvVars, rev.DesiredHash, rev.Reason, rev.CreatedAt)
+	if err != nil {
+		return err
+	}
+	// ponytail: automatic prune to keep bounded retention of max 10 revisions per deployment
+	return s.PruneDeploymentRevisions(rev.DeploymentID, 10)
+}
+
+func (s *Store) ListDeploymentRevisions(deploymentID string) ([]DeploymentRevision, error) {
+	rows, err := s.db.Query(`
+		SELECT id, deployment_id, revision_number, compose_yaml, env_vars, desired_hash, reason, created_at
+		FROM deployment_revisions
+		WHERE deployment_id = ?
+		ORDER BY revision_number DESC
+	`, deploymentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []DeploymentRevision
+	for rows.Next() {
+		var r DeploymentRevision
+		if err := rows.Scan(&r.ID, &r.DeploymentID, &r.RevisionNumber, &r.ComposeYAML, &r.EnvVars, &r.DesiredHash, &r.Reason, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, r)
+	}
+	return list, nil
+}
+
+func (s *Store) GetDeploymentRevision(id string) (*DeploymentRevision, error) {
+	var r DeploymentRevision
+	err := s.db.QueryRow(`
+		SELECT id, deployment_id, revision_number, compose_yaml, env_vars, desired_hash, reason, created_at
+		FROM deployment_revisions
+		WHERE id = ?
+	`, id).Scan(&r.ID, &r.DeploymentID, &r.RevisionNumber, &r.ComposeYAML, &r.EnvVars, &r.DesiredHash, &r.Reason, &r.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (s *Store) PruneDeploymentRevisions(deploymentID string, maxKeep int) error {
+	_, err := s.db.Exec(`
+		DELETE FROM deployment_revisions
+		WHERE deployment_id = ? AND id NOT IN (
+			SELECT id FROM deployment_revisions
+			WHERE deployment_id = ?
+			ORDER BY revision_number DESC
+			LIMIT ?
+		)
+	`, deploymentID, deploymentID, maxKeep)
+	return err
+}
+
 
 
 

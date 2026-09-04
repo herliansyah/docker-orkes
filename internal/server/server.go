@@ -13,9 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"sync"
+
 	"docker-orkes/internal/controlplane"
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
+	"docker-orkes/internal/notifier"
+	"docker-orkes/internal/poller"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 
@@ -44,6 +48,9 @@ type Server struct {
 	templates    *template.Template
 	pubKey       string
 	privKey      string
+	notifier     notifier.Notifier
+	poller       poller.Poller
+	mu           sync.RWMutex
 }
 
 func New(cfg Config) (*Server, error) {
@@ -85,6 +92,33 @@ func New(cfg Config) (*Server, error) {
 		PrivKeyPEM:   privKey,
 	})
 
+	// Notifications
+	notifEnabled, _ := st.GetSetting("notifications_enabled")
+	telegramToken, _ := st.GetSetting("telegram_bot_token")
+	telegramChatID, _ := st.GetSetting("telegram_chat_id")
+	webhookURL, _ := st.GetSetting("webhook_url")
+
+	notif := notifier.New(notifier.Config{
+		TelegramBotToken: telegramToken,
+		TelegramChatID:   telegramChatID,
+		WebhookURL:       webhookURL,
+		Enabled:          notifEnabled == "true",
+	})
+
+	// Background Poller (ADR 0004)
+	pollerEnabled, _ := st.GetSetting("poller_enabled")
+	pollerIntervalStr, _ := st.GetSetting("poller_interval")
+	pollerInterval := poller.ParseIntervalOrDefault(pollerIntervalStr, 2*time.Minute)
+
+	plr := poller.New(poller.Config{
+		Engine:   cp,
+		Notifier: notif,
+		Interval: pollerInterval,
+	})
+	if pollerEnabled != "false" {
+		plr.Start()
+	}
+
 	return &Server{
 		cfg:          cfg,
 		store:        st,
@@ -95,6 +129,8 @@ func New(cfg Config) (*Server, error) {
 		templates:    tmpl,
 		pubKey:       pubKey,
 		privKey:      privKey,
+		notifier:     notif,
+		poller:       plr,
 	}, nil
 }
 
@@ -106,8 +142,12 @@ func (s *Server) Store() *store.Store {
 	return s.store
 }
 
-
 func (s *Server) Close() error {
+	s.mu.Lock()
+	if s.poller != nil {
+		s.poller.Stop()
+	}
+	s.mu.Unlock()
 	return s.store.Close()
 }
 
@@ -159,9 +199,15 @@ func (s *Server) Handler() http.Handler {
 
 
 
+	mux.Handle("GET /deployments/{id}/revisions", s.requireAuth(http.HandlerFunc(s.handleListRevisions)))
+	mux.Handle("POST /deployments/{id}/rollback", s.requireAuth(http.HandlerFunc(s.handleRollbackDeployment)))
+
 	mux.Handle("POST /settings/git", s.requireAuth(http.HandlerFunc(s.handleUpdateGitSettings)))
 	mux.Handle("POST /settings/git/sync", s.requireAuth(http.HandlerFunc(s.handleSyncGitNow)))
 	mux.Handle("POST /settings/runbook", s.requireAuth(http.HandlerFunc(s.handleUpdateRunbook)))
+	mux.Handle("POST /settings/notifications", s.requireAuth(http.HandlerFunc(s.handleUpdateNotificationSettings)))
+	mux.Handle("POST /settings/notifications/test", s.requireAuth(http.HandlerFunc(s.handleTestNotification)))
+	mux.Handle("POST /settings/poller", s.requireAuth(http.HandlerFunc(s.handleUpdatePollerSettings)))
 
 	return mux
 
@@ -732,6 +778,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	gitMirrorLastSync, _ := s.store.GetSetting("git_mirror_last_sync")
 	gitMirrorError, _ := s.store.GetSetting("git_mirror_error")
 	runbookNotes, _ := s.store.GetSetting("global_runbook_notes")
+	notifEnabled, _ := s.store.GetSetting("notifications_enabled")
+	telegramToken, _ := s.store.GetSetting("telegram_bot_token")
+	telegramChatID, _ := s.store.GetSetting("telegram_chat_id")
+	webhookURL, _ := s.store.GetSetting("webhook_url")
+	pollerEnabled, _ := s.store.GetSetting("poller_enabled")
+	pollerInterval, _ := s.store.GetSetting("poller_interval")
+	if pollerInterval == "" {
+		pollerInterval = "120"
+	}
 
 	deploymentsByNode := make(map[string][]store.Deployment)
 	for _, d := range deployments {
@@ -739,20 +794,26 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"PublicKeySSH":      s.pubKey,
-		"Nodes":             nodes,
-		"NodeCount":         len(nodes),
-		"Stacks":            stacks,
-		"StackCount":        len(stacks),
-		"Deployments":       deployments,
-		"DeploymentsByNode": deploymentsByNode,
-		"DeploymentCount":   len(deployments),
-		"GitMirrorURL":      gitMirrorURL,
-		"GitMirrorBranch":   gitMirrorBranch,
-		"GitMirrorStatus":   gitMirrorStatus,
-		"GitMirrorLastSync": gitMirrorLastSync,
-		"GitMirrorError":    gitMirrorError,
-		"RunbookNotes":      runbookNotes,
+		"PublicKeySSH":         s.pubKey,
+		"Nodes":                nodes,
+		"NodeCount":            len(nodes),
+		"Stacks":               stacks,
+		"StackCount":           len(stacks),
+		"Deployments":          deployments,
+		"DeploymentsByNode":    deploymentsByNode,
+		"DeploymentCount":      len(deployments),
+		"GitMirrorURL":         gitMirrorURL,
+		"GitMirrorBranch":      gitMirrorBranch,
+		"GitMirrorStatus":      gitMirrorStatus,
+		"GitMirrorLastSync":    gitMirrorLastSync,
+		"GitMirrorError":       gitMirrorError,
+		"RunbookNotes":         runbookNotes,
+		"NotificationsEnabled": notifEnabled == "true",
+		"TelegramBotToken":     telegramToken,
+		"TelegramChatID":       telegramChatID,
+		"WebhookURL":           webhookURL,
+		"PollerEnabled":        pollerEnabled != "false",
+		"PollerInterval":       pollerInterval,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -951,6 +1012,136 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(logs))
 }
+
+func (s *Server) handleListRevisions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	revs, err := s.cp.ListRevisions(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(revs)
+}
+
+func (s *Server) handleRollbackDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	revisionID := strings.TrimSpace(r.FormValue("revision_id"))
+	if revisionID == "" {
+		http.Error(w, "revision_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.cp.Rollback(r.Context(), id, revisionID); err != nil {
+		http.Error(w, "Rollback failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleUpdateNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	telegramToken := strings.TrimSpace(r.FormValue("telegram_bot_token"))
+	telegramChatID := strings.TrimSpace(r.FormValue("telegram_chat_id"))
+	webhookURL := strings.TrimSpace(r.FormValue("webhook_url"))
+	enabled := r.FormValue("notifications_enabled") == "on" || r.FormValue("notifications_enabled") == "true"
+
+	_ = s.store.SetSetting("telegram_bot_token", telegramToken)
+	_ = s.store.SetSetting("telegram_chat_id", telegramChatID)
+	_ = s.store.SetSetting("webhook_url", webhookURL)
+	enabledStr := "false"
+	if enabled {
+		enabledStr = "true"
+	}
+	_ = s.store.SetSetting("notifications_enabled", enabledStr)
+
+	s.mu.Lock()
+	s.notifier = notifier.New(notifier.Config{
+		TelegramBotToken: telegramToken,
+		TelegramChatID:   telegramChatID,
+		WebhookURL:       webhookURL,
+		Enabled:          enabled,
+	})
+	s.mu.Unlock()
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	n := s.notifier
+	s.mu.RUnlock()
+
+	err := n.SendAlert(r.Context(), "Test Alert", "This is a test notification from Docker Orkes.", false)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
+func (s *Server) handleUpdatePollerSettings(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	enabled := r.FormValue("poller_enabled") == "on" || r.FormValue("poller_enabled") == "true"
+	interval := strings.TrimSpace(r.FormValue("poller_interval"))
+	if interval == "" {
+		interval = "120"
+	}
+
+	enabledStr := "false"
+	if enabled {
+		enabledStr = "true"
+	}
+	_ = s.store.SetSetting("poller_enabled", enabledStr)
+	_ = s.store.SetSetting("poller_interval", interval)
+
+	s.mu.Lock()
+	if s.poller != nil {
+		s.poller.Stop()
+	}
+	newInterval := poller.ParseIntervalOrDefault(interval, 2*time.Minute)
+	s.poller = poller.New(poller.Config{
+		Engine:   s.cp,
+		Notifier: s.notifier,
+		Interval: newInterval,
+	})
+	if enabled {
+		s.poller.Start()
+	}
+	s.mu.Unlock()
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 
 
 

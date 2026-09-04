@@ -49,4 +49,17 @@ _Avoid_: Agent, runner, worker daemon
 The dedicated filesystem path on a Node (`~/.docker-orkes/stacks/<stack-name>/`) where a Stack's `docker-compose.yml` and `.env` files are stored and executed.
 _Avoid_: App folder, project path, workspace
 
+**Revision**:
+A versioned, immutable snapshot of a Deployment's Desired State (compose configuration, environment variables, and timestamp) captured at deployment time to enable rollbacks.
+_Avoid_: Release, backup, commit, checkpoint
+
+**Poller**:
+The background routine inside the Control Plane that periodically audits Node reachability, container health, and Drift without manual operator action.
+_Avoid_: Daemon, watcher, heartbeat agent, cron job
+
+**Notification Channel**:
+An outbound messaging integration (such as an HTTP webhook, Telegram bot, or Discord channel) configured in the Control Plane to dispatch alerts when a Node goes offline, a container crashes, or Drift is detected.
+_Avoid_: Alert manager, notifier service, webhook emitter
+
+
 

@@ -41,6 +41,8 @@ type Engine interface {
 
 	// Deployment operations
 	Deploy(ctx context.Context, deploymentID string) error
+	Rollback(ctx context.Context, deploymentID string, revisionID string) error
+	ListRevisions(ctx context.Context, deploymentID string) ([]store.DeploymentRevision, error)
 	Restart(ctx context.Context, deploymentID string) error
 	Down(ctx context.Context, deploymentID string) error
 	CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error)
@@ -179,9 +181,58 @@ func (e *engine) Deploy(ctx context.Context, deploymentID string) error {
 	_ = e.cfg.Store.UpdateDeploymentDesiredHash(dep.ID, hash)
 	_ = e.cfg.Store.UpdateDeploymentStatus(dep.ID, "running", out)
 
+	// ponytail: Forward-only revisions bounded to last 10 snapshots (ADR 0005)
+	if nextRev, err := e.cfg.Store.GetNextRevisionNumber(dep.ID); err == nil {
+		_ = e.cfg.Store.CreateDeploymentRevision(store.DeploymentRevision{
+			DeploymentID:   dep.ID,
+			RevisionNumber: nextRev,
+			ComposeYAML:    stack.ComposeYAML,
+			EnvVars:        dep.EnvVars,
+			DesiredHash:    hash,
+			Reason:         "deploy",
+		})
+	}
+
 	// Invariant: Git Mirror backup reflects successful deployments
 	_ = e.SyncGitMirror(ctx)
 	return nil
+}
+
+func (e *engine) Rollback(ctx context.Context, deploymentID string, revisionID string) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	rev, err := e.cfg.Store.GetDeploymentRevision(revisionID)
+	if err != nil {
+		return fmt.Errorf("revision not found: %w", err)
+	}
+	if rev.DeploymentID != dep.ID {
+		return fmt.Errorf("revision does not belong to deployment")
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+
+	if stack.ComposeYAML != rev.ComposeYAML {
+		stack.ComposeYAML = rev.ComposeYAML
+		if err := e.cfg.Store.UpdateStack(*stack); err != nil {
+			return fmt.Errorf("failed to revert stack compose: %w", err)
+		}
+	}
+
+	if dep.EnvVars != rev.EnvVars {
+		if err := e.cfg.Store.UpdateDeploymentEnv(dep.ID, rev.EnvVars, dep.Notes); err != nil {
+			return fmt.Errorf("failed to revert deployment env: %w", err)
+		}
+	}
+
+	return e.Deploy(ctx, deploymentID)
+}
+
+func (e *engine) ListRevisions(ctx context.Context, deploymentID string) ([]store.DeploymentRevision, error) {
+	return e.cfg.Store.ListDeploymentRevisions(deploymentID)
 }
 
 func (e *engine) Restart(ctx context.Context, deploymentID string) error {

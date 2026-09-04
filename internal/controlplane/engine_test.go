@@ -290,3 +290,73 @@ func TestControlPlane_TelemetryAndFiles(t *testing.T) {
 		t.Errorf("unexpected file content: %s", string(content))
 	}
 }
+
+func TestControlPlane_RevisionsAndRollback(t *testing.T) {
+	eng, _, _ := setupTestEngine(t)
+	st := eng.Store()
+	defer st.Close()
+
+	ctx := context.Background()
+
+	_ = st.CreateNode(store.Node{ID: "n1", Name: "worker-1", Host: "10.0.0.1", Port: 22, User: "root"})
+	_ = st.CreateStack(store.Stack{ID: "s1", Name: "app", ComposeYAML: "image: app:v1\n"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d1", StackID: "s1", NodeID: "n1", EnvVars: "TAG=v1"})
+
+	// Deploy initial
+	if err := eng.Deploy(ctx, "d1"); err != nil {
+		t.Fatalf("deploy initial: %v", err)
+	}
+
+	revs, err := eng.ListRevisions(ctx, "d1")
+	if err != nil || len(revs) != 1 {
+		t.Fatalf("expected 1 revision, got %d (err: %v)", len(revs), err)
+	}
+	v1ID := revs[0].ID
+	if revs[0].RevisionNumber != 1 || !strings.Contains(revs[0].EnvVars, "TAG=v1") {
+		t.Errorf("unexpected rev 1: %+v", revs[0])
+	}
+
+	// Update stack and env, then deploy again -> revision 2
+	stack, _ := st.GetStack("s1")
+	stack.ComposeYAML = "image: app:v2\n"
+	_ = st.UpdateStack(*stack)
+	_ = st.UpdateDeploymentEnv("d1", "TAG=v2", "")
+
+	if err := eng.Deploy(ctx, "d1"); err != nil {
+		t.Fatalf("deploy v2: %v", err)
+	}
+
+	revs, _ = eng.ListRevisions(ctx, "d1")
+	if len(revs) != 2 {
+		t.Fatalf("expected 2 revisions, got %d", len(revs))
+	}
+	if revs[0].RevisionNumber != 2 {
+		t.Errorf("expected revs[0] to be newest (2), got %d", revs[0].RevisionNumber)
+	}
+
+	// Rollback to v1 -> should create revision 3 with v1 content (forward-only!)
+	if err := eng.Rollback(ctx, "d1", v1ID); err != nil {
+		t.Fatalf("Rollback failed: %v", err)
+	}
+
+	revs, _ = eng.ListRevisions(ctx, "d1")
+	if len(revs) != 3 {
+		t.Fatalf("expected 3 revisions after rollback, got %d", len(revs))
+	}
+	if revs[0].RevisionNumber != 3 {
+		t.Errorf("expected newest revision to be 3, got %d", revs[0].RevisionNumber)
+	}
+	if revs[0].EnvVars != "TAG=v1" || revs[0].ComposeYAML != "image: app:v1\n" {
+		t.Errorf("expected rev 3 to have v1 state, got: %+v", revs[0])
+	}
+
+	// Verify bounded retention (max 10)
+	for i := 4; i <= 15; i++ {
+		_ = eng.Deploy(ctx, "d1")
+	}
+	revs, _ = eng.ListRevisions(ctx, "d1")
+	if len(revs) > 10 {
+		t.Errorf("expected at most 10 revisions bounded retention, got %d", len(revs))
+	}
+}
+

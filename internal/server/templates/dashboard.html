@@ -380,6 +380,10 @@
                             class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-[11px] transition" title="Browse files">
                             📂
                           </button>
+                          <button type="button" onclick="openRevisionsModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-[11px] transition" title="Revisions & Rollback">
+                            📜
+                          </button>
                           <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
                             <button type="submit" title="Redeploy stack" class="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 px-2 py-1 rounded text-[11px] transition font-medium">
                               🚀 Up
@@ -619,6 +623,11 @@
                               <span>✏️</span> <span data-i18n="menu_edit_env">Edit Env (.env)</span>
                             </button>
 
+                            <button type="button" onclick="openRevisionsModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-slate-800 flex items-center gap-2">
+                              <span>📜</span> <span>Revisions & Rollback</span>
+                            </button>
+
                             <form method="POST" action="/deployments/{{.ID}}/drift/check" class="m-0">
                               <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2">
                                 <span>🔍</span> <span data-i18n="menu_check_drift">Check Drift</span>
@@ -654,14 +663,20 @@
                 <!-- Inline Edit Deployment Env Row -->
                 <tr id="edit-dep-{{.ID}}" class="hidden bg-slate-950/90 border-b border-slate-800 child-dep-{{.ID}}">
                   <td colspan="6" class="p-4">
-                    <form method="POST" action="/deployments/{{.ID}}/update" class="space-y-3">
+                    <form method="POST" action="/deployments/{{.ID}}/update" onsubmit="restoreMaskedBeforeSubmit('env-textarea-{{.ID}}')" class="space-y-3">
                       <div class="flex items-center justify-between">
                         <span class="font-semibold text-slate-200 text-xs">Edit Node Environment Variables (.env) for {{.StackName}} on {{.NodeName}}</span>
                         <span class="text-[11px] text-slate-400" data-i18n="edit_env_hint">After saving, click 'Up' to redeploy to the remote node.</span>
                       </div>
                       <div>
-                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Environment Variables (.env)</label>
-                        <textarea name="env_vars" rows="4" placeholder="KEY=value"
+                        <div class="flex items-center justify-between mb-1">
+                          <label class="block text-[11px] font-medium text-slate-400">Environment Variables (.env)</label>
+                          <button type="button" onclick="toggleMaskSecrets('env-textarea-{{.ID}}', this)"
+                            class="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 py-0.5 px-1.5 rounded hover:bg-slate-800 transition">
+                            <span class="mask-icon">👁️</span> <span class="mask-label">Mask Secrets</span>
+                          </button>
+                        </div>
+                        <textarea name="env_vars" id="env-textarea-{{.ID}}" rows="4" placeholder="KEY=value"
                           class="w-full font-mono bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">{{.EnvVars}}</textarea>
                       </div>
                       <div>
@@ -1369,6 +1384,102 @@
             </div>
           </form>
         </div>
+
+        <!-- Card 3: Notification Channels (ChatOps) -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h4 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+                <span>🔔</span>
+                <span>Notification Channels (Telegram & Webhook)</span>
+              </h4>
+              <p class="text-xs text-slate-400 mt-1">
+                Receive edge-triggered alerts when nodes go offline, containers fail, or services recover.
+              </p>
+            </div>
+            <button type="button" onclick="sendTestAlertAsync()" id="test-alert-btn"
+              class="inline-flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition shrink-0">
+              <span id="test-alert-icon">📡</span>
+              <span id="test-alert-text">Send Test Alert</span>
+            </button>
+          </div>
+
+          <!-- Test Alert Banner -->
+          <div id="test-alert-status" class="hidden rounded-lg p-3 text-xs">
+            <span id="test-alert-msg" class="font-medium"></span>
+          </div>
+
+          <form method="POST" action="/settings/notifications" class="space-y-4">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" name="notifications_enabled" id="notifications_enabled" value="true" {{if .NotificationsEnabled}}checked{{end}}
+                class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500">
+              <label for="notifications_enabled" class="text-xs font-medium text-slate-200">
+                Enable Notifications
+              </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Telegram Bot Token</label>
+                <input type="password" name="telegram_bot_token" value="{{.TelegramBotToken}}" placeholder="123456:ABC-DEF..."
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-slate-400 mb-1">Telegram Chat ID</label>
+                <input type="text" name="telegram_chat_id" value="{{.TelegramChatID}}" placeholder="-100123456789 or @channel"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Discord / Generic Webhook URL</label>
+              <input type="url" name="webhook_url" value="{{.WebhookURL}}" placeholder="https://discord.com/api/webhooks/... or https://hooks.slack.com/..."
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            </div>
+
+            <div class="flex justify-end">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                Save Notification Settings
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Card 4: Background Health Poller -->
+        <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div>
+            <h4 class="text-sm font-semibold text-slate-100 flex items-center gap-2">
+              <span>🩺</span>
+              <span>Background Health Poller</span>
+            </h4>
+            <p class="text-xs text-slate-400 mt-1">
+              Lightweight node ping and container audit running on a periodic background loop (ADR 0004).
+            </p>
+          </div>
+
+          <form method="POST" action="/settings/poller" class="space-y-4">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" name="poller_enabled" id="poller_enabled" value="true" {{if .PollerEnabled}}checked{{end}}
+                class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500">
+              <label for="poller_enabled" class="text-xs font-medium text-slate-200">
+                Enable Background Poller
+              </label>
+            </div>
+
+            <div class="max-w-xs">
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Polling Interval (seconds)</label>
+              <input type="number" name="poller_interval" value="{{.PollerInterval}}" min="10" max="3600" step="5"
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <p class="text-[10px] text-slate-500 mt-1">Default is 120 seconds (2 minutes). Prevents SSH connection storms.</p>
+            </div>
+
+            <div class="flex justify-end">
+              <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                Save Poller Settings
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- Modal Footer -->
@@ -1448,6 +1559,42 @@
     </div>
   </div>
 
+  <!-- Deployment Revisions & Instant Rollback Modal -->
+  <div id="revisions-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">📜</span>
+          <div>
+            <h3 class="text-base font-semibold text-slate-100" id="revisions-modal-title">Deployment Revisions</h3>
+            <p class="text-xs text-slate-400">Forward-only revision history with instant one-click rollback (ADR 0005).</p>
+          </div>
+        </div>
+        <button onclick="closeRevisionsModal()" class="text-slate-400 hover:text-slate-200 text-lg p-1.5 rounded-lg hover:bg-slate-800 transition">✕</button>
+      </div>
+
+      <!-- Rollback Status Banner -->
+      <div id="rollback-status" class="hidden mx-6 mt-4 p-3 rounded-lg text-xs">
+        <span id="rollback-msg" class="font-medium"></span>
+      </div>
+
+      <!-- Content: Revisions List -->
+      <div class="p-6 space-y-3 overflow-y-auto" id="revisions-list">
+        <div class="text-slate-500 py-8 text-center text-xs">Loading revisions...</div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-6 py-3 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <span class="text-[11px] text-slate-500">Rollbacks create a new immutable revision preserving audit history.</span>
+        <button type="button" onclick="closeRevisionsModal()"
+          class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-4 py-1.5 rounded-lg text-xs font-medium transition" data-i18n="btn_close">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Remote File Browser Modal -->
   <div id="file-browser-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
@@ -1483,6 +1630,9 @@
               </span>
             </div>
             <div class="flex items-center gap-1.5" id="file-actions-bar">
+              <button id="mask-file-btn" onclick="toggleMaskFileEditor()" class="hidden text-[11px] bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 px-2.5 py-1 rounded transition flex items-center gap-1">
+                <span id="mask-file-icon">👁️</span> <span id="mask-file-label">Mask Secrets</span>
+              </button>
               <button id="copy-file-btn" onclick="copyCurrentFile()" class="hidden text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded transition">
                 Copy
               </button>
@@ -2523,6 +2673,18 @@
           document.getElementById('copy-file-btn').classList.remove('hidden');
           document.getElementById('save-file-btn').classList.remove('hidden');
           document.getElementById('redeploy-file-btn').classList.remove('hidden');
+
+          const maskBtn = document.getElementById('mask-file-btn');
+          if (maskBtn) {
+            if (fileName.startsWith('.env') || fileName.endsWith('.env')) {
+              maskBtn.classList.remove('hidden');
+            } else {
+              maskBtn.classList.add('hidden');
+            }
+            isEditorMasked = false;
+            rawEditorContent = currentRawFileContent;
+            document.getElementById('mask-file-label').innerText = 'Mask Secrets';
+          }
         })
         .catch(err => {
           document.getElementById('file-viewer-content').value = `Failed to read file: ${err.message}`;
@@ -2531,6 +2693,9 @@
 
     function saveRemoteFile(redeploy) {
       if (!currentDepId || !currentFileName) return;
+      if (isEditorMasked) {
+        toggleMaskFileEditor();
+      }
       const content = document.getElementById('file-viewer-content').value;
       const statusBox = document.getElementById('file-save-status');
       const statusMsg = document.getElementById('file-save-msg');
@@ -2603,6 +2768,218 @@
       document.getElementById('file-browser-modal').classList.add('hidden');
     }
 
+    // --- Revisions & Rollback ---
+    let currentRevisionsDepId = null;
+
+    function openRevisionsModal(depId, stackName, nodeName) {
+      currentRevisionsDepId = depId;
+      document.getElementById('revisions-modal-title').innerText = `Revisions for ${stackName} on ${nodeName}`;
+      document.getElementById('rollback-status').classList.add('hidden');
+      const listContainer = document.getElementById('revisions-list');
+      listContainer.innerHTML = '<div class="text-slate-500 py-8 text-center text-xs">Loading revisions...</div>';
+      document.getElementById('revisions-modal').classList.remove('hidden');
+
+      fetch(`/deployments/${depId}/revisions`)
+        .then(res => res.json())
+        .then(revs => {
+          if (!revs || revs.length === 0) {
+            listContainer.innerHTML = '<div class="text-slate-500 py-8 text-center text-xs">No recorded revisions yet. Revisions are created on deployment.</div>';
+            return;
+          }
+
+          let html = '';
+          revs.forEach((r, idx) => {
+            const isLatest = idx === 0;
+            const shortHash = r.desired_hash ? r.desired_hash.substring(0, 8) : 'unknown';
+            const dateStr = new Date(r.created_at).toLocaleString();
+            html += `
+              <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded text-xs font-mono font-bold ${isLatest ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-slate-800 text-slate-300'}">
+                      v${r.revision_number}
+                    </span>
+                    ${isLatest ? '<span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded">Active</span>' : ''}
+                    <span class="text-xs text-slate-400">${dateStr}</span>
+                    <span class="text-[10px] text-slate-500 font-mono">#${shortHash}</span>
+                  </div>
+                  <div>
+                    ${!isLatest ? `
+                    <button type="button" onclick="rollbackToRevision('${r.id}', ${r.revision_number})"
+                      class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs px-2.5 py-1 rounded transition font-medium">
+                      ⏪ Rollback to v${r.revision_number}
+                    </button>
+                    ` : '<span class="text-xs text-slate-500">Current Revision</span>'}
+                  </div>
+                </div>
+
+                <details class="text-xs">
+                  <summary class="cursor-pointer text-slate-400 hover:text-slate-300 text-[11px]">View Manifest Snapshot</summary>
+                  <div class="mt-2 space-y-2">
+                    <div>
+                      <div class="text-[10px] text-slate-500 font-mono">docker-compose.yml:</div>
+                      <pre class="bg-slate-900 p-2 rounded text-[11px] font-mono text-slate-300 overflow-x-auto max-h-32 whitespace-pre">${escapeHtml(r.compose_yaml)}</pre>
+                    </div>
+                    <div>
+                      <div class="text-[10px] text-slate-500 font-mono">.env:</div>
+                      <pre class="bg-slate-900 p-2 rounded text-[11px] font-mono text-slate-300 overflow-x-auto max-h-24 whitespace-pre">${escapeHtml(maskEnvContent(r.env_vars))}</pre>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            `;
+          });
+          listContainer.innerHTML = html;
+        })
+        .catch(err => {
+          listContainer.innerHTML = `<div class="text-rose-400 p-4">Error loading revisions: ${err.message}</div>`;
+        });
+    }
+
+    function rollbackToRevision(revId, revNum) {
+      if (!confirm(`Are you sure you want to rollback to Revision v${revNum}?\n\nThis creates a new forward-only revision with this exact configuration and triggers redeployment.`)) {
+        return;
+      }
+
+      const statusBox = document.getElementById('rollback-status');
+      const statusMsg = document.getElementById('rollback-msg');
+      statusBox.className = 'mx-6 mt-4 p-3 rounded-lg text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300';
+      statusBox.classList.remove('hidden');
+      statusMsg.innerText = `⏳ Rolling back to revision v${revNum} and redeploying stack on server...`;
+
+      const formData = new URLSearchParams();
+      formData.append('revision_id', revId);
+
+      fetch(`/deployments/${currentRevisionsDepId}/rollback`, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString()
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          statusBox.className = 'mx-6 mt-4 p-3 rounded-lg text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300';
+          statusMsg.innerText = `✓ Rollback complete! Redeployed successfully as a new forward revision.`;
+          setTimeout(() => {
+            window.location.reload();
+          }, 1200);
+        } else {
+          statusBox.className = 'mx-6 mt-4 p-3 rounded-lg text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300';
+          statusMsg.innerText = `Error: ${data.error || 'Failed to rollback'}`;
+        }
+      })
+      .catch(err => {
+        statusBox.className = 'mx-6 mt-4 p-3 rounded-lg text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300';
+        statusMsg.innerText = `Error: ${err.message}`;
+      });
+    }
+
+    function closeRevisionsModal() {
+      document.getElementById('revisions-modal').classList.add('hidden');
+    }
+
+    // --- Notification Test Alert ---
+    function sendTestAlertAsync() {
+      const btn = document.getElementById('test-alert-btn');
+      const msgBox = document.getElementById('test-alert-status');
+      const msgText = document.getElementById('test-alert-msg');
+
+      btn.disabled = true;
+      msgBox.className = 'rounded-lg p-3 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300';
+      msgBox.classList.remove('hidden');
+      msgText.innerText = '📡 Dispatching test notification to configured channels...';
+
+      fetch('/settings/notifications/test', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' }
+      })
+      .then(res => res.json())
+      .then(data => {
+        btn.disabled = false;
+        if (data.success) {
+          msgBox.className = 'rounded-lg p-3 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300';
+          msgText.innerText = '✓ Test notification delivered successfully!';
+        } else {
+          msgBox.className = 'rounded-lg p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300';
+          msgText.innerText = `Failed to deliver: ${data.error || 'Unknown error'}`;
+        }
+      })
+      .catch(err => {
+        btn.disabled = false;
+        msgBox.className = 'rounded-lg p-3 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300';
+        msgText.innerText = `Error: ${err.message}`;
+      });
+    }
+
+    // --- Secrets Masking Helpers (Heuristic: PASSWORD|SECRET|TOKEN|KEY|AUTH|CREDENTIAL|PASS) ---
+    function maskEnvContent(rawText) {
+      if (!rawText) return '';
+      const secretKeyRegex = /^([^=]*(?:PASSWORD|SECRET|TOKEN|KEY|AUTH|CREDENTIAL|PASS)[^=]*)=(.*)$/i;
+      return rawText.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return line;
+        const match = line.match(secretKeyRegex);
+        if (match) {
+          return match[1] + '=••••••••';
+        }
+        return line;
+      }).join('\n');
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function toggleMaskSecrets(textareaId, btn) {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea) return;
+
+      const label = btn.querySelector('.mask-label');
+      if (btn.dataset.isMasked === 'true') {
+        textarea.value = btn.dataset.raw || '';
+        btn.dataset.isMasked = 'false';
+        if (label) label.innerText = 'Mask Secrets';
+      } else {
+        btn.dataset.raw = textarea.value;
+        textarea.value = maskEnvContent(textarea.value);
+        btn.dataset.isMasked = 'true';
+        if (label) label.innerText = 'Reveal Secrets';
+      }
+    }
+
+    function restoreMaskedBeforeSubmit(textareaId) {
+      const textarea = document.getElementById(textareaId);
+      if (!textarea) return;
+      const form = textarea.closest('form');
+      if (!form) return;
+      const btn = form.querySelector('[data-is-masked="true"]');
+      if (btn && btn.dataset.raw !== undefined) {
+        textarea.value = btn.dataset.raw;
+        btn.dataset.isMasked = 'false';
+      }
+    }
+
+    let isEditorMasked = false;
+    let rawEditorContent = '';
+
+    function toggleMaskFileEditor() {
+      const editor = document.getElementById('file-viewer-content');
+      const label = document.getElementById('mask-file-label');
+      if (!editor) return;
+
+      if (isEditorMasked) {
+        editor.value = rawEditorContent;
+        isEditorMasked = false;
+        if (label) label.innerText = 'Mask Secrets';
+      } else {
+        rawEditorContent = editor.value;
+        editor.value = maskEnvContent(editor.value);
+        isEditorMasked = true;
+        if (label) label.innerText = 'Reveal Secrets';
+      }
+    }
+
     // --- Global Event Handlers ---
     document.addEventListener('DOMContentLoaded', () => {
       // 1. Language Setup
@@ -2655,6 +3032,7 @@
         const fileModal = document.getElementById('file-browser-modal');
         const settingsModal = document.getElementById('settings-modal');
         const docsModal = document.getElementById('docs-modal');
+        const revsModal = document.getElementById('revisions-modal');
 
         if (fileModal && !fileModal.classList.contains('hidden')) {
           closeFileBrowser();
@@ -2662,12 +3040,14 @@
           closeSettingsModal();
         } else if (docsModal && !docsModal.classList.contains('hidden')) {
           closeDocsModal();
+        } else if (revsModal && !revsModal.classList.contains('hidden')) {
+          closeRevisionsModal();
         }
       }
     });
 
     // Close Modals on backdrop click
-    ['settings-modal', 'file-browser-modal', 'docs-modal'].forEach(id => {
+    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal'].forEach(id => {
       const modal = document.getElementById(id);
       if (modal) {
         modal.addEventListener('click', (e) => {
