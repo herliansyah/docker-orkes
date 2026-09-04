@@ -68,3 +68,8 @@ _Avoid_: Active node, master node, main server
 **Standby Control Plane**:
 A passive replica instance of the Control Plane that receives periodic database state updates from the Primary Control Plane and remains stopped to prevent split-brain polling until manually promoted during an incident.
 _Avoid_: Backup node, slave, secondary worker
+
+**Image Registry**:
+An internal OCI-compliant registry running as a Stack on a designated Node that provides both local repository storage for custom application images and pull-through caching for upstream registries.
+_Avoid_: Docker cache, registry proxy, mirror server
+
