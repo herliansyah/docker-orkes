@@ -30,6 +30,7 @@ type Executor interface {
 	ReadRemoteFile(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteFilePath string) ([]byte, error)
 	ListRemoteFiles(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteDir string) ([]RemoteFileEntry, error)
 	BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error
+	RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error
 }
 
 
@@ -292,5 +293,80 @@ func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, 
 
 	return nil
 }
+
+func (e *RealExecutor) RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error {
+	client, err := e.getSSHClient(ctx, host, port, user, privKeyPEM)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create ssh session: %w", err)
+	}
+	defer session.Close()
+
+	if rows <= 0 {
+		rows = 24
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+
+	if err := session.RequestPty("xterm-256color", rows, cols, modes); err != nil {
+		return fmt.Errorf("failed to request pty: %w", err)
+	}
+
+	session.Stdin = rw
+	session.Stdout = rw
+	session.Stderr = rw
+
+	if resizeChan != nil {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case sz, ok := <-resizeChan:
+					if !ok {
+						return
+					}
+					_ = session.WindowChange(sz[0], sz[1])
+				}
+			}
+		}()
+	}
+
+	if cmd == "" {
+		if err := session.Shell(); err != nil {
+			return fmt.Errorf("failed to start remote shell: %w", err)
+		}
+	} else {
+		if err := session.Start(cmd); err != nil {
+			return fmt.Errorf("failed to start command: %w", err)
+		}
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- session.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGTERM)
+		return ctx.Err()
+	case err := <-errChan:
+		return err
+	}
+}
+
 
 

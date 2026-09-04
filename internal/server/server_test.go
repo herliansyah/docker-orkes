@@ -241,4 +241,67 @@ func TestServer_RevisionsRollbackAndSettings(t *testing.T) {
 	}
 }
 
+func TestServer_StaticAssetsAndTerminalAuth(t *testing.T) {
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// 1. Static asset: xterm.js
+	req := httptest.NewRequest(http.MethodGet, "/static/xterm.js", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for /static/xterm.js, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Terminal") {
+		t.Errorf("expected xterm.js to contain Terminal")
+	}
+
+	// 2. Static asset: xterm.css
+	req = httptest.NewRequest(http.MethodGet, "/static/xterm.css", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for /static/xterm.css, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), ".xterm") {
+		t.Errorf("expected xterm.css to contain .xterm")
+	}
+
+	// 3. Static asset: addon-fit.js
+	req = httptest.NewRequest(http.MethodGet, "/static/addon-fit.js", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 OK for /static/addon-fit.js, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "FitAddon") {
+		t.Errorf("expected addon-fit.js to contain FitAddon")
+	}
+
+	// 4. WebSocket terminal unauthorized: standard request
+	req = httptest.NewRequest(http.MethodGet, "/ws/terminal", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Errorf("expected 303 redirect for unauthenticated browser request, got %d", rec.Code)
+	}
+
+	// 5. WebSocket terminal unauthorized: websocket handshake
+	req = httptest.NewRequest(http.MethodGet, "/ws/terminal", nil)
+	req.Header.Set("Upgrade", "websocket")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 Unauthorized for unauthenticated websocket upgrade, got %d", rec.Code)
+	}
+}
+
 

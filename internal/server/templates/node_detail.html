@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{.Node.Name}} - Observability - Docker Orkes</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Local Offline Web Terminal (No CDN) -->
+  <link rel="stylesheet" href="/static/xterm.css">
+  <script src="/static/xterm.js"></script>
+  <script src="/static/addon-fit.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
   <!-- Top Navigation -->
@@ -18,7 +22,11 @@
         <span class="font-bold text-lg tracking-tight">{{.Node.Name}}</span>
         <span class="text-xs font-mono text-slate-400">({{.Node.User}}@{{.Node.Host}}:{{.Node.Port}})</span>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <button onclick="openHostTerminal(nodeID, '{{.Node.Name}}')"
+          class="text-xs bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 font-medium">
+          💻 <span>Host Terminal</span>
+        </button>
         <button onclick="fetchTelemetry()" id="refresh-btn"
           class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
           🔄 <span>Refresh Metrics</span>
@@ -169,10 +177,17 @@
               </td>
               <td class="py-3 px-4 font-mono text-[11px] text-slate-400">${c.ports || '-'}</td>
               <td class="py-3 px-4 text-right">
-                <button onclick="viewContainerLogs('${c.id}', '${c.names}')"
-                  class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
-                  View Logs
-                </button>
+                <div class="inline-flex items-center gap-1.5 justify-end">
+                  ${c.state === 'running' ? `
+                  <button onclick="openContainerTerminal(nodeID, '${c.id}', '${c.names || c.id}', '${c.image}')"
+                    class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded text-xs transition flex items-center gap-1 font-medium" title="Exec Terminal">
+                    💻 <span>Terminal</span>
+                  </button>` : ''}
+                  <button onclick="viewContainerLogs('${c.id}', '${c.names}')"
+                    class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                    View Logs
+                  </button>
+                </div>
               </td>
             </tr>
           `).join('');
@@ -203,9 +218,276 @@
       document.getElementById('logs-modal').classList.add('hidden');
     }
 
+    // Web Terminal Management
+    let currentTerm = null;
+    let currentFitAddon = null;
+    let currentWs = null;
+    let currentTerminalParams = null;
+    let isTerminalFullscreen = false;
+
+    function openHostTerminal(nodeId, nodeName) {
+      openTerminal(nodeId, '', `${nodeName} (Host Shell)`, `Node ID: ${nodeId} • Interactive PTY`);
+    }
+
+    function openContainerTerminal(nodeId, containerId, containerName, image) {
+      openTerminal(nodeId, containerId, `${containerName} (Container Exec)`, `Image: ${image || containerId}`);
+    }
+
+    function openTerminal(nodeId, containerId, title, subtitle) {
+      currentTerminalParams = { nodeId, containerId, title, subtitle };
+      const modal = document.getElementById('terminal-modal');
+      modal.classList.remove('hidden');
+      document.getElementById('terminal-title').innerText = title || 'Terminal';
+      document.getElementById('terminal-subtitle').innerText = subtitle || (containerId ? 'Container Exec Shell' : 'Host Shell PTY');
+      
+      initOrConnectTerminal();
+    }
+
+    function initOrConnectTerminal() {
+      if (!currentTerminalParams) return;
+      const { nodeId, containerId } = currentTerminalParams;
+
+      const statusBadge = document.getElementById('terminal-status');
+      statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> <span>Connecting...</span>';
+      statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+
+      if (currentWs) {
+        try { currentWs.close(); } catch(e){}
+        currentWs = null;
+      }
+      if (currentTerm) {
+        try { currentTerm.dispose(); } catch(e){}
+        currentTerm = null;
+      }
+
+      const termContainer = document.getElementById('terminal-view');
+      termContainer.innerHTML = '';
+
+      currentTerm = new Terminal({
+        cursorBlink: true,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace, Consolas',
+        fontSize: 13,
+        theme: {
+          background: '#090d16',
+          foreground: '#e2e8f0',
+          cursor: '#818cf8',
+          selectionBackground: '#3730a3',
+          black: '#0f172a',
+          red: '#f87171',
+          green: '#4ade80',
+          yellow: '#facc15',
+          blue: '#60a5fa',
+          magenta: '#c084fc',
+          cyan: '#38bdf8',
+          white: '#f1f5f9',
+          brightBlack: '#475569',
+          brightRed: '#ef4444',
+          brightGreen: '#22c55e',
+          brightYellow: '#eab308',
+          brightBlue: '#3b82f6',
+          brightMagenta: '#a855f7',
+          brightCyan: '#0ea5e9',
+          brightWhite: '#ffffff'
+        }
+      });
+
+      currentFitAddon = typeof FitAddon === 'function' ? new FitAddon() : new FitAddon.FitAddon();
+      currentTerm.loadAddon(currentFitAddon);
+      currentTerm.open(termContainer);
+
+      setTimeout(() => {
+        if (currentFitAddon) {
+          try { currentFitAddon.fit(); } catch(e){}
+        }
+      }, 50);
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsUrl = `${protocol}//${window.location.host}/ws/terminal?node_id=${encodeURIComponent(nodeId)}&cols=${currentTerm.cols || 80}&rows=${currentTerm.rows || 24}`;
+      if (containerId) {
+        wsUrl += `&container_id=${encodeURIComponent(containerId)}`;
+      }
+
+      const ws = new WebSocket(wsUrl);
+      currentWs = ws;
+      ws.binaryType = 'blob';
+
+      ws.onopen = () => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> <span>Connected</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        currentTerm.focus();
+        setTimeout(sendTerminalResize, 50);
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === 'string') {
+          currentTerm.write(event.data);
+        } else if (event.data instanceof Blob) {
+          const arrayBuffer = await event.data.arrayBuffer();
+          currentTerm.write(new Uint8Array(arrayBuffer));
+        }
+      };
+
+      ws.onclose = () => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> <span>Disconnected</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      };
+
+      ws.onerror = (err) => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> <span>Error</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      };
+
+      currentTerm.onData((data) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      currentTerm.onResize((size) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', rows: size.rows, cols: size.cols }));
+        }
+      });
+    }
+
+    function sendTerminalResize() {
+      if (currentFitAddon && currentTerm) {
+        try {
+          currentFitAddon.fit();
+          if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+            currentWs.send(JSON.stringify({ type: 'resize', rows: currentTerm.rows, cols: currentTerm.cols }));
+          }
+        } catch(e) {}
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      const modal = document.getElementById('terminal-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        sendTerminalResize();
+      }
+    });
+
+    function reconnectTerminal() {
+      initOrConnectTerminal();
+    }
+
+    function clearTerminalScreen() {
+      if (currentTerm) {
+        currentTerm.clear();
+      }
+    }
+
+    function toggleTerminalFullscreen() {
+      const dialog = document.getElementById('terminal-dialog');
+      const view = document.getElementById('terminal-view');
+      const btn = document.getElementById('term-fullscreen-btn');
+      isTerminalFullscreen = !isTerminalFullscreen;
+      if (isTerminalFullscreen) {
+        dialog.className = 'bg-slate-900 border border-slate-800 rounded-none fixed inset-0 w-full h-full max-w-none shadow-2xl overflow-hidden flex flex-col z-50';
+        view.style.height = 'calc(100vh - 100px)';
+        btn.innerHTML = '🗗';
+      } else {
+        dialog.className = 'bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all';
+        view.style.height = '480px';
+        btn.innerHTML = '⛶';
+      }
+      setTimeout(sendTerminalResize, 100);
+    }
+
+    function closeTerminalModal() {
+      if (currentWs) {
+        try { currentWs.close(); } catch(e){}
+        currentWs = null;
+      }
+      if (currentTerm) {
+        try { currentTerm.dispose(); } catch(e){}
+        currentTerm = null;
+      }
+      document.getElementById('terminal-modal').classList.add('hidden');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const termModal = document.getElementById('terminal-modal');
+        const logsModal = document.getElementById('logs-modal');
+        if (termModal && !termModal.classList.contains('hidden')) {
+          closeTerminalModal();
+        } else if (logsModal && !logsModal.classList.contains('hidden')) {
+          closeLogsModal();
+        }
+      }
+    });
+
+    ['logs-modal', 'terminal-modal'].forEach(id => {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            if (id === 'terminal-modal') {
+              closeTerminalModal();
+            } else {
+              modal.classList.add('hidden');
+            }
+          }
+        });
+      }
+    });
+
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 10000); // Poll every 10s while tab open
+    const interval = setInterval(fetchTelemetry, 10000);
     window.addEventListener('beforeunload', () => clearInterval(interval));
   </script>
+
+  <!-- Web Terminal Modal -->
+  <div id="terminal-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+    <div id="terminal-dialog" class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="text-base">💻</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold text-slate-100 truncate" id="terminal-title">Terminal</h3>
+              <span id="terminal-status" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Disconnected
+              </span>
+            </div>
+            <p class="text-[11px] font-mono text-slate-400 truncate mt-0.5" id="terminal-subtitle">Interactive PTY Shell</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" onclick="reconnectTerminal()" title="Reconnect Session"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            <span>🔄</span> <span class="hidden sm:inline">Reconnect</span>
+          </button>
+          <button type="button" onclick="clearTerminalScreen()" title="Clear Terminal Screen"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            <span>🧹</span> <span class="hidden sm:inline">Clear</span>
+          </button>
+          <button type="button" onclick="toggleTerminalFullscreen()" title="Toggle Fullscreen" id="term-fullscreen-btn"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded text-xs transition font-mono">
+            ⛶
+          </button>
+          <button type="button" onclick="closeTerminalModal()" class="text-slate-400 hover:text-slate-200 text-base p-1.5 rounded transition">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div class="p-3 bg-[#090d16] flex-1 overflow-hidden flex flex-col min-h-0">
+        <div id="terminal-view" class="w-full h-[480px] bg-[#090d16] overflow-hidden rounded"></div>
+      </div>
+
+      <div class="px-4 py-2 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+        <div class="flex items-center gap-2">
+          <span>⚡ Supports Tab completion, interactive apps (<code class="text-slate-300 font-mono">top</code>, <code class="text-slate-300 font-mono">nano</code>), and ANSI color.</span>
+        </div>
+        <div class="text-slate-500 font-mono">
+          30m idle timeout
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

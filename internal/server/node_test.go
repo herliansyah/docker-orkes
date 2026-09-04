@@ -53,6 +53,10 @@ func (m *mockExecutor) ListRemoteFiles(ctx context.Context, host string, port in
 	return nil, nil
 }
 
+func (m *mockExecutor) RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKey string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error {
+	return nil
+}
+
 
 
 

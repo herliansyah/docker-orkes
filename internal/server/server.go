@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -26,10 +28,11 @@ import (
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 
+	"golang.org/x/net/websocket"
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed templates/*.html
+//go:embed templates/*.html templates/static/*
 var templatesFS embed.FS
 
 type Config struct {
@@ -216,15 +219,26 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/notifications/test", s.requireAuth(http.HandlerFunc(s.handleTestNotification)))
 	mux.Handle("POST /settings/poller", s.requireAuth(http.HandlerFunc(s.handleUpdatePollerSettings)))
 
+	// Static embedded assets (xterm, etc.)
+	staticSub, err := fs.Sub(templatesFS, "templates/static")
+	if err == nil {
+		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	}
+
+	// Web Terminal WebSocket
+	mux.Handle("GET /ws/terminal", s.requireAuth(websocket.Handler(s.handleTerminalWebSocket)))
+
 	return mux
-
-
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("orkes_session")
 		if err != nil || !s.store.ValidateSession(cookie.Value) {
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -1332,6 +1346,148 @@ func (s *Server) handleUpdatePollerSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+type terminalResizeMsg struct {
+	Type string `json:"type"`
+	Rows int    `json:"rows"`
+	Cols int    `json:"cols"`
+}
+
+type wsTerminalRW struct {
+	r     io.Reader
+	w     io.Writer
+	touch func()
+}
+
+func (rw *wsTerminalRW) Read(p []byte) (int, error) {
+	n, err := rw.r.Read(p)
+	if n > 0 && rw.touch != nil {
+		rw.touch()
+	}
+	return n, err
+}
+
+func (rw *wsTerminalRW) Write(p []byte) (int, error) {
+	n, err := rw.w.Write(p)
+	if n > 0 && rw.touch != nil {
+		rw.touch()
+	}
+	return n, err
+}
+
+func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
+	defer ws.Close()
+
+	r := ws.Request()
+	nodeID := strings.TrimSpace(r.URL.Query().Get("node_id"))
+	if nodeID == "" {
+		_, _ = ws.Write([]byte("\r\n\x1b[31mError: node_id parameter is required\x1b[0m\r\n"))
+		return
+	}
+
+	node, err := s.store.GetNode(nodeID)
+	if err != nil || node == nil {
+		_, _ = ws.Write([]byte("\r\n\x1b[31mError: Node not found\x1b[0m\r\n"))
+		return
+	}
+
+	cols, _ := strconv.Atoi(r.URL.Query().Get("cols"))
+	rows, _ := strconv.Atoi(r.URL.Query().Get("rows"))
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+
+	cmd := ""
+	containerID := strings.TrimSpace(r.URL.Query().Get("container_id"))
+	if containerID != "" {
+		for _, c := range containerID {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+				_, _ = ws.Write([]byte("\r\n\x1b[31mError: Invalid container ID\x1b[0m\r\n"))
+				return
+			}
+		}
+		// ponytail: Smart shell fallback: test if /bin/bash exists, else fallback to /bin/sh for Alpine/BusyBox
+		cmd = fmt.Sprintf("docker exec -it %s /bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'", containerID)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	idleTimer := time.NewTimer(30 * time.Minute)
+	defer idleTimer.Stop()
+
+	touch := func() {
+		if !idleTimer.Stop() {
+			select {
+			case <-idleTimer.C:
+			default:
+			}
+		}
+		idleTimer.Reset(30 * time.Minute)
+	}
+
+	go func() {
+		select {
+		case <-idleTimer.C:
+			_, _ = ws.Write([]byte("\r\n\x1b[33mSession closed due to 30 minutes of inactivity.\x1b[0m\r\n"))
+			cancel()
+			_ = ws.Close()
+		case <-ctx.Done():
+		}
+	}()
+
+	resizeChan := make(chan [2]int, 10)
+	pr, pw := io.Pipe()
+
+	// Read from WebSocket: separate resize commands from stdin keystrokes
+	go func() {
+		defer pw.Close()
+		buf := make([]byte, 4096)
+		for {
+			n, err := ws.Read(buf)
+			if err != nil {
+				cancel()
+				return
+			}
+			touch()
+			data := buf[:n]
+			trimmed := bytes.TrimSpace(data)
+			if bytes.HasPrefix(trimmed, []byte(`{"type":"resize"`)) {
+				var msg terminalResizeMsg
+				if err := json.Unmarshal(trimmed, &msg); err == nil && msg.Type == "resize" {
+					if msg.Rows > 0 && msg.Cols > 0 {
+						select {
+						case <-ctx.Done():
+							return
+						case resizeChan <- [2]int{msg.Rows, msg.Cols}:
+						default:
+						}
+					}
+					continue
+				}
+			}
+			if _, err := pw.Write(data); err != nil {
+				return
+			}
+		}
+	}()
+
+	rw := &wsTerminalRW{
+		r:     pr,
+		w:     ws,
+		touch: touch,
+	}
+
+	err = s.executor.RunInteractiveTerminal(ctx, node.Host, node.Port, node.User, s.privKey, cmd, rows, cols, rw, resizeChan)
+	if err != nil && ctx.Err() == nil {
+		_, _ = ws.Write([]byte(fmt.Sprintf("\r\n\x1b[31mTerminal session ended: %v\x1b[0m\r\n", err)))
+	} else if ctx.Err() == nil {
+		_, _ = ws.Write([]byte("\r\n\x1b[32mTerminal session closed.\x1b[0m\r\n"))
+	}
 }
 
 

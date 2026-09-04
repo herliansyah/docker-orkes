@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard - Docker Orkes</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Local Offline Web Terminal (No CDN) -->
+  <link rel="stylesheet" href="/static/xterm.css">
+  <script src="/static/xterm.js"></script>
+  <script src="/static/addon-fit.js"></script>
   <style>
     /* Custom scrollbar for editors & mindmap */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -628,6 +632,16 @@
                               <span>📜</span> <span>Revisions & Rollback</span>
                             </button>
 
+                            <button type="button" onclick="openDeploymentContainerTerminal('{{.NodeID}}', '{{.NodeName}}', '{{.StackName}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-emerald-300 hover:bg-slate-800 flex items-center gap-2">
+                              <span>💻</span> <span data-i18n="menu_container_terminal">Container Terminal</span>
+                            </button>
+
+                            <button type="button" onclick="openHostTerminal('{{.NodeID}}', '{{.NodeName}} (Host)'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-2">
+                              <span>🖥️</span> <span data-i18n="menu_host_terminal">Host Terminal</span>
+                            </button>
+
                             <form method="POST" action="/deployments/{{.ID}}/drift/check" class="m-0">
                               <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2">
                                 <span>🔍</span> <span data-i18n="menu_check_drift">Check Drift</span>
@@ -911,6 +925,12 @@
                         <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics & Containers</span>
                       </a>
 
+                      <!-- Quick Button 2: Host Shell Terminal -->
+                      <button type="button" onclick="openHostTerminal('{{.ID}}', '{{.Name}}')"
+                        class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Open Host Shell Terminal">
+                        <span>💻</span> <span class="hidden sm:inline" data-i18n="btn_terminal">Terminal</span>
+                      </button>
+
                       <!-- Action Dropdown Menu -->
                       <div class="relative inline-block text-left">
                         <button type="button" onclick="toggleDropdown('node-actions-{{.ID}}', event)"
@@ -920,6 +940,11 @@
 
                         <div id="node-actions-{{.ID}}" class="action-dropdown hidden absolute right-0 mt-1 w-44 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-20 py-1 divide-y divide-slate-800 text-left">
                           <div class="py-1">
+                            <button type="button" onclick="openHostTerminal('{{.ID}}', '{{.Name}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-emerald-300 hover:bg-slate-800 flex items-center gap-2">
+                              <span>💻</span> <span data-i18n="menu_host_terminal">Host Terminal</span>
+                            </button>
+
                             <button type="button" onclick="document.getElementById('edit-node-{{.ID}}').classList.toggle('hidden'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2">
                               <span>✏️</span> <span data-i18n="menu_edit_node">Edit Node</span>
@@ -1595,6 +1620,77 @@
     </div>
   </div>
 
+  <!-- Web Terminal Modal -->
+  <div id="terminal-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+    <div id="terminal-dialog" class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all">
+      <!-- Modal Header -->
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 shrink-0">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span class="text-base">💻</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold text-slate-100 truncate" id="terminal-title">Terminal</h3>
+              <span id="terminal-status" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Disconnected
+              </span>
+            </div>
+            <p class="text-[11px] font-mono text-slate-400 truncate mt-0.5" id="terminal-subtitle">Interactive PTY Shell</p>
+          </div>
+        </div>
+
+        <!-- Terminal Controls -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" onclick="reconnectTerminal()" title="Reconnect Session"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            <span>🔄</span> <span class="hidden sm:inline">Reconnect</span>
+          </button>
+          <button type="button" onclick="clearTerminalScreen()" title="Clear Terminal Screen"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            <span>🧹</span> <span class="hidden sm:inline">Clear</span>
+          </button>
+          <button type="button" onclick="toggleTerminalFullscreen()" title="Toggle Fullscreen" id="term-fullscreen-btn"
+            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded text-xs transition font-mono">
+            ⛶
+          </button>
+          <button type="button" onclick="closeTerminalModal()" class="text-slate-400 hover:text-slate-200 text-base p-1.5 rounded transition">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Terminal Body -->
+      <div class="p-3 bg-[#090d16] flex-1 overflow-hidden flex flex-col min-h-0">
+        <div id="terminal-view" class="w-full h-[480px] bg-[#090d16] overflow-hidden rounded"></div>
+      </div>
+
+      <!-- Terminal Footer / Status bar -->
+      <div class="px-4 py-2 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+        <div class="flex items-center gap-2">
+          <span>⚡ Supports Tab completion, interactive apps (<code class="text-slate-300 font-mono">top</code>, <code class="text-slate-300 font-mono">nano</code>), and ANSI color.</span>
+        </div>
+        <div class="text-slate-500 font-mono">
+          30m idle timeout
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Container Picker Modal (when a stack has multiple running containers) -->
+  <div id="container-picker-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+        <div class="flex items-center gap-2">
+          <span class="text-base">📦</span>
+          <h3 class="text-sm font-semibold text-slate-100" id="container-picker-title">Select Container</h3>
+        </div>
+        <button onclick="document.getElementById('container-picker-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-200 text-base p-1">✕</button>
+      </div>
+      <div class="p-4 space-y-2 max-h-80 overflow-y-auto" id="container-picker-list">
+        <!-- Containers injected here dynamically -->
+      </div>
+    </div>
+  </div>
+
   <!-- Remote File Browser Modal -->
   <div id="file-browser-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -1846,7 +1942,10 @@
         doc_wf_4_d: "Observe disk/containers, browse remote files live, and detect drift between Control Plane Desired State and remote Actual State.",
         files_on_server: "Files on Server",
         loading_files: "Loading files...",
-        file_editor_hint: "Live SFTP Editor — Changes are applied directly on the target node."
+        file_editor_hint: "Live SFTP Editor — Changes are applied directly on the target node.",
+        btn_terminal: "Terminal",
+        menu_host_terminal: "Host Terminal",
+        menu_container_terminal: "Container Terminal"
       },
       id: {
         nav_docs: "Dokumentasi",
@@ -1987,7 +2086,10 @@
         doc_wf_4_d: "Pantau metrik disk/container, sunting file remote langsung, dan periksa perbedaan konfigurasi (drift).",
         files_on_server: "File di Server",
         loading_files: "Memuat file...",
-        file_editor_hint: "Live SFTP Editor — Perubahan langsung diterapkan ke server remote."
+        file_editor_hint: "Live SFTP Editor — Perubahan langsung diterapkan ke server remote.",
+        btn_terminal: "Terminal",
+        menu_host_terminal: "Terminal Host",
+        menu_container_terminal: "Terminal Kontainer"
       }
     };
 
@@ -3448,16 +3550,258 @@
       });
     }
 
+    // Web Terminal Management
+    let currentTerm = null;
+    let currentFitAddon = null;
+    let currentWs = null;
+    let currentTerminalParams = null; // { nodeId, containerId, title, subtitle }
+    let isTerminalFullscreen = false;
+
+    function openHostTerminal(nodeId, nodeName) {
+      openTerminal(nodeId, '', `${nodeName} (Host Shell)`, `Node ID: ${nodeId} • Interactive PTY`);
+    }
+
+    async function openDeploymentContainerTerminal(nodeId, nodeName, stackName) {
+      try {
+        const res = await fetch(`/nodes/${nodeId}/telemetry`);
+        if (!res.ok) {
+          alert("Failed to fetch node container telemetry: " + res.statusText);
+          return;
+        }
+        const data = await res.json();
+        const containers = (data.containers || []).filter(c => c.state === 'running');
+        
+        if (containers.length === 0) {
+          alert(`No running containers found on node ${nodeName}. Make sure the stack has been deployed and is running.`);
+          return;
+        }
+
+        // Match containers belonging to this stack
+        let matching = containers.filter(c => {
+          const name = (c.names || '').toLowerCase();
+          return name.includes(stackName.toLowerCase());
+        });
+
+        if (matching.length === 0) {
+          matching = containers;
+        }
+
+        if (matching.length === 1) {
+          const c = matching[0];
+          const title = `${c.names || c.id} (Container Exec)`;
+          openTerminal(nodeId, c.id, title, `${nodeName} • ${c.image}`);
+          return;
+        }
+
+        // Multiple containers: show container picker modal
+        const pickerList = document.getElementById('container-picker-list');
+        document.getElementById('container-picker-title').innerText = `Select Container • ${stackName}`;
+        pickerList.innerHTML = matching.map(c => `
+          <button onclick="document.getElementById('container-picker-modal').classList.add('hidden'); openTerminal('${nodeId}', '${c.id}', '${c.names || c.id} (Container Exec)', '${nodeName} • ${c.image}');"
+            class="w-full text-left p-3 rounded-lg bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-indigo-500/50 transition flex items-center justify-between group">
+            <div>
+              <div class="font-medium text-xs text-slate-100 group-hover:text-indigo-300 transition">${c.names || c.id}</div>
+              <div class="text-[11px] font-mono text-slate-400 mt-0.5 truncate max-w-xs">${c.image}</div>
+            </div>
+            <span class="text-xs text-emerald-400 font-mono">● Running</span>
+          </button>
+        `).join('');
+        document.getElementById('container-picker-modal').classList.remove('hidden');
+      } catch (err) {
+        alert("Error loading containers: " + err.message);
+      }
+    }
+
+    function openTerminal(nodeId, containerId, title, subtitle) {
+      currentTerminalParams = { nodeId, containerId, title, subtitle };
+      const modal = document.getElementById('terminal-modal');
+      modal.classList.remove('hidden');
+      document.getElementById('terminal-title').innerText = title || 'Terminal';
+      document.getElementById('terminal-subtitle').innerText = subtitle || (containerId ? 'Container Exec Shell' : 'Host Shell PTY');
+      
+      initOrConnectTerminal();
+    }
+
+    function initOrConnectTerminal() {
+      if (!currentTerminalParams) return;
+      const { nodeId, containerId } = currentTerminalParams;
+
+      const statusBadge = document.getElementById('terminal-status');
+      statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> <span>Connecting...</span>';
+      statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+
+      if (currentWs) {
+        try { currentWs.close(); } catch(e){}
+        currentWs = null;
+      }
+      if (currentTerm) {
+        try { currentTerm.dispose(); } catch(e){}
+        currentTerm = null;
+      }
+
+      const termContainer = document.getElementById('terminal-view');
+      termContainer.innerHTML = '';
+
+      currentTerm = new Terminal({
+        cursorBlink: true,
+        fontFamily: 'Menlo, Monaco, "Courier New", monospace, Consolas',
+        fontSize: 13,
+        theme: {
+          background: '#090d16',
+          foreground: '#e2e8f0',
+          cursor: '#818cf8',
+          selectionBackground: '#3730a3',
+          black: '#0f172a',
+          red: '#f87171',
+          green: '#4ade80',
+          yellow: '#facc15',
+          blue: '#60a5fa',
+          magenta: '#c084fc',
+          cyan: '#38bdf8',
+          white: '#f1f5f9',
+          brightBlack: '#475569',
+          brightRed: '#ef4444',
+          brightGreen: '#22c55e',
+          brightYellow: '#eab308',
+          brightBlue: '#3b82f6',
+          brightMagenta: '#a855f7',
+          brightCyan: '#0ea5e9',
+          brightWhite: '#ffffff'
+        }
+      });
+
+      currentFitAddon = typeof FitAddon === 'function' ? new FitAddon() : new FitAddon.FitAddon();
+      currentTerm.loadAddon(currentFitAddon);
+      currentTerm.open(termContainer);
+
+      setTimeout(() => {
+        if (currentFitAddon) {
+          try { currentFitAddon.fit(); } catch(e){}
+        }
+      }, 50);
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsUrl = `${protocol}//${window.location.host}/ws/terminal?node_id=${encodeURIComponent(nodeId)}&cols=${currentTerm.cols || 80}&rows=${currentTerm.rows || 24}`;
+      if (containerId) {
+        wsUrl += `&container_id=${encodeURIComponent(containerId)}`;
+      }
+
+      const ws = new WebSocket(wsUrl);
+      currentWs = ws;
+      ws.binaryType = 'blob';
+
+      ws.onopen = () => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> <span>Connected</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+        currentTerm.focus();
+        setTimeout(sendTerminalResize, 50);
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === 'string') {
+          currentTerm.write(event.data);
+        } else if (event.data instanceof Blob) {
+          const arrayBuffer = await event.data.arrayBuffer();
+          currentTerm.write(new Uint8Array(arrayBuffer));
+        }
+      };
+
+      ws.onclose = () => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> <span>Disconnected</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      };
+
+      ws.onerror = (err) => {
+        statusBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> <span>Error</span>';
+        statusBadge.className = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      };
+
+      currentTerm.onData((data) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      currentTerm.onResize((size) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'resize', rows: size.rows, cols: size.cols }));
+        }
+      });
+    }
+
+    function sendTerminalResize() {
+      if (currentFitAddon && currentTerm) {
+        try {
+          currentFitAddon.fit();
+          if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+            currentWs.send(JSON.stringify({ type: 'resize', rows: currentTerm.rows, cols: currentTerm.cols }));
+          }
+        } catch(e) {}
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      const modal = document.getElementById('terminal-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        sendTerminalResize();
+      }
+    });
+
+    function reconnectTerminal() {
+      initOrConnectTerminal();
+    }
+
+    function clearTerminalScreen() {
+      if (currentTerm) {
+        currentTerm.clear();
+      }
+    }
+
+    function toggleTerminalFullscreen() {
+      const dialog = document.getElementById('terminal-dialog');
+      const view = document.getElementById('terminal-view');
+      const btn = document.getElementById('term-fullscreen-btn');
+      isTerminalFullscreen = !isTerminalFullscreen;
+      if (isTerminalFullscreen) {
+        dialog.className = 'bg-slate-900 border border-slate-800 rounded-none fixed inset-0 w-full h-full max-w-none shadow-2xl overflow-hidden flex flex-col z-50';
+        view.style.height = 'calc(100vh - 100px)';
+        btn.innerHTML = '🗗';
+      } else {
+        dialog.className = 'bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all';
+        view.style.height = '480px';
+        btn.innerHTML = '⛶';
+      }
+      setTimeout(sendTerminalResize, 100);
+    }
+
+    function closeTerminalModal() {
+      if (currentWs) {
+        try { currentWs.close(); } catch(e){}
+        currentWs = null;
+      }
+      if (currentTerm) {
+        try { currentTerm.dispose(); } catch(e){}
+        currentTerm = null;
+      }
+      document.getElementById('terminal-modal').classList.add('hidden');
+    }
+
     // Close Modals & Dropdowns on Escape key
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeAllDropdowns();
+        const termModal = document.getElementById('terminal-modal');
+        const pickerModal = document.getElementById('container-picker-modal');
         const fileModal = document.getElementById('file-browser-modal');
         const settingsModal = document.getElementById('settings-modal');
         const docsModal = document.getElementById('docs-modal');
         const revsModal = document.getElementById('revisions-modal');
 
-        if (fileModal && !fileModal.classList.contains('hidden')) {
+        if (termModal && !termModal.classList.contains('hidden')) {
+          closeTerminalModal();
+        } else if (pickerModal && !pickerModal.classList.contains('hidden')) {
+          pickerModal.classList.add('hidden');
+        } else if (fileModal && !fileModal.classList.contains('hidden')) {
           closeFileBrowser();
         } else if (settingsModal && !settingsModal.classList.contains('hidden')) {
           closeSettingsModal();
@@ -3470,12 +3814,16 @@
     });
 
     // Close Modals on backdrop click
-    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal'].forEach(id => {
+    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal', 'terminal-modal', 'container-picker-modal'].forEach(id => {
       const modal = document.getElementById(id);
       if (modal) {
         modal.addEventListener('click', (e) => {
           if (e.target === modal) {
-            modal.classList.add('hidden');
+            if (id === 'terminal-modal') {
+              closeTerminalModal();
+            } else {
+              modal.classList.add('hidden');
+            }
           }
         });
       }

@@ -84,6 +84,11 @@ func (m *mockDeployExecutor) ListRemoteFiles(ctx context.Context, host string, p
 	return entries, nil
 }
 
+func (m *mockDeployExecutor) RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKey string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error {
+	return nil
+}
+
+
 
 
 func TestServer_DeploymentLifecycle(t *testing.T) {
