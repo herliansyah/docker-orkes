@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -14,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-
-	"docker-orkes/internal/diff"
+	"docker-orkes/internal/controlplane"
+	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
@@ -38,6 +37,7 @@ type Config struct {
 type Server struct {
 	cfg          Config
 	store        *store.Store
+	cp           controlplane.Engine
 	executor     ssh.Executor
 	gitSyncer    gitsync.Syncer
 	gitMirrorDir string
@@ -65,7 +65,6 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to initialize store: %w", err)
 	}
 
-
 	pubKey, privKey, err := st.EnsureSSHKeyPair()
 	if err != nil {
 		st.Close()
@@ -78,9 +77,18 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("failed to parse templates: %w", err)
 	}
 
+	cp := controlplane.New(controlplane.Config{
+		Store:        st,
+		Executor:     cfg.Executor,
+		GitSyncer:    cfg.GitSyncer,
+		GitMirrorDir: cfg.GitMirrorDir,
+		PrivKeyPEM:   privKey,
+	})
+
 	return &Server{
 		cfg:          cfg,
 		store:        st,
+		cp:           cp,
 		executor:     cfg.Executor,
 		gitSyncer:    cfg.GitSyncer,
 		gitMirrorDir: cfg.GitMirrorDir,
@@ -88,7 +96,10 @@ func New(cfg Config) (*Server, error) {
 		pubKey:       pubKey,
 		privKey:      privKey,
 	}, nil
+}
 
+func (s *Server) ControlPlane() controlplane.Engine {
+	return s.cp
 }
 
 func (s *Server) Store() *store.Store {
@@ -297,12 +308,6 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBootstrapNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	node, err := s.store.GetNode(id)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
@@ -314,38 +319,13 @@ func (s *Server) handleBootstrapNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.executor.BootstrapKey(r.Context(), node.Host, node.Port, node.User, sshPassword, s.pubKey); err != nil {
-		_ = s.store.UpdateNodeStatus(node.ID, "offline", "Auto-inject key failed: "+err.Error(), "")
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	dockerVer, err := s.executor.TestConnection(r.Context(), node.Host, node.Port, node.User, s.privKey)
-	if err != nil {
-		_ = s.store.UpdateNodeStatus(node.ID, "offline", err.Error(), "")
-	} else {
-		_ = s.store.UpdateNodeStatus(node.ID, "online", "", dockerVer)
-	}
-
+	_ = s.cp.BootstrapNode(r.Context(), id, sshPassword, s.pubKey)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-
 func (s *Server) handleTestNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	node, err := s.store.GetNode(id)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	dockerVer, err := s.executor.TestConnection(r.Context(), node.Host, node.Port, node.User, s.privKey)
-	if err != nil {
-		_ = s.store.UpdateNodeStatus(node.ID, "offline", err.Error(), "")
-	} else {
-		_ = s.store.UpdateNodeStatus(node.ID, "online", "", dockerVer)
-	}
-
+	_, _ = s.cp.TestNode(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -578,73 +558,19 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-
-	_ = s.deployStack(r.Context(), dep)
+	_ = s.cp.Deploy(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleRestartDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml restart", remoteDir)
-	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
-	if err != nil {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
-	} else {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "running", out)
-	}
-
+	_ = s.cp.Restart(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleDownDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml down", remoteDir)
-	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
-	if err != nil {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
-	} else {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "stopped", out)
-	}
-
+	_ = s.cp.Down(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -654,153 +580,39 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to delete deployment: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_ = s.cp.SyncGitMirror(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) deployStack(ctx context.Context, dep *store.Deployment) error {
-	// Allow up to 10 minutes for image download and container startup
-	deployCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		return fmt.Errorf("stack not found: %w", err)
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		return fmt.Errorf("node not found: %w", err)
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	files := map[string][]byte{
-		"docker-compose.yml": []byte(stack.ComposeYAML),
-		".env":               []byte(dep.EnvVars),
-	}
-
-	if err := s.executor.UploadFiles(deployCtx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
-		return fmt.Errorf("failed to upload files: %w", err)
-	}
-
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", remoteDir, remoteDir)
-	out, err := s.executor.RunCommand(deployCtx, node.Host, node.Port, node.User, s.privKey, cmd)
-	if err != nil {
-		_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", fmt.Sprintf("command error: %v (out: %s)", err, out))
-		return fmt.Errorf("failed to run docker compose up: %w", err)
-	}
-
-
-	hash := computeDesiredHash(stack.ComposeYAML, dep.EnvVars)
-	_ = s.store.UpdateDeploymentDesiredHash(dep.ID, hash)
-	_ = s.store.UpdateDeploymentStatus(dep.ID, "running", out)
-	return nil
+	return s.cp.Deploy(ctx, dep.ID)
 }
 
 func computeDesiredHash(composeYAML, envVars string) string {
-	h := sha256.New()
-	h.Write([]byte(composeYAML))
-	h.Write([]byte("\n---\n"))
-	h.Write([]byte(envVars))
-	return hex.EncodeToString(h.Sum(nil))
+	return drift.ComputeHash(composeYAML, envVars)
 }
 
 func (s *Server) handleCheckDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	composeBytes, err1 := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/docker-compose.yml")
-	envBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/.env")
-
-	if err1 != nil {
-		_ = s.store.UpdateDeploymentDrift(dep.ID, "drifted", "Remote compose file missing: "+err1.Error(), "", "")
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	remoteCompose := string(composeBytes)
-	remoteEnv := string(envBytes)
-	actualHash := computeDesiredHash(remoteCompose, remoteEnv)
-
-	if actualHash == dep.DesiredHash {
-		_ = s.store.UpdateDeploymentDrift(dep.ID, "synced", "", remoteCompose, remoteEnv)
-	} else {
-		diffOutput := diff.UnifiedDiff(stack.Name+" (Desired)", stack.ComposeYAML+"\n# .env\n"+dep.EnvVars, stack.Name+" (Actual)", remoteCompose+"\n# .env\n"+remoteEnv)
-		_ = s.store.UpdateDeploymentDrift(dep.ID, "drifted", diffOutput, remoteCompose, remoteEnv)
-	}
-
+	_, _ = s.cp.CheckDrift(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleReconcileDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	_ = s.deployStack(r.Context(), dep)
+	_ = s.cp.ReconcileDrift(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleAdoptDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-
-	if dep.RemoteCompose != "" {
-		stack.ComposeYAML = dep.RemoteCompose
-		_ = s.store.UpdateStack(*stack)
-	}
-
-	actualHash := computeDesiredHash(stack.ComposeYAML, dep.RemoteEnv)
-	_ = s.store.UpdateDeploymentEnvAndHash(dep.ID, dep.RemoteEnv, actualHash)
-
+	_ = s.cp.AdoptDrift(r.Context(), id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleListDeploymentFiles(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	files, err := s.executor.ListRemoteFiles(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir)
+	remoteDir, files, err := s.cp.ListDeploymentFiles(r.Context(), id)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -826,24 +638,7 @@ func (s *Server) handleViewDeploymentFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	dep, err := s.store.GetDeployment(id)
-	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteFilePath := fmt.Sprintf(".docker-orkes/stacks/%s/%s", stack.Name, fileName)
-	content, err := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteFilePath)
+	remoteFilePath, content, err := s.cp.ViewDeploymentFile(r.Context(), id, fileName)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -877,31 +672,8 @@ func (s *Server) handleSaveDeploymentFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	dep, err := s.store.GetDeployment(id)
+	saveRes, err := s.cp.SaveDeploymentFile(r.Context(), id, fileName, []byte(content), redeploy)
 	if err != nil {
-		http.Error(w, "Deployment not found", http.StatusNotFound)
-		return
-	}
-	stack, err := s.store.GetStack(dep.StackID)
-	if err != nil {
-		http.Error(w, "Stack not found", http.StatusNotFound)
-		return
-	}
-	node, err := s.store.GetNode(dep.NodeID)
-	if err != nil {
-		http.Error(w, "Node not found", http.StatusNotFound)
-		return
-	}
-
-	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-	files := map[string][]byte{
-		fileName: []byte(content),
-	}
-
-	uploadCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	defer cancel()
-
-	if err := s.executor.UploadFiles(uploadCtx, node.Host, node.Port, node.User, s.privKey, remoteDir, files); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -910,53 +682,14 @@ func (s *Server) handleSaveDeploymentFile(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var cmdOutput string
-	var redeployErr error
-	if redeploy {
-		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cmdCancel()
-
-		cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", remoteDir, remoteDir)
-		cmdOutput, redeployErr = s.executor.RunCommand(cmdCtx, node.Host, node.Port, node.User, s.privKey, cmd)
-		if redeployErr != nil {
-			_ = s.store.UpdateDeploymentStatus(dep.ID, "failed", fmt.Sprintf("redeploy error: %v (out: %s)", redeployErr, cmdOutput))
-		} else {
-			_ = s.store.UpdateDeploymentStatus(dep.ID, "running", cmdOutput)
-		}
-	}
-
-	// Re-check drift for this deployment
-	remoteComposeBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/docker-compose.yml")
-	remoteEnvBytes, _ := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir+"/.env")
-	remoteCompose := string(remoteComposeBytes)
-	remoteEnv := string(remoteEnvBytes)
-
-	composeDiff := diff.UnifiedDiff("Desired: stack/"+stack.Name, stack.ComposeYAML, "Remote: "+node.Name, remoteCompose)
-	envDiff := diff.UnifiedDiff("Desired: env", dep.EnvVars, "Remote: env", remoteEnv)
-
-
-	isDrifted := (composeDiff != "") || (envDiff != "")
-	driftStatus := "synced"
-	var diffReport strings.Builder
-	if composeDiff != "" {
-		diffReport.WriteString("--- docker-compose.yml diff ---\n" + composeDiff + "\n")
-	}
-	if envDiff != "" {
-		diffReport.WriteString("--- .env diff ---\n" + envDiff + "\n")
-	}
-	if isDrifted {
-		driftStatus = "drifted"
-	}
-	_ = s.store.UpdateDeploymentDrift(dep.ID, driftStatus, diffReport.String(), remoteCompose, remoteEnv)
-
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
-		"file":         fileName,
-		"redeploy":     redeploy,
-		"redeploy_err": func() string { if redeployErr != nil { return redeployErr.Error() }; return "" }(),
-		"output":       cmdOutput,
-		"drift_status": driftStatus,
+		"file":         saveRes.FileName,
+		"redeploy":     saveRes.Redeploy,
+		"redeploy_err": saveRes.RedeployErr,
+		"output":       saveRes.Output,
+		"drift_status": saveRes.DriftStatus,
 	})
 }
 
@@ -1039,80 +772,11 @@ func (s *Server) handleUpdateRunbook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
-	files := make(map[string][]byte)
-
-	stacks, err := s.store.ListStacks()
-	if err != nil {
-		return nil, err
-	}
-	for _, st := range stacks {
-		composePath := fmt.Sprintf("stacks/%s/docker-compose.yml", st.Name)
-		files[composePath] = []byte(st.ComposeYAML)
-
-		if st.DefaultEnv != "" {
-			envPath := fmt.Sprintf("stacks/%s/.env.example", st.Name)
-			files[envPath] = []byte(st.DefaultEnv)
-		}
-	}
-
-	nodes, err := s.store.ListNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	deployments, err := s.store.ListDeployments()
-	if err != nil {
-		return nil, err
-	}
-	for _, d := range deployments {
-		depEnvPath := fmt.Sprintf("deployments/%s/%s.env", d.NodeName, d.StackName)
-		files[depEnvPath] = []byte(d.EnvVars)
-	}
-
-	runbookNotes, _ := s.store.GetSetting("global_runbook_notes")
-	if runbookNotes != "" {
-		files["RUNBOOK.md"] = []byte(runbookNotes)
-	}
-
-	inventory := map[string]interface{}{
-		"generated_at": time.Now().UTC().Format(time.RFC3339),
-		"nodes":        nodes,
-		"stacks":       stacks,
-		"deployments":  deployments,
-	}
-	invJSON, _ := json.MarshalIndent(inventory, "", "  ")
-	files["inventory.json"] = invJSON
-
-	return files, nil
+	return s.cp.BuildGitMirrorFiles()
 }
 
-
 func (s *Server) triggerGitSync(ctx context.Context) error {
-	files, err := s.buildGitMirrorFiles()
-	if err != nil {
-		_ = s.store.SetSetting("git_mirror_status", "failed")
-		_ = s.store.SetSetting("git_mirror_error", err.Error())
-		return err
-	}
-
-	repoURL, _ := s.store.GetSetting("git_mirror_url")
-	branch, _ := s.store.GetSetting("git_mirror_branch")
-	if branch == "" {
-		branch = "main"
-	}
-
-	syncErr := s.gitSyncer.Sync(ctx, s.gitMirrorDir, repoURL, branch, s.privKey, files)
-	_ = s.store.SetSetting("git_mirror_last_sync", time.Now().UTC().Format(time.RFC3339))
-
-	if syncErr != nil {
-		_ = s.store.SetSetting("git_mirror_status", "failed")
-		_ = s.store.SetSetting("git_mirror_error", syncErr.Error())
-		return syncErr
-	}
-
-	_ = s.store.SetSetting("git_mirror_status", "synced")
-	_ = s.store.SetSetting("git_mirror_error", "")
-	return nil
+	return s.cp.SyncGitMirror(ctx)
 }
 
 func (s *Server) handleUpdateGitSettings(w http.ResponseWriter, r *http.Request) {
