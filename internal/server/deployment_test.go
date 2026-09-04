@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"docker-orkes/internal/server"
+	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 )
+
 
 type mockDeployExecutor struct {
 	mu           sync.Mutex
@@ -60,6 +62,26 @@ func (m *mockDeployExecutor) ReadRemoteFile(ctx context.Context, host string, po
 func (m *mockDeployExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
 	return nil
 }
+
+func (m *mockDeployExecutor) ListRemoteFiles(ctx context.Context, host string, port int, user string, privKey string, remoteDir string) ([]ssh.RemoteFileEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var entries []ssh.RemoteFileEntry
+	for k, v := range m.uploaded {
+		if strings.HasPrefix(k, remoteDir+"/") {
+			rel := strings.TrimPrefix(k, remoteDir+"/")
+			entries = append(entries, ssh.RemoteFileEntry{
+				Name:    rel,
+				Size:    int64(len(v)),
+				IsDir:   false,
+				ModTime: "Sep 04 08:00",
+				Mode:    "-rw-r--r--",
+			})
+		}
+	}
+	return entries, nil
+}
+
 
 
 func TestServer_DeploymentLifecycle(t *testing.T) {
@@ -209,5 +231,32 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 	if !strings.Contains(depAfterUpdate.EnvVars, "PORT=9090") {
 		t.Errorf("expected updated env_vars to contain PORT=9090, got %q", depAfterUpdate.EnvVars)
 	}
+
+	// 11. Browse remote files via GET /deployments/{id}/files
+	req = httptest.NewRequest(http.MethodGet, "/deployments/"+deployID+"/files", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for file list, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "docker-compose.yml") {
+		t.Errorf("expected file list to contain docker-compose.yml, got %s", rec.Body.String())
+	}
+
+	// 12. View file content via GET /deployments/{id}/files/view
+	req = httptest.NewRequest(http.MethodGet, "/deployments/"+deployID+"/files/view?file=docker-compose.yml", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for file view, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "nginx:alpine") {
+		t.Errorf("expected file content to contain nginx:alpine, got %s", rec.Body.String())
+	}
 }
+
 

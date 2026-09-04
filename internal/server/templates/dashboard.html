@@ -559,6 +559,7 @@
                   <span>{{.StackName}}</span>
                 </div>
                 {{if .Notes}}<div class="text-[11px] text-slate-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
+                <div class="text-[11px] font-mono text-indigo-400 mt-0.5 flex items-center gap-1" title="Remote Directory Path"><span class="text-slate-500">📁</span> ~/.docker-orkes/stacks/{{.StackName}}/</div>
                 <div class="text-[11px] text-slate-500 font-mono font-normal">Deployment: {{.ID}}</div>
               </td>
 
@@ -606,10 +607,15 @@
               </td>
               <td class="py-3.5 px-4 text-right">
                 <div class="inline-flex items-center gap-1.5">
+                  <button type="button" onclick="openFileBrowser('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')"
+                    class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition" title="Browse files in remote directory">
+                    📂 Files
+                  </button>
                   <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden')"
                     class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1 rounded text-xs transition" title="Edit deployment environment variables">
                     Edit Env
                   </button>
+
                   <form method="POST" action="/deployments/{{.ID}}/drift/check">
                     <button type="submit" title="Compare remote files with desired state" class="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-1 rounded text-xs transition">
                       Check Drift
@@ -777,9 +783,52 @@
     </div>
   </main>
 
+  <!-- Remote File Browser Modal -->
+  <div id="file-browser-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-base">📂</span>
+            <h3 class="text-sm font-semibold text-slate-100" id="file-browser-title">Remote Stack Files</h3>
+          </div>
+          <p class="text-xs font-mono text-indigo-400 mt-0.5" id="file-browser-path">~/.docker-orkes/stacks/...</p>
+        </div>
+        <button onclick="closeFileBrowser()" class="text-slate-400 hover:text-slate-200 text-lg p-1 rounded transition">✕</button>
+      </div>
 
+      <!-- Modal Body -->
+      <div class="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+        <!-- File List -->
+        <div class="p-4 overflow-y-auto bg-slate-950/30">
+          <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Files on Server</div>
+          <div id="file-browser-list" class="space-y-1 text-xs">
+            <div class="text-slate-500 py-3 text-center">Loading files...</div>
+          </div>
+        </div>
 
+        <!-- File Content Viewer -->
+        <div class="md:col-span-2 flex flex-col overflow-hidden bg-slate-950/60 p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-mono text-xs text-slate-300 font-semibold" id="file-viewer-name">Select a file to view</div>
+            <button id="copy-file-btn" onclick="copyCurrentFile()" class="hidden text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-0.5 rounded transition">
+              Copy Content
+            </button>
+          </div>
+          <pre id="file-viewer-content" class="flex-1 font-mono text-xs text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-800/80 overflow-auto whitespace-pre leading-relaxed max-h-[420px]">Select a file from the left to view remote file content.</pre>
+        </div>
+      </div>
 
+      <!-- Modal Footer -->
+      <div class="px-5 py-3 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
+        <span class="text-[11px] text-slate-500">Live file content read via secure agentless SSH / SFTP</span>
+        <button onclick="closeFileBrowser()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-medium transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script>
     function copySSHKey() {
@@ -792,6 +841,106 @@
         }, 2000);
       });
     }
+
+    let currentDepId = '';
+    let currentRawFileContent = '';
+
+    function openFileBrowser(depId, stackName, nodeName) {
+      currentDepId = depId;
+      document.getElementById('file-browser-title').innerText = `Remote Files for ${stackName} on ${nodeName}`;
+      document.getElementById('file-browser-path').innerText = `~/.docker-orkes/stacks/${stackName}/`;
+      document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 py-3 text-center">Loading files from remote server...</div>';
+      document.getElementById('file-viewer-name').innerText = 'Select a file to view';
+      document.getElementById('file-viewer-content').innerText = 'Loading...';
+      document.getElementById('copy-file-btn').classList.add('hidden');
+      document.getElementById('file-browser-modal').classList.remove('hidden');
+
+      fetch(`/deployments/${depId}/files`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            document.getElementById('file-browser-list').innerHTML = `<div class="text-rose-400 p-2">Error: ${data.error}</div>`;
+            document.getElementById('file-viewer-content').innerText = 'Failed to load remote directory.';
+            return;
+          }
+
+          if (!data.files || data.files.length === 0) {
+            document.getElementById('file-browser-list').innerHTML = '<div class="text-slate-500 p-2">No files found in directory.</div>';
+            document.getElementById('file-viewer-content').innerText = 'Directory is empty.';
+            return;
+          }
+
+          let listHtml = '';
+          data.files.forEach((f, idx) => {
+            const icon = f.is_dir ? '📁' : (f.name.endsWith('.yml') || f.name.endsWith('.yaml') ? '📄' : (f.name.startsWith('.env') ? '⚙️' : '📝'));
+            listHtml += `
+              <button onclick="viewRemoteFile('${depId}', '${f.name}')" id="file-item-${f.name.replace(/[^a-zA-Z0-9]/g, '_')}"
+                class="file-btn w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 transition flex items-center justify-between group">
+                <span class="font-mono text-slate-200 flex items-center gap-1.5 truncate">
+                  <span>${icon}</span>
+                  <span class="truncate">${f.name}</span>
+                </span>
+                <span class="text-[10px] text-slate-500 font-mono">${f.size} B</span>
+              </button>
+            `;
+          });
+          document.getElementById('file-browser-list').innerHTML = listHtml;
+
+          // Auto open first file (prefer docker-compose.yml)
+          const first = data.files.find(f => f.name === 'docker-compose.yml') || data.files[0];
+          if (first && !first.is_dir) {
+            viewRemoteFile(depId, first.name);
+          }
+        })
+        .catch(err => {
+          document.getElementById('file-browser-list').innerHTML = `<div class="text-rose-400 p-2">Request error: ${err.message}</div>`;
+        });
+    }
+
+    function viewRemoteFile(depId, fileName) {
+      document.querySelectorAll('.file-btn').forEach(b => b.classList.remove('bg-indigo-600/20', 'border', 'border-indigo-500/30'));
+      const activeBtn = document.getElementById('file-item-' + fileName.replace(/[^a-zA-Z0-9]/g, '_'));
+      if (activeBtn) {
+        activeBtn.classList.add('bg-indigo-600/20', 'border', 'border-indigo-500/30');
+      }
+
+      document.getElementById('file-viewer-name').innerText = fileName;
+      document.getElementById('file-viewer-content').innerText = 'Reading remote file content...';
+
+      fetch(`/deployments/${depId}/files/view?file=${encodeURIComponent(fileName)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            document.getElementById('file-viewer-content').innerText = `Error: ${data.error}`;
+            document.getElementById('copy-file-btn').classList.add('hidden');
+            return;
+          }
+          currentRawFileContent = data.content;
+          document.getElementById('file-viewer-content').innerText = data.content || '(empty file)';
+          document.getElementById('copy-file-btn').classList.remove('hidden');
+        })
+        .catch(err => {
+          document.getElementById('file-viewer-content').innerText = `Failed to read file: ${err.message}`;
+        });
+    }
+
+    function copyCurrentFile() {
+      navigator.clipboard.writeText(currentRawFileContent).then(() => {
+        const btn = document.getElementById('copy-file-btn');
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = 'Copy Content'; }, 2000);
+      });
+    }
+
+    function closeFileBrowser() {
+      document.getElementById('file-browser-modal').classList.add('hidden');
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeFileBrowser();
+    });
   </script>
 </body>
 </html>
+

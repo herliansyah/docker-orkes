@@ -14,14 +14,24 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type RemoteFileEntry struct {
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	IsDir   bool   `json:"is_dir"`
+	ModTime string `json:"mod_time"`
+	Mode    string `json:"mode"`
+}
+
 type Executor interface {
 	TestConnection(ctx context.Context, host string, port int, user string, privKeyPEM string) (dockerVersion string, err error)
 	RunCommand(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string) (output string, err error)
 	RunCommandStream(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string, out io.Writer) error
 	UploadFiles(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteDir string, files map[string][]byte) error
 	ReadRemoteFile(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteFilePath string) ([]byte, error)
+	ListRemoteFiles(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteDir string) ([]RemoteFileEntry, error)
 	BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error
 }
+
 
 
 
@@ -205,6 +215,38 @@ func (e *RealExecutor) ReadRemoteFile(ctx context.Context, host string, port int
 
 	return content, nil
 }
+
+func (e *RealExecutor) ListRemoteFiles(ctx context.Context, host string, port int, user string, privKeyPEM string, remoteDir string) ([]RemoteFileEntry, error) {
+	client, err := e.getSSHClient(ctx, host, port, user, privKeyPEM)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	sftpClient, err := sftp.NewClient(client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sftp client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	entries, err := sftpClient.ReadDir(remoteDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read remote dir %s: %w", remoteDir, err)
+	}
+
+	var files []RemoteFileEntry
+	for _, entry := range entries {
+		files = append(files, RemoteFileEntry{
+			Name:    entry.Name(),
+			Size:    entry.Size(),
+			IsDir:   entry.IsDir(),
+			ModTime: entry.ModTime().Format("Jan 02 15:04"),
+			Mode:    entry.Mode().String(),
+		})
+	}
+	return files, nil
+}
+
 
 func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
 	config := &ssh.ClientConfig{

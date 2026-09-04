@@ -142,6 +142,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
 	mux.Handle("POST /deployments/{id}/drift/reconcile", s.requireAuth(http.HandlerFunc(s.handleReconcileDrift)))
 	mux.Handle("POST /deployments/{id}/drift/adopt", s.requireAuth(http.HandlerFunc(s.handleAdoptDrift)))
+	mux.Handle("GET /deployments/{id}/files", s.requireAuth(http.HandlerFunc(s.handleListDeploymentFiles)))
+	mux.Handle("GET /deployments/{id}/files/view", s.requireAuth(http.HandlerFunc(s.handleViewDeploymentFile)))
+
 
 	mux.Handle("POST /settings/git", s.requireAuth(http.HandlerFunc(s.handleUpdateGitSettings)))
 	mux.Handle("POST /settings/git/sync", s.requireAuth(http.HandlerFunc(s.handleSyncGitNow)))
@@ -775,6 +778,87 @@ func (s *Server) handleAdoptDrift(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+func (s *Server) handleListDeploymentFiles(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+	files, err := s.executor.ListRemoteFiles(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteDir)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":      err.Error(),
+			"remote_dir": remoteDir,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"remote_dir": remoteDir,
+		"files":      files,
+	})
+}
+
+func (s *Server) handleViewDeploymentFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	fileName := strings.TrimSpace(r.URL.Query().Get("file"))
+	if fileName == "" || strings.Contains(fileName, "..") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+	stack, err := s.store.GetStack(dep.StackID)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	remoteFilePath := fmt.Sprintf(".docker-orkes/stacks/%s/%s", stack.Name, fileName)
+	content, err := s.executor.ReadRemoteFile(r.Context(), node.Host, node.Port, node.User, s.privKey, remoteFilePath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"file":    fileName,
+		"path":    remoteFilePath,
+		"content": string(content),
+	})
+}
+
 
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {

@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"docker-orkes/internal/server"
+	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
 )
+
 
 
 
@@ -46,6 +48,11 @@ func (m *mockExecutor) ReadRemoteFile(ctx context.Context, host string, port int
 func (m *mockExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
 	return nil
 }
+
+func (m *mockExecutor) ListRemoteFiles(ctx context.Context, host string, port int, user string, privKey string, remoteDir string) ([]ssh.RemoteFileEntry, error) {
+	return nil, nil
+}
+
 
 
 
