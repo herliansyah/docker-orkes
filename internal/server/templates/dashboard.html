@@ -412,14 +412,11 @@
 
                     <!-- Node Neuron Capsule Card (Soma Body) -->
                     <div class="node-soma-card relative group/neuron">
-                      <!-- Neon Aura on Hover -->
-                      <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/30 via-cyan-500/30 to-purple-500/30 rounded-2xl blur opacity-40 group-hover/neuron:opacity-100 transition duration-300"></div>
+                      <!-- Subtle Cyber Aura on Hover -->
+                      <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/20 via-cyan-500/20 to-purple-500/20 rounded-2xl blur opacity-40 group-hover/neuron:opacity-100 transition duration-300"></div>
                       
-                      <div class="relative bg-zinc-900/95 border-2 border-indigo-500/40 hover:border-cyan-400 rounded-2xl p-4.5 shadow-xl backdrop-blur-xl transition duration-300 overflow-hidden">
-                        <!-- Top Cyber Accent Line -->
-                        <div class="absolute top-0 left-0 right-0 h-1 {{if eq .Status "online"}}bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_10px_rgba(52,211,153,1)]{{else if eq .Status "offline"}}bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_10px_rgba(244,63,94,1)]{{else}}bg-zinc-700{{end}}"></div>
-
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                      <div class="relative bg-zinc-900/95 border-2 border-indigo-500/30 hover:border-cyan-400/60 rounded-2xl p-4.5 shadow-xl backdrop-blur-xl transition duration-300">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div class="flex items-center gap-3">
                             <!-- Toggle Button -->
                             <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
