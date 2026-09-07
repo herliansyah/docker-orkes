@@ -206,6 +206,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/restart", s.requireAuth(http.HandlerFunc(s.handleRestartDeployment)))
 	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
 	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
+	mux.Handle("GET /deployments/{id}/containers", s.requireAuth(http.HandlerFunc(s.handleGetDeploymentContainers)))
 
 
 	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
@@ -857,6 +858,56 @@ func (s *Server) handleDeleteDeploymentFile(w http.ResponseWriter, r *http.Reque
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"path":    filePath,
+	})
+}
+
+func (s *Server) handleGetDeploymentContainers(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	node, err := s.store.GetNode(dep.NodeID)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	psOut, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":      fmt.Sprintf("Failed to query containers on node: %v", err),
+			"node_id":    node.ID,
+			"node_name":  node.Name,
+			"stack_name": dep.StackName,
+			"containers": []ContainerInfo{},
+		})
+		return
+	}
+
+	knownStacks := map[string]bool{dep.StackName: true}
+	allContainers := parseDockerPsOutput(psOut, knownStacks)
+
+	var matching []ContainerInfo
+	stackLower := strings.ToLower(dep.StackName)
+	for _, c := range allContainers {
+		if strings.EqualFold(c.StackName, dep.StackName) || strings.Contains(strings.ToLower(c.Names), stackLower) {
+			matching = append(matching, c)
+		}
+	}
+	if matching == nil {
+		matching = []ContainerInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"node_id":    node.ID,
+		"node_name":  node.Name,
+		"stack_name": dep.StackName,
+		"containers": matching,
 	})
 }
 

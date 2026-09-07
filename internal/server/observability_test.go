@@ -629,5 +629,81 @@ func TestServer_ImagePullAndDeploymentRollout(t *testing.T) {
 	}
 }
 
+func TestServer_GetDeploymentContainers(t *testing.T) {
+	mockExec := &mockObsExecutor{
+		dockerPsOutput: `{"ID":"c_api_1","Names":"my-api-web-1","Image":"my-api:v1","Status":"Up 2 hours","State":"running","Ports":"8080/tcp","Labels":"com.docker.compose.project=my-api,com.docker.compose.project.working_dir=/root/.docker-orkes/stacks/my-api"}
+{"ID":"c_api_db","Names":"my-api-db-1","Image":"postgres:15","Status":"Up 2 hours","State":"running","Ports":"5432/tcp","Labels":"com.docker.compose.project=my-api,com.docker.compose.project.working_dir=/root/.docker-orkes/stacks/my-api"}
+{"ID":"c_other","Names":"unrelated-app","Image":"redis:alpine","Status":"Up 1 hour","State":"running","Ports":"6379/tcp","Labels":"com.docker.compose.project=other-stack"}
+`,
+	}
+
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// Login to get auth cookie
+	form := url.Values{"password": {"secret-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	// Setup node, stack, deployment
+	st := srv.Store()
+	_ = st.CreateNode(store.Node{ID: "node-1", Name: "Worker 1", Host: "192.168.1.10", Port: 22, User: "root"})
+	_ = st.CreateStack(store.Stack{ID: "stack-1", Name: "my-api", ComposeYAML: "services:\n  web:\n    image: my-api:v1\n"})
+	_ = st.CreateDeployment(store.Deployment{ID: "dep-1", StackID: "stack-1", NodeID: "node-1", Status: "running"})
+
+	// 1. Query GET /deployments/dep-1/containers
+	req = httptest.NewRequest(http.MethodGet, "/deployments/dep-1/containers", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		NodeID     string                 `json:"node_id"`
+		NodeName   string                 `json:"node_name"`
+		StackName  string                 `json:"stack_name"`
+		Containers []server.ContainerInfo `json:"containers"`
+		Error      string                 `json:"error,omitempty"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse json response: %v", err)
+	}
+
+	if resp.NodeID != "node-1" || resp.StackName != "my-api" {
+		t.Errorf("unexpected meta: node_id=%s, stack_name=%s", resp.NodeID, resp.StackName)
+	}
+	if len(resp.Containers) != 2 {
+		t.Fatalf("expected 2 containers for my-api, got %d", len(resp.Containers))
+	}
+	if resp.Containers[0].Names != "my-api-web-1" || resp.Containers[1].Names != "my-api-db-1" {
+		t.Errorf("unexpected containers: %+v", resp.Containers)
+	}
+
+	// 2. Query 404 for non-existent deployment
+	req = httptest.NewRequest(http.MethodGet, "/deployments/non-existent/containers", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404 Not Found, got %d", rec.Code)
+	}
+}
+
 
 
