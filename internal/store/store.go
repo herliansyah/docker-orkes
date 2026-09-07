@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -150,6 +152,13 @@ func (s *Store) initSchema() error {
 		desired_hash TEXT NOT NULL DEFAULT '',
 		reason TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS node_pinned_images (
+		node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+		image_ref TEXT NOT NULL,
+		created_at DATETIME NOT NULL,
+		PRIMARY KEY (node_id, image_ref)
 	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
@@ -380,6 +389,32 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 	return deps, rows.Err()
 }
 
+func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
+	query := `
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		FROM deployments d
+		JOIN stacks s ON d.stack_id = s.id
+		JOIN nodes n ON d.node_id = n.id
+		WHERE d.node_id = ?
+		ORDER BY d.updated_at DESC
+	`
+	rows, err := s.db.Query(query, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []Deployment
+	for rows.Next() {
+		var d Deployment
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, rows.Err()
+}
+
 func (s *Store) GetDeployment(id string) (*Deployment, error) {
 	query := `
 		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
@@ -514,6 +549,45 @@ func (s *Store) PruneDeploymentRevisions(deploymentID string, maxKeep int) error
 	`, deploymentID, deploymentID, maxKeep)
 	return err
 }
+
+// PinNodeImage marks a Node Image as an On-Demand Image for a specific Node.
+func (s *Store) PinNodeImage(nodeID, imageRef string) error {
+	trimmedRef := strings.TrimSpace(imageRef)
+	if trimmedRef == "" {
+		return errors.New("image_ref cannot be empty")
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO node_pinned_images (node_id, image_ref, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(node_id, image_ref) DO NOTHING
+	`, nodeID, trimmedRef, time.Now().UTC())
+	return err
+}
+
+// UnpinNodeImage removes the On-Demand retention pin from a Node Image.
+func (s *Store) UnpinNodeImage(nodeID, imageRef string) error {
+	_, err := s.db.Exec(`DELETE FROM node_pinned_images WHERE node_id = ? AND image_ref = ?`, nodeID, strings.TrimSpace(imageRef))
+	return err
+}
+
+// ListNodePinnedImages returns the list of pinned image references for a Node.
+func (s *Store) ListNodePinnedImages(nodeID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT image_ref FROM node_pinned_images WHERE node_id = ? ORDER BY image_ref ASC`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var refs []string
+	for rows.Next() {
+		var ref string
+		if err := rows.Scan(&ref); err == nil {
+			refs = append(refs, ref)
+		}
+	}
+	return refs, rows.Err()
+}
+
 
 
 

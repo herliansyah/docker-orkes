@@ -81,5 +81,31 @@ _Avoid_: Extra files, static data, auxiliary blobs
 An interactive, browser-based pseudo-terminal (PTY) session bridged over secure WebSocket to a Node host shell or a running container for emergency inspection and debugging, operating entirely offline without external CDN dependencies.
 _Avoid_: Web shell, remote console, back door
 
+**Node Image**:
+An OCI container image stored locally within the Docker daemon storage of a specific Node.
+_Avoid_: Remote image, cached image, registry artifact
+
+**On-Demand Image**:
+A Node Image explicitly pinned by an operator to indicate intentional retention for scheduled or ad-hoc tasks (such as database backups or migration runners) despite having no continuously running container.
+_Avoid_: Standby image, orphan image, idle image
+
+**Managed Container**:
+A container running on a Node that is instantiated, tracked, and managed by the Control Plane as part of a Deployment.
+_Avoid_: Internal container, orkes container, owned container
+
+**Unmanaged Container**:
+A container running on a Node that was created outside the Control Plane (such as via manual `docker run`, host system services, or external Compose files) and is not linked to any active Deployment.
+_Avoid_: Rogue container, alien container, external container, foreign container
+
+**Image Update**:
+The availability of a newer OCI image manifest or digest in an upstream registry for an existing Node Image repository tag.
+_Avoid_: Image patch, container upgrade, hotfix
+
+**Deployment Rollout**:
+The recreation and startup of a Deployment's containers using newly pulled image layers while maintaining configuration and environment variables.
+_Avoid_: Hard restart, wipe deploy, reinstall
+
+
+
 
 

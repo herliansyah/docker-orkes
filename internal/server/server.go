@@ -180,6 +180,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNode)))
 	mux.Handle("GET /nodes/{id}", s.requireAuth(http.HandlerFunc(s.handleNodeDetail)))
 	mux.Handle("GET /nodes/{id}/telemetry", s.requireAuth(http.HandlerFunc(s.handleNodeTelemetry)))
+	mux.Handle("GET /nodes/{id}/images", s.requireAuth(http.HandlerFunc(s.handleListNodeImages)))
+	mux.Handle("POST /nodes/{id}/images/pin", s.requireAuth(http.HandlerFunc(s.handlePinNodeImage)))
+	mux.Handle("POST /nodes/{id}/images/pull", s.requireAuth(http.HandlerFunc(s.handlePullNodeImage)))
+	mux.Handle("POST /nodes/{id}/images/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeImage)))
 	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
@@ -191,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments", s.requireAuth(http.HandlerFunc(s.handleCreateDeployment)))
 	mux.Handle("POST /deployments/{id}/update", s.requireAuth(http.HandlerFunc(s.handleUpdateDeployment)))
 	mux.Handle("POST /deployments/{id}/up", s.requireAuth(http.HandlerFunc(s.handleUpDeployment)))
+	mux.Handle("POST /deployments/{id}/rollout", s.requireAuth(http.HandlerFunc(s.handleRolloutDeployment)))
 	mux.Handle("POST /deployments/{id}/restart", s.requireAuth(http.HandlerFunc(s.handleRestartDeployment)))
 	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
 	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
@@ -626,6 +631,26 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	_ = s.cp.Deploy(r.Context(), id)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) handleRolloutDeployment(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := s.cp.Deploy(r.Context(), id)
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Deployment rolled out successfully with latest images"})
+		return
+	}
+	if err != nil {
+		http.Error(w, "Rollout failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -1115,13 +1140,15 @@ type DiskMetrics struct {
 }
 
 type ContainerInfo struct {
-	ID      string `json:"id"`
-	Names   string `json:"names"`
-	Image   string `json:"image"`
-	Status  string `json:"status"`
-	State   string `json:"state"`
-	Ports   string `json:"ports"`
-	Created string `json:"created"`
+	ID        string `json:"id"`
+	Names     string `json:"names"`
+	Image     string `json:"image"`
+	Status    string `json:"status"`
+	State     string `json:"state"`
+	Ports     string `json:"ports"`
+	Created   string `json:"created"`
+	IsManaged bool   `json:"is_managed"`
+	StackName string `json:"stack_name,omitempty"`
 }
 
 type NodeTelemetry struct {
@@ -1147,7 +1174,96 @@ func parseDfOutput(out string) DiskMetrics {
 	return DiskMetrics{}
 }
 
-func parseDockerPsOutput(out string) []ContainerInfo {
+type rawDockerPsItem struct {
+	ID           string `json:"ID"`
+	IDLower      string `json:"id"`
+	Names        string `json:"Names"`
+	NamesLower   string `json:"names"`
+	Image        string `json:"Image"`
+	ImageLower   string `json:"image"`
+	Status       string `json:"Status"`
+	StatusLower  string `json:"status"`
+	State        string `json:"State"`
+	StateLower   string `json:"state"`
+	Ports        string `json:"Ports"`
+	PortsLower   string `json:"ports"`
+	Created      string `json:"CreatedAt"`
+	CreatedLower string `json:"created"`
+	Labels       string `json:"Labels"`
+	LabelsLower  string `json:"labels"`
+}
+
+func (r rawDockerPsItem) getID() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.IDLower
+}
+func (r rawDockerPsItem) getNames() string {
+	if r.Names != "" {
+		return r.Names
+	}
+	return r.NamesLower
+}
+func (r rawDockerPsItem) getImage() string {
+	if r.Image != "" {
+		return r.Image
+	}
+	return r.ImageLower
+}
+func (r rawDockerPsItem) getStatus() string {
+	if r.Status != "" {
+		return r.Status
+	}
+	return r.StatusLower
+}
+func (r rawDockerPsItem) getState() string {
+	if r.State != "" {
+		return r.State
+	}
+	if r.StateLower != "" {
+		return r.StateLower
+	}
+	if strings.HasPrefix(strings.ToLower(r.getStatus()), "up") {
+		return "running"
+	}
+	return ""
+}
+func (r rawDockerPsItem) getPorts() string {
+	if r.Ports != "" {
+		return r.Ports
+	}
+	return r.PortsLower
+}
+func (r rawDockerPsItem) getCreated() string {
+	if r.Created != "" {
+		return r.Created
+	}
+	return r.CreatedLower
+}
+func (r rawDockerPsItem) getLabels() string {
+	if r.Labels != "" {
+		return r.Labels
+	}
+	return r.LabelsLower
+}
+
+func parseDockerLabels(labelsStr string) map[string]string {
+	res := make(map[string]string)
+	if labelsStr == "" {
+		return res
+	}
+	parts := strings.Split(labelsStr, ",")
+	for _, part := range parts {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) == 2 {
+			res[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return res
+}
+
+func parseDockerPsOutput(out string, knownStacks map[string]bool) []ContainerInfo {
 	var list []ContainerInfo
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	for _, line := range lines {
@@ -1155,10 +1271,45 @@ func parseDockerPsOutput(out string) []ContainerInfo {
 		if line == "" {
 			continue
 		}
-		var c ContainerInfo
-		if err := json.Unmarshal([]byte(line), &c); err == nil {
-			list = append(list, c)
+		var raw rawDockerPsItem
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
 		}
+
+		labels := parseDockerLabels(raw.getLabels())
+		workingDir := labels["com.docker.compose.project.working_dir"]
+		project := labels["com.docker.compose.project"]
+		explicitManaged := labels["io.docker-orkes.managed"] == "true"
+
+		isManaged := false
+		stackName := ""
+
+		if explicitManaged {
+			isManaged = true
+			stackName = project
+		} else if strings.Contains(workingDir, ".docker-orkes/stacks") {
+			isManaged = true
+			if project != "" {
+				stackName = project
+			} else {
+				stackName = path.Base(workingDir)
+			}
+		} else if project != "" && knownStacks != nil && knownStacks[project] {
+			isManaged = true
+			stackName = project
+		}
+
+		list = append(list, ContainerInfo{
+			ID:        raw.getID(),
+			Names:     raw.getNames(),
+			Image:     raw.getImage(),
+			Status:    raw.getStatus(),
+			State:     raw.getState(),
+			Ports:     raw.getPorts(),
+			Created:   raw.getCreated(),
+			IsManaged: isManaged,
+			StackName: stackName,
+		})
 	}
 	return list
 }
@@ -1189,9 +1340,17 @@ func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
 	dfOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "df -h /")
 	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
 
+	deployments, _ := s.store.ListDeploymentsByNode(node.ID)
+	knownStacks := make(map[string]bool, len(deployments))
+	for _, d := range deployments {
+		if d.StackName != "" {
+			knownStacks[d.StackName] = true
+		}
+	}
+
 	telemetry := NodeTelemetry{
 		Disk:       parseDfOutput(dfOut),
-		Containers: parseDockerPsOutput(psOut),
+		Containers: parseDockerPsOutput(psOut, knownStacks),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1218,6 +1377,454 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(logs))
 }
+
+type rawDockerImage struct {
+	ID           string `json:"ID"`
+	IDLower      string `json:"id"`
+	Repository   string `json:"Repository"`
+	RepoLower    string `json:"repository"`
+	Tag          string `json:"Tag"`
+	TagLower     string `json:"tag"`
+	Size         string `json:"Size"`
+	SizeLower    string `json:"size"`
+	CreatedSince string `json:"CreatedSince"`
+	SinceLower   string `json:"created_since"`
+}
+
+func (r rawDockerImage) getID() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.IDLower
+}
+func (r rawDockerImage) getRepo() string {
+	if r.Repository != "" {
+		return r.Repository
+	}
+	return r.RepoLower
+}
+func (r rawDockerImage) getTag() string {
+	if r.Tag != "" {
+		return r.Tag
+	}
+	return r.TagLower
+}
+func (r rawDockerImage) getSize() string {
+	if r.Size != "" {
+		return r.Size
+	}
+	return r.SizeLower
+}
+func (r rawDockerImage) getSince() string {
+	if r.CreatedSince != "" {
+		return r.CreatedSince
+	}
+	return r.SinceLower
+}
+
+type NodeImageInfo struct {
+	ID           string   `json:"id"`
+	Repository   string   `json:"repository"`
+	Tag          string   `json:"tag"`
+	Size         string   `json:"size"`
+	CreatedSince string   `json:"created_since"`
+	Status       string   `json:"status"` // in_use_running, in_use_stopped, on_demand, dangling, unused
+	IsPinned     bool     `json:"is_pinned"`
+	Containers   []string `json:"containers"`
+	IsManaged    bool     `json:"is_managed"`
+	UsageOrigin  string   `json:"usage_origin,omitempty"` // "managed", "unmanaged", or ""
+}
+
+func parseDockerImagesOutput(out string, containers []ContainerInfo, pinnedMap map[string]bool) []NodeImageInfo {
+	var list []NodeImageInfo
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var raw rawDockerImage
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+
+		repo := raw.getRepo()
+		tag := raw.getTag()
+		id := raw.getID()
+		size := raw.getSize()
+		since := raw.getSince()
+
+		isDangling := (repo == "<none>" && tag == "<none>") || (repo == "<none>" && tag == "") || tag == "<none>" || tag == ""
+		imageRef := repo
+		if isDangling {
+			if repo == "<none>" || repo == "" {
+				imageRef = "<none>:<none>"
+			} else {
+				imageRef = fmt.Sprintf("%s:<none>", repo)
+			}
+		} else if tag != "" && tag != "<none>" {
+			imageRef = fmt.Sprintf("%s:%s", repo, tag)
+		}
+
+		isPinned := pinnedMap[imageRef] || pinnedMap[repo]
+
+		hasRunning := false
+		hasStopped := false
+		hasManaged := false
+		hasUnmanaged := false
+		var matchedContainers []string
+
+		for _, c := range containers {
+			cImg := strings.TrimSpace(c.Image)
+			cImgNoSha := strings.TrimPrefix(cImg, "sha256:")
+			idNoSha := strings.TrimPrefix(id, "sha256:")
+
+			match := false
+			if !isDangling && cImg != "" && (cImg == imageRef || cImg == repo) {
+				match = true
+			} else if !isDangling && (tag == "latest" || tag == "") && cImg == repo+":latest" {
+				match = true
+			} else if idNoSha != "" && cImgNoSha != "" {
+				if idNoSha == cImgNoSha || strings.HasPrefix(idNoSha, cImgNoSha) || strings.HasPrefix(cImgNoSha, idNoSha) {
+					match = true
+				}
+			}
+
+			if match {
+				cName := strings.TrimPrefix(c.Names, "/")
+				matchedContainers = append(matchedContainers, cName)
+				if strings.ToLower(c.State) == "running" {
+					hasRunning = true
+				} else {
+					hasStopped = true
+				}
+				if c.IsManaged {
+					hasManaged = true
+				} else {
+					hasUnmanaged = true
+				}
+			}
+		}
+
+		status := "unused"
+		if hasRunning {
+			status = "in_use_running"
+		} else if hasStopped {
+			status = "in_use_stopped"
+		} else if isDangling {
+			status = "dangling"
+		} else if isPinned {
+			status = "on_demand"
+		}
+
+		usageOrigin := ""
+		if hasManaged {
+			usageOrigin = "managed"
+		} else if hasUnmanaged {
+			usageOrigin = "unmanaged"
+		}
+
+		list = append(list, NodeImageInfo{
+			ID:           id,
+			Repository:   repo,
+			Tag:          tag,
+			Size:         size,
+			CreatedSince: since,
+			Status:       status,
+			IsPinned:     isPinned,
+			Containers:   matchedContainers,
+			IsManaged:    hasManaged,
+			UsageOrigin:  usageOrigin,
+		})
+	}
+	return list
+}
+
+func (s *Server) handleListNodeImages(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	pinnedList, _ := s.store.ListNodePinnedImages(node.ID)
+	pinnedMap := make(map[string]bool, len(pinnedList))
+	for _, ref := range pinnedList {
+		pinnedMap[ref] = true
+	}
+
+	imgOut, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker images -a --format '{{json .}}'")
+	if err != nil {
+		http.Error(w, "Failed to query node images: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
+
+	deployments, _ := s.store.ListDeploymentsByNode(node.ID)
+	knownStacks := make(map[string]bool, len(deployments))
+	for _, d := range deployments {
+		if d.StackName != "" {
+			knownStacks[d.StackName] = true
+		}
+	}
+
+	containers := parseDockerPsOutput(psOut, knownStacks)
+
+	images := parseDockerImagesOutput(imgOut, containers, pinnedMap)
+	if images == nil {
+		images = []NodeImageInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(images)
+}
+
+func (s *Server) handlePinNodeImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		ImageRef string `json:"image_ref"`
+		Pinned   *bool  `json:"pinned"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if imageRef == "" || imageRef == "<none>:<none>" {
+		http.Error(w, "Valid image reference required for pinning", http.StatusBadRequest)
+		return
+	}
+
+	pinnedList, _ := s.store.ListNodePinnedImages(node.ID)
+	isCurrentlyPinned := false
+	for _, p := range pinnedList {
+		if p == imageRef {
+			isCurrentlyPinned = true
+			break
+		}
+	}
+
+	targetPinned := !isCurrentlyPinned
+	if req.Pinned != nil {
+		targetPinned = *req.Pinned
+	}
+
+	if targetPinned {
+		if err := s.store.PinNodeImage(node.ID, imageRef); err != nil {
+			http.Error(w, "Failed to pin image: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := s.store.UnpinNodeImage(node.ID, imageRef); err != nil {
+			http.Error(w, "Failed to unpin image: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"is_pinned": targetPinned,
+		"image_ref": imageRef,
+	})
+}
+
+func (s *Server) handlePullNodeImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		ImageRef string `json:"image_ref"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if imageRef == "" || imageRef == "<none>:<none>" {
+		http.Error(w, "Valid image reference required for pulling", http.StatusBadRequest)
+		return
+	}
+
+	for _, c := range imageRef {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || c == '_' || c == '-' || c == '@') {
+			http.Error(w, "Invalid characters in image target", http.StatusBadRequest)
+			return
+		}
+	}
+
+	pullCtx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
+	cmd := fmt.Sprintf("docker pull %s", imageRef)
+	out, err := s.executor.RunCommand(pullCtx, node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		http.Error(w, "Failed to pull image: "+err.Error()+"\nOutput: "+out, http.StatusInternalServerError)
+		return
+	}
+
+	status := "pulled"
+	outLower := strings.ToLower(out)
+	if strings.Contains(outLower, "image is up to date") {
+		status = "up_to_date"
+	} else if strings.Contains(outLower, "downloaded newer image") || strings.Contains(outLower, "pulling fs layer") {
+		status = "updated"
+	}
+
+	deployments, _ := s.store.ListDeploymentsByNode(node.ID)
+	var usedByDeps []map[string]string
+
+	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
+	knownStacks := make(map[string]bool, len(deployments))
+	depByStack := make(map[string]store.Deployment, len(deployments))
+	for _, d := range deployments {
+		if d.StackName != "" {
+			knownStacks[d.StackName] = true
+			depByStack[d.StackName] = d
+		}
+	}
+	containers := parseDockerPsOutput(psOut, knownStacks)
+
+	seenDeps := make(map[string]bool)
+	targetNoSha := strings.TrimPrefix(imageRef, "sha256:")
+	for _, c := range containers {
+		if !c.IsManaged || c.StackName == "" {
+			continue
+		}
+		cImg := strings.TrimSpace(c.Image)
+		cImgNoSha := strings.TrimPrefix(cImg, "sha256:")
+
+		match := false
+		if cImg == imageRef || cImgNoSha == targetNoSha || strings.HasPrefix(imageRef, cImg+":") || strings.HasPrefix(cImg, imageRef+":") {
+			match = true
+		} else if targetNoSha != "" && (cImgNoSha == targetNoSha || strings.HasPrefix(cImgNoSha, targetNoSha)) {
+			match = true
+		}
+
+		if match {
+			if dep, exists := depByStack[c.StackName]; exists && !seenDeps[dep.ID] {
+				seenDeps[dep.ID] = true
+				usedByDeps = append(usedByDeps, map[string]string{
+					"id":         dep.ID,
+					"stack_name": dep.StackName,
+				})
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":             true,
+		"image_ref":           imageRef,
+		"status":              status,
+		"output":              out,
+		"used_by_deployments": usedByDeps,
+	})
+}
+
+func (s *Server) handleDeleteNodeImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		ImageRef string `json:"image_ref"`
+		ImageID  string `json:"image_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	target := strings.TrimSpace(req.ImageRef)
+	if target == "" || target == "<none>:<none>" || strings.HasSuffix(target, ":<none>") {
+		target = strings.TrimSpace(req.ImageID)
+	}
+	if target == "" {
+		http.Error(w, "image_ref or image_id required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate target against command injection
+	for _, c := range target {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || c == '_' || c == '-' || c == '@') {
+			http.Error(w, "Invalid characters in image target", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Hard Block: check if image is pinned as On-Demand Image
+	pinnedList, _ := s.store.ListNodePinnedImages(node.ID)
+	for _, p := range pinnedList {
+		if p == target || (req.ImageRef != "" && p == req.ImageRef) {
+			http.Error(w, "Cannot delete image: pinned as an On-Demand Image. Unpin it first before deleting.", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Hard Block: check if image is in use by running or stopped containers
+	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
+	containers := parseDockerPsOutput(psOut, nil)
+
+	targetNoSha := strings.TrimPrefix(target, "sha256:")
+	idNoSha := strings.TrimPrefix(req.ImageID, "sha256:")
+
+	var usedBy []string
+	for _, c := range containers {
+		cImg := strings.TrimSpace(c.Image)
+		cImgNoSha := strings.TrimPrefix(cImg, "sha256:")
+
+		match := false
+		if target != "" && target != "<none>:<none>" && (cImg == target || (req.ImageRef != "" && cImg == req.ImageRef)) {
+			match = true
+		} else if idNoSha != "" && cImgNoSha != "" && (cImgNoSha == idNoSha || strings.HasPrefix(idNoSha, cImgNoSha) || strings.HasPrefix(cImgNoSha, idNoSha)) {
+			match = true
+		} else if targetNoSha != "" && cImgNoSha != "" && (cImgNoSha == targetNoSha || strings.HasPrefix(targetNoSha, cImgNoSha) || strings.HasPrefix(cImgNoSha, targetNoSha)) {
+			match = true
+		}
+
+		if match {
+			cName := strings.TrimPrefix(c.Names, "/")
+			usedBy = append(usedBy, fmt.Sprintf("%s (%s)", cName, c.State))
+		}
+	}
+
+	if len(usedBy) > 0 {
+		http.Error(w, fmt.Sprintf("Cannot delete image: in use by container(s): %s", strings.Join(usedBy, ", ")), http.StatusBadRequest)
+		return
+	}
+
+	cmd := fmt.Sprintf("docker rmi %s", target)
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		http.Error(w, "Failed to delete image: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  out,
+	})
+}
+
 
 func (s *Server) handleListRevisions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

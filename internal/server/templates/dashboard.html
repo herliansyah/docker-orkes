@@ -622,6 +622,12 @@
 
                         <div id="dep-actions-{{.ID}}" class="action-dropdown hidden absolute right-0 mt-1 w-44 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-20 py-1 divide-y divide-slate-800 text-left">
                           <div class="py-1">
+                            <form method="POST" action="/deployments/{{.ID}}/rollout" class="m-0" onsubmit="return confirm('Pull latest image versions from registry and recreate containers for {{.StackName}}?');">
+                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-slate-800 flex items-center gap-2 font-medium">
+                                <span>🔄</span> <span>Pull & Rollout</span>
+                              </button>
+                            </form>
+
                             <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 flex items-center gap-2">
                               <span>✏️</span> <span data-i18n="menu_edit_env">Edit Env (.env)</span>
