@@ -109,6 +109,22 @@ _Avoid_: Hard restart, wipe deploy, reinstall
 A visual, hierarchical graph rendered in the Control Plane dashboard showing the relationships connecting the Control Plane, managed Nodes, active Deployments, and individual runtime containers.
 _Avoid_: Cluster diagram, dependency graph, infrastructure chart
 
+**Node Volume**:
+A named Docker storage volume managed by the Docker daemon on a specific Node.
+_Avoid_: Disk mount, host folder, raw volume
+
+**Node Network**:
+A Docker network bridge or overlay managed by the Docker daemon on a specific Node.
+_Avoid_: Subnet, host interface, IP bridge
+
+**Managed Volume / Managed Network**:
+A volume or network created and labeled by Docker Compose as part of a Deployment Stack.
+_Avoid_: Stack storage, internal network
+
+**Unmanaged Volume / Unmanaged Network**:
+A volume or network created outside the Control Plane (via manual `docker volume create` / `docker network create` or external tools).
+_Avoid_: External volume, orphan network, foreign storage
+
 
 
 

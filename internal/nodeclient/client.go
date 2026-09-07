@@ -20,6 +20,31 @@ type ContainerInfo struct {
 	State  string `json:"state"`
 }
 
+// NodeVolumeInfo models Docker volume information on a node.
+type NodeVolumeInfo struct {
+	Name        string   `json:"name"`
+	Driver      string   `json:"driver"`
+	Scope       string   `json:"scope"`
+	Size        string   `json:"size,omitempty"`
+	IsManaged   bool     `json:"is_managed"`
+	StackName   string   `json:"stack_name,omitempty"`
+	InUse       bool     `json:"in_use"`
+	Containers  []string `json:"containers,omitempty"`
+}
+
+// NodeNetworkInfo models Docker network information on a node.
+type NodeNetworkInfo struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Driver     string   `json:"driver"`
+	Scope      string   `json:"scope"`
+	IsSystem   bool     `json:"is_system"`
+	IsManaged  bool     `json:"is_managed"`
+	StackName  string   `json:"stack_name,omitempty"`
+	InUse      bool     `json:"in_use"`
+	Containers []string `json:"containers,omitempty"`
+}
+
 // Config specifies credentials and connection properties to interact with a remote Docker host.
 type Config struct {
 	Host       string

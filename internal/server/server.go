@@ -24,6 +24,7 @@ import (
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
 	"docker-orkes/internal/notifier"
+	"docker-orkes/internal/nodeclient"
 	"docker-orkes/internal/poller"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
@@ -184,6 +185,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes/{id}/images/pin", s.requireAuth(http.HandlerFunc(s.handlePinNodeImage)))
 	mux.Handle("POST /nodes/{id}/images/pull", s.requireAuth(http.HandlerFunc(s.handlePullNodeImage)))
 	mux.Handle("POST /nodes/{id}/images/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeImage)))
+	mux.Handle("GET /nodes/{id}/volumes", s.requireAuth(http.HandlerFunc(s.handleListNodeVolumes)))
+	mux.Handle("POST /nodes/{id}/volumes/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeVolume)))
+	mux.Handle("POST /nodes/{id}/volumes/prune", s.requireAuth(http.HandlerFunc(s.handlePruneNodeVolumes)))
+	mux.Handle("GET /nodes/{id}/networks", s.requireAuth(http.HandlerFunc(s.handleListNodeNetworks)))
+	mux.Handle("POST /nodes/{id}/networks/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeNetwork)))
+	mux.Handle("POST /nodes/{id}/networks/prune", s.requireAuth(http.HandlerFunc(s.handlePruneNodeNetworks)))
 	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
@@ -2095,6 +2102,377 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 	} else if ctx.Err() == nil {
 		_, _ = ws.Write([]byte("\r\n\x1b[32mTerminal session closed.\x1b[0m\r\n"))
 	}
+}
+
+func parseDockerVolumesOutput(volOut string, psInspectOut string) []nodeclient.NodeVolumeInfo {
+	var list []nodeclient.NodeVolumeInfo
+
+	type rawVol struct {
+		Name       string `json:"Name"`
+		Driver     string `json:"Driver"`
+		Scope      string `json:"Scope"`
+		Size       string `json:"Size"`
+		Labels     string `json:"Labels"`
+		LabelMap   map[string]string
+	}
+
+	// Map volume name -> attached container names
+	volContainers := make(map[string][]string)
+	if psInspectOut != "" {
+		var containersInspect []struct {
+			Name   string `json:"Name"`
+			Mounts []struct {
+				Type string `json:"Type"`
+				Name string `json:"Name"`
+			} `json:"Mounts"`
+		}
+		if err := json.Unmarshal([]byte(psInspectOut), &containersInspect); err == nil {
+			for _, c := range containersInspect {
+				cName := strings.TrimPrefix(c.Name, "/")
+				for _, m := range c.Mounts {
+					if m.Type == "volume" && m.Name != "" {
+						volContainers[m.Name] = append(volContainers[m.Name], cName)
+					}
+				}
+			}
+		}
+	}
+
+	lines := strings.Split(volOut, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		var v rawVol
+		if err := json.Unmarshal([]byte(trimmed), &v); err != nil {
+			continue
+		}
+		if v.Name == "" {
+			continue
+		}
+
+		isManaged := false
+		stackName := ""
+		// Labels can be a comma-separated list or JSON in docker format
+		if strings.Contains(v.Labels, "com.docker.compose.project=") {
+			isManaged = true
+			parts := strings.Split(v.Labels, ",")
+			for _, p := range parts {
+				if strings.HasPrefix(strings.TrimSpace(p), "com.docker.compose.project=") {
+					stackName = strings.TrimPrefix(strings.TrimSpace(p), "com.docker.compose.project=")
+				}
+			}
+		}
+
+		attached := volContainers[v.Name]
+		inUse := len(attached) > 0
+
+		list = append(list, nodeclient.NodeVolumeInfo{
+			Name:       v.Name,
+			Driver:     v.Driver,
+			Scope:      v.Scope,
+			Size:       v.Size,
+			IsManaged:  isManaged,
+			StackName:  stackName,
+			InUse:      inUse,
+			Containers: attached,
+		})
+	}
+	return list
+}
+
+func parseDockerNetworksOutput(netOut string, psInspectOut string) []nodeclient.NodeNetworkInfo {
+	var list []nodeclient.NodeNetworkInfo
+
+	type rawNet struct {
+		ID     string `json:"ID"`
+		Name   string `json:"Name"`
+		Driver string `json:"Driver"`
+		Scope  string `json:"Scope"`
+		Labels string `json:"Labels"`
+	}
+
+	// Map network name/ID -> attached container names
+	netContainers := make(map[string][]string)
+	if psInspectOut != "" {
+		var containersInspect []struct {
+			Name            string `json:"Name"`
+			NetworkSettings struct {
+				Networks map[string]struct {
+					NetworkID string `json:"NetworkID"`
+				} `json:"Networks"`
+			} `json:"NetworkSettings"`
+		}
+		if err := json.Unmarshal([]byte(psInspectOut), &containersInspect); err == nil {
+			for _, c := range containersInspect {
+				cName := strings.TrimPrefix(c.Name, "/")
+				for netName, nInfo := range c.NetworkSettings.Networks {
+					if netName != "" {
+						netContainers[netName] = append(netContainers[netName], cName)
+					}
+					if nInfo.NetworkID != "" {
+						netContainers[nInfo.NetworkID] = append(netContainers[nInfo.NetworkID], cName)
+					}
+				}
+			}
+		}
+	}
+
+	lines := strings.Split(netOut, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		var n rawNet
+		if err := json.Unmarshal([]byte(trimmed), &n); err != nil {
+			continue
+		}
+		if n.Name == "" {
+			continue
+		}
+
+		isSystem := n.Name == "bridge" || n.Name == "host" || n.Name == "none"
+		isManaged := false
+		stackName := ""
+		if strings.Contains(n.Labels, "com.docker.compose.project=") {
+			isManaged = true
+			parts := strings.Split(n.Labels, ",")
+			for _, p := range parts {
+				if strings.HasPrefix(strings.TrimSpace(p), "com.docker.compose.project=") {
+					stackName = strings.TrimPrefix(strings.TrimSpace(p), "com.docker.compose.project=")
+				}
+			}
+		}
+
+		attached := netContainers[n.Name]
+		if len(attached) == 0 && n.ID != "" {
+			attached = netContainers[n.ID]
+		}
+		inUse := isSystem || len(attached) > 0
+
+		list = append(list, nodeclient.NodeNetworkInfo{
+			ID:         n.ID,
+			Name:       n.Name,
+			Driver:     n.Driver,
+			Scope:      n.Scope,
+			IsSystem:   isSystem,
+			IsManaged:  isManaged,
+			StackName:  stackName,
+			InUse:      inUse,
+			Containers: attached,
+		})
+	}
+	return list
+}
+
+func (s *Server) handleListNodeVolumes(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	volOut, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker volume ls --format '{{json .}}'")
+	if err != nil {
+		http.Error(w, "Failed to query volumes: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a -q | xargs -r docker inspect --format '{{json .}}' 2>/dev/null || true")
+	// If inspect fails or returns multi JSON objects without wrapping array, we parse line-by-line
+	if inspectOut != "" && !strings.HasPrefix(strings.TrimSpace(inspectOut), "[") {
+		// Wrap JSON lines into JSON array
+		var lines []string
+		for _, l := range strings.Split(inspectOut, "\n") {
+			if tr := strings.TrimSpace(l); tr != "" {
+				lines = append(lines, tr)
+			}
+		}
+		inspectOut = "[" + strings.Join(lines, ",") + "]"
+	}
+
+	volumes := parseDockerVolumesOutput(volOut, inspectOut)
+	if volumes == nil {
+		volumes = []nodeclient.NodeVolumeInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(volumes)
+}
+
+func (s *Server) handleDeleteNodeVolume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	volName := strings.TrimSpace(req.Name)
+	if volName == "" {
+		http.Error(w, "Volume name required", http.StatusBadRequest)
+		return
+	}
+
+	for _, c := range volName {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+			http.Error(w, "Invalid characters in volume name", http.StatusBadRequest)
+			return
+		}
+	}
+
+	cmd := fmt.Sprintf("docker volume rm %s", volName)
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete volume: %v (%s)", err, strings.TrimSpace(out)), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  out,
+	})
+}
+
+func (s *Server) handlePruneNodeVolumes(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker volume prune -f")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to prune volumes: %v (%s)", err, strings.TrimSpace(out)), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  out,
+	})
+}
+
+func (s *Server) handleListNodeNetworks(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	netOut, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker network ls --format '{{json .}}'")
+	if err != nil {
+		http.Error(w, "Failed to query networks: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a -q | xargs -r docker inspect --format '{{json .}}' 2>/dev/null || true")
+	if inspectOut != "" && !strings.HasPrefix(strings.TrimSpace(inspectOut), "[") {
+		var lines []string
+		for _, l := range strings.Split(inspectOut, "\n") {
+			if tr := strings.TrimSpace(l); tr != "" {
+				lines = append(lines, tr)
+			}
+		}
+		inspectOut = "[" + strings.Join(lines, ",") + "]"
+	}
+
+	networks := parseDockerNetworksOutput(netOut, inspectOut)
+	if networks == nil {
+		networks = []nodeclient.NodeNetworkInfo{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(networks)
+}
+
+func (s *Server) handleDeleteNodeNetwork(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	target := strings.TrimSpace(req.ID)
+	if target == "" {
+		target = strings.TrimSpace(req.Name)
+	}
+	if target == "" {
+		http.Error(w, "Network ID or name required", http.StatusBadRequest)
+		return
+	}
+
+	// System networks protection
+	if req.Name == "bridge" || req.Name == "host" || req.Name == "none" || target == "bridge" || target == "host" || target == "none" {
+		http.Error(w, "Cannot delete default system network", http.StatusBadRequest)
+		return
+	}
+
+	for _, c := range target {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+			http.Error(w, "Invalid characters in network target", http.StatusBadRequest)
+			return
+		}
+	}
+
+	cmd := fmt.Sprintf("docker network rm %s", target)
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to delete network: %v (%s)", err, strings.TrimSpace(out)), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  out,
+	})
+}
+
+func (s *Server) handlePruneNodeNetworks(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	out, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker network prune -f")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to prune networks: %v (%s)", err, strings.TrimSpace(out)), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"output":  out,
+	})
 }
 
 
