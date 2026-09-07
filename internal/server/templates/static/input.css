@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@source "../**/*.html";
+
+@layer base {
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+/* Collapsible Sidebar Styles */
+#app-sidebar.is-collapsed {
+  width: 4.5rem !important;
+}
+#app-sidebar.is-collapsed .sidebar-hide-collapsed {
+  display: none !important;
+}
+#app-sidebar.is-collapsed .sidebar-show-collapsed {
+  display: flex !important;
+}
+#app-sidebar:not(.is-collapsed) .sidebar-show-collapsed {
+  display: none !important;
+}
+#app-sidebar.is-collapsed .sidebar-nav-btn {
+  justify-content: center !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+#app-sidebar.is-collapsed .sidebar-header-box {
+  justify-content: center !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+#app-sidebar.is-collapsed .sidebar-footer-box {
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+#app-sidebar.is-collapsed .sidebar-section-title {
+  display: none !important;
+}

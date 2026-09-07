@@ -105,6 +105,11 @@ _Avoid_: Image patch, container upgrade, hotfix
 The recreation and startup of a Deployment's containers using newly pulled image layers while maintaining configuration and environment variables.
 _Avoid_: Hard restart, wipe deploy, reinstall
 
+**Topology Map**:
+A visual, hierarchical graph rendered in the Control Plane dashboard showing the relationships connecting the Control Plane, managed Nodes, active Deployments, and individual runtime containers.
+_Avoid_: Cluster diagram, dependency graph, infrastructure chart
+
+
 
 
 

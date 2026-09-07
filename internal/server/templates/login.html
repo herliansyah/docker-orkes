@@ -1,39 +1,60 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Login - Docker Orkes</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <title>Sign In - Docker Orkes Control Plane</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
-  <div class="max-w-md w-full bg-slate-800 border border-slate-700 rounded-xl p-8 shadow-2xl">
-    <div class="flex items-center space-x-3 mb-6">
-      <div class="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-xl">🐳</div>
-      <div>
-        <h1 class="text-xl font-bold tracking-tight">Docker Orkes</h1>
-        <p class="text-xs text-slate-400">Agentless Multi-Node Control Plane</p>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center p-4 selection:bg-indigo-500/30 selection:text-indigo-200">
+  <div class="fixed inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))] pointer-events-none"></div>
+
+  <div class="max-w-md w-full relative z-10">
+    <div class="bg-zinc-900/90 backdrop-blur-xl border border-zinc-800/80 rounded-2xl p-8 shadow-2xl shadow-black/60">
+      <div class="flex items-center space-x-3.5 mb-8">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-2xl shadow-lg shadow-indigo-500/20 border border-indigo-400/30">
+          🐳
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-bold tracking-tight text-white">Docker Orkes</h1>
+            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Control Plane</span>
+          </div>
+          <p class="text-xs text-zinc-400 mt-0.5">Multi-Node Declarative Infrastructure</p>
+        </div>
       </div>
+
+      {{if .Error}}
+      <div class="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-4 py-3 rounded-xl text-xs mb-6 flex items-center gap-2.5">
+        <svg class="w-4 h-4 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <span>{{.Error}}</span>
+      </div>
+      {{end}}
+
+      <form method="POST" action="/login" class="space-y-5">
+        <div>
+          <label for="password" class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Master Password</label>
+          <div class="relative">
+            <input type="password" id="password" name="password" required autofocus
+              class="w-full bg-zinc-950/80 border border-zinc-700/80 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 text-sm transition"
+              placeholder="Enter master password">
+          </div>
+        </div>
+        <button type="submit"
+          class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 px-4 rounded-xl transition text-sm shadow-lg shadow-indigo-600/20 active:scale-[0.99] flex items-center justify-center gap-2">
+          <span>Authenticate Session</span>
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+          </svg>
+        </button>
+      </form>
     </div>
 
-    {{if .Error}}
-    <div class="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-2.5 rounded-lg text-sm mb-6">
-      {{.Error}}
+    <div class="text-center mt-6 text-[11px] text-zinc-400">
+      Offline & Air-gapped Ready • Agentless SSH Transport
     </div>
-    {{end}}
-
-    <form method="POST" action="/login" class="space-y-4">
-      <div>
-        <label for="password" class="block text-sm font-medium text-slate-300 mb-1.5">Master Password</label>
-        <input type="password" id="password" name="password" required autofocus
-          class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
-          placeholder="Enter master password">
-      </div>
-      <button type="submit"
-        class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 px-4 rounded-lg transition text-sm shadow-sm hover:shadow">
-        Sign In
-      </button>
-    </form>
   </div>
 </body>
 </html>

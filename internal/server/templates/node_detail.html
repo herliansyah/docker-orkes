@@ -4,23 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{.Node.Name}} - Observability - Docker Orkes</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/app.css">
   <!-- Local Offline Web Terminal (No CDN) -->
   <link rel="stylesheet" href="/static/xterm.css">
   <script src="/static/xterm.js"></script>
   <script src="/static/addon-fit.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
   <!-- Top Navigation -->
-  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+  <header class="border-b border-zinc-800 bg-zinc-900/80 backdrop-blur sticky top-0 z-30">
+    <div class="w-full px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <a href="/" class="text-slate-400 hover:text-slate-200 transition text-sm flex items-center gap-1.5">
+        <a href="/" class="text-zinc-400 hover:text-zinc-200 transition text-sm flex items-center gap-1.5">
           ← Dashboard
         </a>
-        <span class="text-slate-600">/</span>
+        <span class="text-zinc-600">/</span>
         <span class="font-bold text-lg tracking-tight">{{.Node.Name}}</span>
-        <span class="text-xs font-mono text-slate-400">({{.Node.User}}@{{.Node.Host}}:{{.Node.Port}})</span>
+        <span class="text-xs font-mono text-zinc-400">({{.Node.User}}@{{.Node.Host}}:{{.Node.Port}})</span>
       </div>
       <div class="flex items-center gap-2 sm:gap-3">
         <button onclick="openHostTerminal(nodeID, '{{.Node.Name}}')"
@@ -28,74 +28,74 @@
           💻 <span>Host Terminal</span>
         </button>
         <button onclick="fetchTelemetry()" id="refresh-btn"
-          class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+          class="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
           🔄 <span>Refresh Metrics</span>
         </button>
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+  <main class="w-full px-4 sm:px-6 lg:px-8 py-8 space-y-8">
     <!-- Storage & Health Grid -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
       <!-- Disk Usage Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 md:col-span-2">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 md:col-span-2">
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h3 class="text-sm font-semibold text-slate-100">Disk Storage Capacity (Host Root)</h3>
-            <p class="text-xs text-slate-400 mt-0.5">Physical filesystem utilization (<code class="text-indigo-400">df -h /</code>)</p>
+            <h3 class="text-sm font-semibold text-zinc-100">Disk Storage Capacity (Host Root)</h3>
+            <p class="text-xs text-zinc-400 mt-0.5">Physical filesystem utilization (<code class="text-indigo-400">df -h /</code>)</p>
           </div>
           <span id="disk-percent-badge" class="text-sm font-bold text-indigo-400">--%</span>
         </div>
 
-        <div class="w-full bg-slate-950 rounded-full h-3.5 border border-slate-800 overflow-hidden mb-3">
+        <div class="w-full bg-zinc-950 rounded-full h-3.5 border border-zinc-800 overflow-hidden mb-3">
           <div id="disk-progress" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
         </div>
 
-        <div class="flex justify-between text-xs text-slate-400 font-mono">
-          <span>Used: <strong id="disk-used" class="text-slate-200">--</strong></span>
-          <span>Free: <strong id="disk-free" class="text-slate-200">--</strong></span>
-          <span>Total: <strong id="disk-total" class="text-slate-200">--</strong></span>
+        <div class="flex justify-between text-xs text-zinc-400 font-mono">
+          <span>Used: <strong id="disk-used" class="text-zinc-200">--</strong></span>
+          <span>Free: <strong id="disk-free" class="text-zinc-200">--</strong></span>
+          <span>Total: <strong id="disk-total" class="text-zinc-200">--</strong></span>
         </div>
       </div>
 
       <!-- Node Vitals Card -->
-      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col justify-between">
         <div>
-          <h3 class="text-sm font-semibold text-slate-100 mb-3">Docker Engine Vitals</h3>
+          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Docker Engine Vitals</h3>
           <div class="space-y-2 text-xs">
-            <div class="flex justify-between text-slate-400">
+            <div class="flex justify-between text-zinc-400">
               <span>Status:</span>
               <span class="font-medium text-emerald-400">● {{.Node.Status}}</span>
             </div>
-            <div class="flex justify-between text-slate-400">
+            <div class="flex justify-between text-zinc-400">
               <span>Docker Version:</span>
-              <span class="font-mono text-slate-200 truncate max-w-[140px]">{{.Node.DockerVersion}}</span>
+              <span class="font-mono text-zinc-200 truncate max-w-[140px]">{{.Node.DockerVersion}}</span>
             </div>
-            <div class="flex justify-between text-slate-400">
+            <div class="flex justify-between text-zinc-400">
               <span>SSH Endpoint:</span>
-              <span class="font-mono text-slate-200">{{.Node.Host}}:{{.Node.Port}}</span>
+              <span class="font-mono text-zinc-200">{{.Node.Host}}:{{.Node.Port}}</span>
             </div>
           </div>
         </div>
-        <div class="pt-3 border-t border-slate-800 text-[11px] text-slate-500">
+        <div class="pt-3 border-t border-zinc-800 text-[11px] text-zinc-500">
           Auto-polling active while viewing
         </div>
       </div>
     </div>
 
     <!-- Tab Controls -->
-    <div class="flex items-center justify-between border-b border-slate-800">
+    <div class="flex items-center justify-between border-b border-zinc-800">
       <div class="flex gap-2 -mb-px">
         <button id="tab-btn-containers" onclick="switchSubTab('containers')"
           class="pb-3 px-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition">
           <span>📦 Containers</span>
-          <span id="tab-badge-containers" class="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-300">0</span>
+          <span id="tab-badge-containers" class="text-xs font-mono bg-zinc-800 px-2 py-0.5 rounded text-zinc-300">0</span>
         </button>
         <button id="tab-btn-images" onclick="switchSubTab('images')"
-          class="pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition">
+          class="pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-2 transition">
           <span>🖼️ Node Images</span>
-          <span id="tab-badge-images" class="text-xs font-mono bg-slate-800 px-2 py-0.5 rounded text-slate-400">--</span>
+          <span id="tab-badge-images" class="text-xs font-mono bg-zinc-800 px-2 py-0.5 rounded text-zinc-400">--</span>
         </button>
       </div>
       <div id="images-actions" class="hidden pb-2 flex items-center gap-2">
@@ -104,50 +104,50 @@
           🔍 <span>Check All Updates</span>
         </button>
         <button onclick="fetchImages()"
-          class="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-2.5 py-1 rounded transition flex items-center gap-1">
+          class="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded transition flex items-center gap-1">
           🔄 <span>Refresh Images</span>
         </button>
       </div>
     </div>
 
     <!-- Active Containers Inventory Tab Pane -->
-    <div id="tab-pane-containers" class="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
+    <div id="tab-pane-containers" class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-sm space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-base font-semibold text-slate-100">Containers on this Node</h3>
-          <p class="text-xs text-slate-400 mt-0.5">Live container list and states (<code class="text-indigo-400">docker ps -a</code>)</p>
+          <h3 class="text-base font-semibold text-zinc-100">Containers on this Node</h3>
+          <p class="text-xs text-zinc-400 mt-0.5">Live container list and states (<code class="text-indigo-400">docker ps -a</code>)</p>
         </div>
-        <span id="container-count" class="text-xs font-mono bg-slate-800 px-2.5 py-1 rounded text-slate-300">0 containers</span>
+        <span id="container-count" class="text-xs font-mono bg-zinc-800 px-2.5 py-1 rounded text-zinc-300">0 containers</span>
       </div>
 
       <!-- Containers Filter & Search Toolbar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-zinc-950/60 p-3 rounded-lg border border-zinc-800/80">
         <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
           <div class="relative flex-1 min-w-[180px]">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-500 text-xs">🔍</span>
+            <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-zinc-500 text-xs">🔍</span>
             <input type="text" id="containers-search" oninput="applyContainersFilter()" placeholder="Search name, ID, image, ports, stack..."
-              class="w-full bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 pl-8 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition">
+              class="w-full bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1.5 pl-8 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition">
           </div>
           <select id="containers-origin-filter" onchange="applyContainersFilter()"
-            class="bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+            class="bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500">
             <option value="all">All Origins</option>
             <option value="managed">⚡ Managed Only</option>
             <option value="unmanaged">📦 Unmanaged Only</option>
           </select>
           <select id="containers-state-filter" onchange="applyContainersFilter()"
-            class="bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+            class="bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500">
             <option value="all">All States</option>
             <option value="running">Running</option>
             <option value="stopped">Stopped / Exited</option>
           </select>
         </div>
-        <div id="containers-filtered-count" class="text-[11px] text-slate-400 font-mono"></div>
+        <div id="containers-filtered-count" class="text-[11px] text-zinc-400 font-mono"></div>
       </div>
 
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <tr class="border-b border-zinc-800 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
               <th class="py-3 px-4">Container Name</th>
               <th class="py-3 px-4">Origin</th>
               <th class="py-3 px-4">Image</th>
@@ -156,9 +156,9 @@
               <th class="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody id="containers-body" class="divide-y divide-slate-800/60 text-xs">
+          <tbody id="containers-body" class="divide-y divide-zinc-800/60 text-xs">
             <tr>
-              <td colspan="6" class="py-8 text-center text-slate-500">Loading containers...</td>
+              <td colspan="6" class="py-8 text-center text-zinc-500">Loading containers...</td>
             </tr>
           </tbody>
         </table>
@@ -166,27 +166,27 @@
     </div>
 
     <!-- Node Images Inventory Tab Pane -->
-    <div id="tab-pane-images" class="hidden bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
+    <div id="tab-pane-images" class="hidden bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-sm space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-base font-semibold text-slate-100">Node Images Inventory</h3>
-          <p class="text-xs text-slate-400 mt-0.5">Local OCI container images in Node daemon storage (<code class="text-indigo-400">docker images</code>)</p>
+          <h3 class="text-base font-semibold text-zinc-100">Node Images Inventory</h3>
+          <p class="text-xs text-zinc-400 mt-0.5">Local OCI container images in Node daemon storage (<code class="text-indigo-400">docker images</code>)</p>
         </div>
         <div class="flex items-center gap-3">
-          <span id="image-count" class="text-xs font-mono bg-slate-800 px-2.5 py-1 rounded text-slate-300">0 images</span>
+          <span id="image-count" class="text-xs font-mono bg-zinc-800 px-2.5 py-1 rounded text-zinc-300">0 images</span>
         </div>
       </div>
 
       <!-- Node Images Filter & Search Toolbar -->
-      <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-zinc-950/60 p-3 rounded-lg border border-zinc-800/80">
         <div class="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
           <div class="relative flex-1 min-w-[180px]">
-            <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-slate-500 text-xs">🔍</span>
+            <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-zinc-500 text-xs">🔍</span>
             <input type="text" id="images-search" oninput="applyImagesFilter()" placeholder="Search repository, tag, ID, container..."
-              class="w-full bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 pl-8 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition">
+              class="w-full bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1.5 pl-8 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 transition">
           </div>
           <select id="images-status-filter" onchange="applyImagesFilter()"
-            class="bg-slate-900 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+            class="bg-zinc-900 border border-zinc-700/80 rounded px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500">
             <option value="all">All Status</option>
             <option value="managed">● In Use (Managed)</option>
             <option value="unmanaged">◐ In Use (Unmanaged)</option>
@@ -195,13 +195,13 @@
             <option value="dangling">⚠ Dangling</option>
           </select>
         </div>
-        <div id="images-filtered-count" class="text-[11px] text-slate-400 font-mono"></div>
+        <div id="images-filtered-count" class="text-[11px] text-zinc-400 font-mono"></div>
       </div>
 
       <div class="overflow-x-auto">
         <table class="w-full text-left border-collapse">
           <thead>
-            <tr class="border-b border-slate-800 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <tr class="border-b border-zinc-800 text-xs font-semibold text-zinc-400 uppercase tracking-wider">
               <th class="py-3 px-4">Repository / Tag</th>
               <th class="py-3 px-4">Image ID</th>
               <th class="py-3 px-4">Size</th>
@@ -210,9 +210,9 @@
               <th class="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody id="images-body" class="divide-y divide-slate-800/60 text-xs">
+          <tbody id="images-body" class="divide-y divide-zinc-800/60 text-xs">
             <tr>
-              <td colspan="6" class="py-8 text-center text-slate-500">Loading images...</td>
+              <td colspan="6" class="py-8 text-center text-zinc-500">Loading images...</td>
             </tr>
           </tbody>
         </table>
@@ -222,24 +222,24 @@
 
   <!-- Image Pull & Rollout Modal -->
   <div id="pull-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-xl w-full flex flex-col shadow-2xl overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl max-w-xl w-full flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-sm">⬇️</span>
-          <h3 id="pull-modal-title" class="text-sm font-semibold text-slate-100">Image Pull Output</h3>
+          <h3 id="pull-modal-title" class="text-sm font-semibold text-zinc-100">Image Pull Output</h3>
         </div>
-        <button onclick="closePullModal()" class="text-slate-400 hover:text-slate-200 text-lg transition">✕</button>
+        <button onclick="closePullModal()" class="text-zinc-400 hover:text-zinc-200 text-lg transition">✕</button>
       </div>
       <div class="p-6 space-y-4">
         <div id="pull-modal-status-banner" class="p-3 rounded-lg text-xs font-medium"></div>
-        <pre id="pull-modal-output" class="bg-slate-950 border border-slate-800/80 rounded-lg p-3 text-xs font-mono text-slate-300 max-h-60 overflow-y-auto whitespace-pre-wrap"></pre>
+        <pre id="pull-modal-output" class="bg-zinc-950 border border-zinc-800/80 rounded-lg p-3 text-xs font-mono text-zinc-300 max-h-60 overflow-y-auto whitespace-pre-wrap"></pre>
         <div id="pull-modal-rollout-prompt" class="hidden bg-indigo-950/30 border border-indigo-500/30 rounded-lg p-4 space-y-3">
           <div class="text-xs text-indigo-200">
             <span class="font-semibold text-indigo-400">🚀 Deployment Rollout Available:</span>
-            <p id="pull-modal-rollout-text" class="mt-1 text-slate-300"></p>
+            <p id="pull-modal-rollout-text" class="mt-1 text-zinc-300"></p>
           </div>
           <div class="flex justify-end gap-2">
-            <button onclick="closePullModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded text-xs transition">
+            <button onclick="closePullModal()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded text-xs transition">
               Later
             </button>
             <button id="pull-modal-rollout-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-1.5 rounded text-xs transition shadow-sm flex items-center gap-1.5">
@@ -248,8 +248,8 @@
           </div>
         </div>
       </div>
-      <div class="px-6 py-3 bg-slate-950/60 border-t border-slate-800 flex justify-end">
-        <button onclick="closePullModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-1.5 rounded text-xs font-medium transition">
+      <div class="px-6 py-3 bg-zinc-950/60 border-t border-zinc-800 flex justify-end">
+        <button onclick="closePullModal()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 px-4 py-1.5 rounded text-xs font-medium transition">
           Close
         </button>
       </div>
@@ -258,16 +258,16 @@
 
   <!-- Logs Modal -->
   <div id="logs-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
-      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
         <div class="flex items-center gap-2">
           <span class="text-sm">📋</span>
-          <h3 id="modal-container-name" class="text-sm font-semibold text-slate-100">Container Logs</h3>
+          <h3 id="modal-container-name" class="text-sm font-semibold text-zinc-100">Container Logs</h3>
         </div>
-        <button onclick="closeLogsModal()" class="text-slate-400 hover:text-slate-200 text-sm p-1">✕</button>
+        <button onclick="closeLogsModal()" class="text-zinc-400 hover:text-zinc-200 text-sm p-1">✕</button>
       </div>
       <div class="p-4 flex-1 overflow-hidden flex flex-col">
-        <pre id="logs-content" class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-xs font-mono text-slate-300 flex-1 overflow-y-auto whitespace-pre-wrap">Fetching logs...</pre>
+        <pre id="logs-content" class="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs font-mono text-zinc-300 flex-1 overflow-y-auto whitespace-pre-wrap">Fetching logs...</pre>
       </div>
     </div>
   </div>
@@ -354,9 +354,9 @@
 
       if (!containers || containers.length === 0) {
         if (rawContainers.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">No containers found on this node.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No containers found on this node.</td></tr>';
         } else {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">No containers matching current filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No containers matching current filter.</td></tr>';
         }
         return;
       }
@@ -368,24 +368,24 @@
           ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" title="Managed by Docker Orkes (Stack: ${c.stack_name || 'Active'})">
                <span>⚡</span> <span>Managed${c.stack_name ? ' (' + c.stack_name + ')' : ''}</span>
              </span>`
-          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-amber-400/90 border border-amber-500/20" title="Unmanaged / External container">
+          : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-amber-400/90 border border-amber-500/20" title="Unmanaged / External container">
                <span>📦</span> <span>Unmanaged</span>
              </span>`;
 
         return `
-          <tr class="hover:bg-slate-800/30 transition">
-            <td class="py-3 px-4 font-semibold text-slate-100">
+          <tr class="hover:bg-zinc-800/30 transition">
+            <td class="py-3 px-4 font-semibold text-zinc-100">
               ${c.names || c.id}
-              <div class="text-[10px] text-slate-500 font-mono">${shortID}</div>
+              <div class="text-[10px] text-zinc-500 font-mono">${shortID}</div>
             </td>
             <td class="py-3 px-4">${originBadge}</td>
-            <td class="py-3 px-4 font-mono text-[11px] text-slate-300">${c.image}</td>
+            <td class="py-3 px-4 font-mono text-[11px] text-zinc-300">${c.image}</td>
             <td class="py-3 px-4">
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${isRunning ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}">
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${isRunning ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}">
                 ${isRunning ? '● Running' : '○ ' + (c.state || 'stopped')}
               </span>
             </td>
-            <td class="py-3 px-4 font-mono text-[11px] text-slate-400">${c.ports || '-'}</td>
+            <td class="py-3 px-4 font-mono text-[11px] text-zinc-400">${c.ports || '-'}</td>
             <td class="py-3 px-4 text-right">
               <div class="inline-flex items-center gap-1.5 justify-end">
                 ${isRunning ? `
@@ -394,7 +394,7 @@
                   💻 <span>Terminal</span>
                 </button>` : ''}
                 <button onclick="viewContainerLogs('${c.id}', '${c.names}')"
-                  class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2.5 py-1 rounded text-xs transition">
+                  class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-2.5 py-1 rounded text-xs transition">
                   View Logs
                 </button>
               </div>
@@ -417,13 +417,13 @@
 
       if (tab === 'containers') {
         btnContainers.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition';
-        btnImages.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition';
+        btnImages.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-2 transition';
         paneContainers.classList.remove('hidden');
         paneImages.classList.add('hidden');
         imgActions.classList.add('hidden');
       } else {
         btnImages.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition';
-        btnContainers.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition';
+        btnContainers.className = 'pb-3 px-3 text-sm font-semibold border-b-2 border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-2 transition';
         paneImages.classList.remove('hidden');
         paneContainers.classList.add('hidden');
         imgActions.classList.remove('hidden');
@@ -437,7 +437,7 @@
     async function fetchImages(silent = false) {
       const tbody = document.getElementById('images-body');
       if (!silent) {
-        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">Fetching node images via SSH...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">Fetching node images via SSH...</td></tr>';
       }
       try {
         const res = await fetch(`/nodes/${nodeID}/images`);
@@ -510,9 +510,9 @@
 
       if (!images || images.length === 0) {
         if (rawImages.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">No images found in node daemon storage.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No images found in node daemon storage.</td></tr>';
         } else {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-500">No images matching current filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No images matching current filter.</td></tr>';
         }
         return;
       }
@@ -532,14 +532,14 @@
         } else if (img.status === 'on_demand') {
           statusBadge = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">⭐ On-Demand</span>`;
         } else if (img.status === 'dangling') {
-          statusBadge = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800 text-slate-400 border border-slate-700">⚠ Dangling</span>`;
+          statusBadge = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">⚠ Dangling</span>`;
         } else {
-          statusBadge = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700/60">Unused</span>`;
+          statusBadge = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800/80 text-zinc-400 border border-zinc-700/60">Unused</span>`;
         }
 
         let containerList = '';
         if (img.containers && img.containers.length > 0) {
-          containerList = `<div class="text-[10px] text-slate-400 mt-1 font-mono">Containers: ${img.containers.join(', ')}</div>`;
+          containerList = `<div class="text-[10px] text-zinc-400 mt-1 font-mono">Containers: ${img.containers.join(', ')}</div>`;
         }
 
         const canDelete = img.status === 'unused' || img.status === 'dangling';
@@ -551,19 +551,19 @@
           if (st && st.state === 'checking') {
             updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-950/50 text-indigo-300 border border-indigo-800/50"><span class="animate-spin text-xs">🔄</span> Checking...</span>`;
           } else if (st && st.state === 'up_to_date') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Image is up to date with registry"><span>✓ Up to date</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-slate-400 hover:text-slate-200 transition" title="Re-check registry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Image is up to date with registry"><span>✓ Up to date</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
           } else if (st && st.state === 'updated') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30" title="Newer image layers were downloaded"><span>🚀 Updated</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-slate-400 hover:text-slate-200 transition" title="Re-check registry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30" title="Newer image layers were downloaded"><span>🚀 Updated</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
           } else if (st && st.state === 'error') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${st.error || 'Failed'}"><span>❌ Error</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-slate-400 hover:text-slate-200 transition" title="Retry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${st.error || 'Failed'}"><span>❌ Error</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Retry">↻</button></span>`;
           } else {
-            updateControl = `<button onclick="checkImageUpdate('${ref}')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check Update</span></button>`;
+            updateControl = `<button onclick="checkImageUpdate('${ref}')" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check Update</span></button>`;
           }
 
           if (img.is_pinned) {
             pinButton = `<button onclick="togglePinImage('${ref}', false)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition font-medium" title="Unpin On-Demand retention">⭐ Pinned</button>`;
           } else {
-            pinButton = `<button onclick="togglePinImage('${ref}', true)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition" title="Pin as On-Demand utility">☆ Pin</button>`;
+            pinButton = `<button onclick="togglePinImage('${ref}', true)" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-xs transition" title="Pin as On-Demand utility">☆ Pin</button>`;
           }
         }
 
@@ -572,18 +572,18 @@
           deleteButton = `<button onclick="deleteImage('${ref}', '${img.id}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Selective delete image">🗑️ Delete</button>`;
         } else {
           const reason = img.is_pinned ? 'Pinned as On-Demand (unpin first)' : (img.usage_origin === 'managed' ? 'In use by Managed containers' : 'In use by containers');
-          deleteButton = `<button disabled class="opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-slate-800 px-2 py-1 rounded text-xs" title="${reason}">Delete</button>`;
+          deleteButton = `<button disabled class="opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-800 px-2 py-1 rounded text-xs" title="${reason}">Delete</button>`;
         }
 
         return `
-          <tr class="hover:bg-slate-800/30 transition">
-            <td class="py-3 px-4 font-semibold text-slate-100">
-              ${isDangling ? '<span class="text-slate-400 italic">&lt;none&gt;:&lt;none&gt;</span>' : `<span class="font-mono text-slate-200">${ref}</span>`}
+          <tr class="hover:bg-zinc-800/30 transition">
+            <td class="py-3 px-4 font-semibold text-zinc-100">
+              ${isDangling ? '<span class="text-zinc-400 italic">&lt;none&gt;:&lt;none&gt;</span>' : `<span class="font-mono text-zinc-200">${ref}</span>`}
               ${containerList}
             </td>
-            <td class="py-3 px-4 font-mono text-xs text-slate-400">${shortID}</td>
-            <td class="py-3 px-4 font-mono text-xs text-slate-300">${img.size || '-'}</td>
-            <td class="py-3 px-4 text-xs text-slate-400">${img.created_since || '-'}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${shortID}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-300">${img.size || '-'}</td>
+            <td class="py-3 px-4 text-xs text-zinc-400">${img.created_since || '-'}</td>
             <td class="py-3 px-4">${statusBadge}</td>
             <td class="py-3 px-4 text-right">
               <div class="inline-flex items-center gap-1.5 justify-end">
@@ -611,7 +611,7 @@
 
       if (showModal) {
         title.innerText = `Checking update for ${imageRef}...`;
-        banner.className = 'p-3 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 flex items-center gap-2';
+        banner.className = 'p-3 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 flex items-center gap-2';
         banner.innerHTML = `<span class="animate-spin text-sm">🔄</span> <span>Connecting via SSH and checking registry...</span>`;
         pre.innerText = 'Waiting for Docker daemon output...';
         rolloutPrompt.classList.add('hidden');
@@ -983,11 +983,11 @@
       const btn = document.getElementById('term-fullscreen-btn');
       isTerminalFullscreen = !isTerminalFullscreen;
       if (isTerminalFullscreen) {
-        dialog.className = 'bg-slate-900 border border-slate-800 rounded-none fixed inset-0 w-full h-full max-w-none shadow-2xl overflow-hidden flex flex-col z-50';
+        dialog.className = 'bg-zinc-900 border border-zinc-800 rounded-none fixed inset-0 w-full h-full max-w-none shadow-2xl overflow-hidden flex flex-col z-50';
         view.style.height = 'calc(100vh - 100px)';
         btn.innerHTML = '🗗';
       } else {
-        dialog.className = 'bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all';
+        dialog.className = 'bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all';
         view.style.height = '480px';
         btn.innerHTML = '⛶';
       }
@@ -1039,36 +1039,36 @@
   </script>
 
   <!-- Web Terminal Modal -->
-  <div id="terminal-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
-    <div id="terminal-dialog" class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all">
-      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 shrink-0">
+  <div id="terminal-modal" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+    <div id="terminal-dialog" class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] transition-all">
+      <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
         <div class="flex items-center gap-2.5 min-w-0">
           <span class="text-base">💻</span>
           <div>
             <div class="flex items-center gap-2">
-              <h3 class="text-sm font-semibold text-slate-100 truncate" id="terminal-title">Terminal</h3>
-              <span id="terminal-status" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20">
-                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Disconnected
+              <h3 class="text-sm font-semibold text-zinc-100 truncate" id="terminal-title">Terminal</h3>
+              <span id="terminal-status" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Disconnected
               </span>
             </div>
-            <p class="text-[11px] font-mono text-slate-400 truncate mt-0.5" id="terminal-subtitle">Interactive PTY Shell</p>
+            <p class="text-[11px] font-mono text-zinc-400 truncate mt-0.5" id="terminal-subtitle">Interactive PTY Shell</p>
           </div>
         </div>
 
         <div class="flex items-center gap-1.5 shrink-0">
           <button type="button" onclick="reconnectTerminal()" title="Reconnect Session"
-            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
             <span>🔄</span> <span class="hidden sm:inline">Reconnect</span>
           </button>
           <button type="button" onclick="clearTerminalScreen()" title="Clear Terminal Screen"
-            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
+            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-xs transition flex items-center gap-1">
             <span>🧹</span> <span class="hidden sm:inline">Clear</span>
           </button>
           <button type="button" onclick="toggleTerminalFullscreen()" title="Toggle Fullscreen" id="term-fullscreen-btn"
-            class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2.5 py-1 rounded text-xs transition font-mono">
+            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-mono">
             ⛶
           </button>
-          <button type="button" onclick="closeTerminalModal()" class="text-slate-400 hover:text-slate-200 text-base p-1.5 rounded transition">
+          <button type="button" onclick="closeTerminalModal()" class="text-zinc-400 hover:text-zinc-200 text-base p-1.5 rounded transition">
             ✕
           </button>
         </div>
@@ -1078,11 +1078,11 @@
         <div id="terminal-view" class="w-full h-[480px] bg-[#090d16] overflow-hidden rounded"></div>
       </div>
 
-      <div class="px-4 py-2 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+      <div class="px-4 py-2 border-t border-zinc-800 bg-zinc-950/70 flex items-center justify-between text-[11px] text-zinc-400 shrink-0">
         <div class="flex items-center gap-2">
-          <span>⚡ Supports Tab completion, interactive apps (<code class="text-slate-300 font-mono">top</code>, <code class="text-slate-300 font-mono">nano</code>), and ANSI color.</span>
+          <span>⚡ Supports Tab completion, interactive apps (<code class="text-zinc-300 font-mono">top</code>, <code class="text-zinc-300 font-mono">nano</code>), and ANSI color.</span>
         </div>
-        <div class="text-slate-500 font-mono">
+        <div class="text-zinc-500 font-mono">
           30m idle timeout
         </div>
       </div>
