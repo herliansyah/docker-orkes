@@ -311,226 +311,243 @@
             </div>
           </div>
 
-          <!-- Mindmap Visual Graph Canvas / Tree Container (Futuristic Cyber Matrix Canvas) -->
-          <div class="bg-zinc-950/80 bg-[linear-gradient(to_right,#312e8112_1px,transparent_1px),linear-gradient(to_bottom,#312e8112_1px,transparent_1px)] bg-[size:32px_32px] border border-zinc-800/80 rounded-2xl p-6 sm:p-8 overflow-auto flex-1 min-h-0 relative shadow-inner">
-            <!-- Root Hub (Control Plane) -->
-            <div class="flex flex-col items-start">
-              <div class="relative group">
-                <!-- Holographic Ambient Glow -->
-                <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-cyan-500/20 rounded-2xl blur-lg opacity-60 group-hover:opacity-100 transition duration-500"></div>
+          <!-- Mindmap Visual Graph Canvas (Organic Brain Neural Constellation Canvas) -->
+          <div id="topology-canvas-container" class="bg-zinc-950/95 bg-[radial-gradient(#6366f11f_1px,transparent_1px)] bg-[size:32px_32px] border border-zinc-800/80 rounded-2xl p-6 sm:p-10 overflow-auto flex-1 min-h-0 relative shadow-2xl">
+            
+            <!-- Dynamic Organic SVG Neural Synapse Overlay -->
+            <svg id="neural-synapse-canvas" class="absolute inset-0 w-full h-full pointer-events-none z-10" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="synapseGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <filter id="impulseGlow" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="4" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+                <linearGradient id="axonGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.9" />
+                  <stop offset="50%" stop-color="#818cf8" stop-opacity="0.8" />
+                  <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.9" />
+                </linearGradient>
+                <linearGradient id="dendriteGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#818cf8" stop-opacity="0.8" />
+                  <stop offset="100%" stop-color="#34d399" stop-opacity="0.9" />
+                </linearGradient>
+              </defs>
+              <g id="neural-dynamic-paths"></g>
+            </svg>
+
+            <div class="flex flex-col items-center w-full min-w-[700px] pb-6 relative z-20">
+              
+              <!-- === LEVEL 1: CENTRAL CONTROL PLANE NEURON (BRAIN SOMA NUCLEUS) === -->
+              <div id="neural-core-nucleus" class="relative group/nucleus flex flex-col items-center z-20 mb-10">
+                <!-- Concentric Orbit Rings -->
+                <div class="absolute -inset-6 rounded-full border border-indigo-500/20 border-dashed animate-orbit-spin pointer-events-none"></div>
+                <div class="absolute -inset-12 rounded-full border border-cyan-500/10 border-dashed animate-orbit-spin-rev pointer-events-none"></div>
                 
-                <div class="relative bg-gradient-to-r from-zinc-900/95 via-zinc-900/90 to-indigo-950/70 border border-indigo-500/40 rounded-2xl p-4.5 shadow-xl backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6 max-w-xl">
-                  <div class="flex items-center gap-3.5">
-                    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-400/40 flex items-center justify-center text-2xl shadow-inner text-indigo-300 shrink-0">
+                <!-- Holographic Radial Glow -->
+                <div class="absolute -inset-2 bg-gradient-to-r from-indigo-500/30 via-cyan-500/20 to-purple-500/30 rounded-3xl blur-xl opacity-70 group-hover/nucleus:opacity-100 transition duration-500 animate-neural-pulse"></div>
+                
+                <div class="relative bg-gradient-to-b from-zinc-900/95 via-zinc-900/90 to-indigo-950/80 border-2 border-indigo-500/50 rounded-3xl p-5 shadow-[0_0_30px_rgba(99,102,241,0.25)] backdrop-blur-2xl flex flex-col items-center text-center gap-3.5 max-w-md w-full">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 via-indigo-600/20 to-cyan-500/30 border border-indigo-400/50 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(99,102,241,0.4)] text-indigo-300 relative">
                       🐳
+                      <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
+                      </span>
                     </div>
-                    <div>
+                    <div class="text-left">
                       <div class="flex items-center gap-2">
-                        <h3 class="font-bold text-sm tracking-tight text-white">Docker Orkes Control Plane</h3>
-                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                          Live HUD
+                        <h3 class="font-bold text-sm tracking-tight text-white">Docker Orkes Nucleus</h3>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-indigo-500/20 text-cyan-300 border border-cyan-500/30">
+                          ⚡ SYNAPSE CORE
                         </span>
                       </div>
                       <p class="text-[11px] text-zinc-400 font-mono mt-0.5 flex items-center gap-1.5" data-i18n="map_root_desc">
-                        <span>Central Orchestrator</span>
+                        <span>Central Brain</span>
                         <span class="text-zinc-600">•</span>
-                        <span class="text-indigo-400">Declarative Desired State</span>
+                        <span class="text-indigo-400">Desired State Hub</span>
                       </p>
                     </div>
                   </div>
 
-                  <div class="flex items-center gap-2 text-[11px] font-mono shrink-0">
-                    <span class="px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-indigo-300 flex items-center gap-1.5 shadow-sm">
-                      <span class="text-xs">🖥️</span> <span class="font-semibold text-zinc-100">{{.NodeCount}}</span> <span class="text-[10px] text-zinc-500">NODES</span>
+                  <!-- Nucleus Live Synapse Telemetry Badges -->
+                  <div class="flex items-center justify-center gap-2 text-[11px] font-mono w-full pt-1 border-t border-zinc-800/80">
+                    <span class="px-3 py-1 rounded-xl bg-zinc-950/80 border border-zinc-800 text-indigo-300 flex items-center gap-1.5 shadow-sm">
+                      <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                      <span class="font-bold text-zinc-100">{{.NodeCount}}</span> <span class="text-[10px] text-zinc-500">NODES</span>
                     </span>
-                    <span class="px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-emerald-300 flex items-center gap-1.5 shadow-sm">
-                      <span class="text-xs">📦</span> <span class="font-semibold text-zinc-100">{{.DeploymentCount}}</span> <span class="text-[10px] text-zinc-500">STACKS</span>
+                    <span class="px-3 py-1 rounded-xl bg-zinc-950/80 border border-zinc-800 text-cyan-300 flex items-center gap-1.5 shadow-sm">
+                      <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                      <span class="font-bold text-zinc-100">{{.DeploymentCount}}</span> <span class="text-[10px] text-zinc-500">STACKS</span>
+                    </span>
+                    <span class="px-3 py-1 rounded-xl bg-zinc-950/80 border border-zinc-800 text-emerald-300 flex items-center gap-1.5 shadow-sm">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span class="text-[10px] text-emerald-400 font-semibold">SYNAPSE ACTIVE</span>
                     </span>
                   </div>
                 </div>
               </div>
 
-              <!-- Main Tree Stem from Root -->
-              {{if .Nodes}}
-              <div class="w-0.5 h-8 bg-gradient-to-b from-indigo-500/70 to-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.5)] ml-8"></div>
-              {{end}}
+              <!-- === LEVEL 2: MANAGED NODE NEURONS (SOMA CLUSTERS) === -->
+              <div class="w-full max-w-6xl relative" id="topology-nodes-container">
+                {{if .Nodes}}
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-x-12 gap-y-10 w-full pt-2">
+                  {{range .Nodes}}
+                  {{$nodeDeps := index $.DeploymentsByNode .ID}}
+                  <!-- Node Neuron Branch -->
+                  <div class="topology-node-branch relative flex flex-col"
+                    data-node-id="{{.ID}}"
+                    data-node-name="{{.Name}}"
+                    data-node-search="{{.Name}} {{.Host}} {{.User}} {{.Notes}}"
+                    data-node-status="{{.Status}}">
 
-              <!-- Main Tree Trunk Container for Nodes -->
-              <div class="ml-8 relative w-full" id="topology-nodes-container">
-                {{range .Nodes}}
-                {{$nodeDeps := index $.DeploymentsByNode .ID}}
-                <!-- Node Branch Container -->
-                <div class="topology-node-branch relative pl-8 pb-7"
-                  data-node-id="{{.ID}}"
-                  data-node-name="{{.Name}}"
-                  data-node-search="{{.Name}} {{.Host}} {{.User}} {{.Notes}}"
-                  data-node-status="{{.Status}}">
-                  
-                  <!-- Top Vertical Spine: glowing fiber cable -->
-                  <div class="tree-node-v-top absolute left-0 top-0 w-0.5 h-8 bg-gradient-to-b from-indigo-500/60 to-indigo-500/40 shadow-[0_0_6px_rgba(99,102,241,0.5)]"></div>
-
-                  <!-- Horizontal Stem: touches the card directly -->
-                  <div class="tree-node-h-line absolute left-0 top-8 w-[33px] h-0.5 bg-gradient-to-r from-indigo-500/60 to-indigo-500/30 shadow-[0_0_6px_rgba(99,102,241,0.5)]"></div>
-
-                  <!-- Corner Junction Status Dot: Glowing Pulse Node -->
-                  <div class="tree-node-dot absolute -left-[6px] top-[25px] w-3.5 h-3.5 rounded-full border-2 border-zinc-950 {{if eq .Status "online"}}bg-emerald-400 ring-4 ring-emerald-500/20 shadow-[0_0_8px_rgba(52,211,153,0.8)]{{else if eq .Status "offline"}}bg-rose-400 ring-4 ring-rose-500/20 shadow-[0_0_8px_rgba(244,63,94,0.8)]{{else}}bg-zinc-400{{end}}"></div>
-
-                  <!-- Bottom Vertical Spine: continues down to next node -->
-                  <div class="tree-node-v-bottom absolute left-0 top-8 bottom-0 w-0.5 bg-indigo-500/30"></div>
-
-                  <!-- Node Blade Card (Cyber Blade Server Design) -->
-                  <div class="relative group/node max-w-2xl">
-                    <div class="bg-zinc-900/90 border border-zinc-800/90 hover:border-indigo-500/50 rounded-xl p-4 shadow-lg backdrop-blur-md transition relative overflow-hidden">
-                      <!-- Left Accent Status Glow Strip -->
-                      <div class="absolute left-0 top-0 bottom-0 w-1.5 {{if eq .Status "online"}}bg-gradient-to-b from-emerald-400 to-emerald-600 shadow-[0_0_10px_rgba(52,211,153,0.6)]{{else if eq .Status "offline"}}bg-gradient-to-b from-rose-400 to-rose-600 shadow-[0_0_10px_rgba(244,63,94,0.6)]{{else}}bg-zinc-600{{end}}"></div>
+                    <!-- Node Neuron Capsule Card (Soma Body) -->
+                    <div class="node-soma-card relative group/neuron">
+                      <!-- Neon Aura on Hover -->
+                      <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500/30 via-cyan-500/30 to-purple-500/30 rounded-2xl blur opacity-40 group-hover/neuron:opacity-100 transition duration-300"></div>
                       
-                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pl-2.5">
-                        <div class="flex items-center gap-3">
-                          <!-- Collapse/Expand Toggle Button -->
-                          <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
-                            class="w-6 h-6 rounded-lg bg-zinc-800/90 hover:bg-indigo-600 hover:text-white text-zinc-300 flex items-center justify-center text-xs font-mono font-bold transition border border-zinc-700/60 shadow-sm shrink-0">
-                            -
-                          </button>
+                      <div class="relative bg-zinc-900/95 border-2 border-indigo-500/40 hover:border-cyan-400 rounded-2xl p-4.5 shadow-xl backdrop-blur-xl transition duration-300 overflow-hidden">
+                        <!-- Top Cyber Accent Line -->
+                        <div class="absolute top-0 left-0 right-0 h-1 {{if eq .Status "online"}}bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_10px_rgba(52,211,153,1)]{{else if eq .Status "offline"}}bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_10px_rgba(244,63,94,1)]{{else}}bg-zinc-700{{end}}"></div>
 
-                          <div>
-                            <div class="flex items-center gap-2">
-                              <span class="text-sm">🖥️</span>
-                              <h4 class="font-bold text-xs text-zinc-100">{{.Name}}</h4>
-                              {{if eq .Status "online"}}
-                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online
-                              </span>
-                              {{else if eq .Status "offline"}}
-                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
-                                <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
-                              </span>
-                              {{else}}
-                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-                                <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Untested
-                              </span>
-                              {{end}}
-                            </div>
-                            <div class="text-[11px] font-mono text-zinc-400 mt-1 flex items-center gap-2 flex-wrap">
-                              <span class="text-indigo-400/90 bg-zinc-950/70 px-1.5 py-0.5 rounded border border-zinc-800/70">{{.User}}@{{.Host}}:{{.Port}}</span>
-                              {{if .Notes}}<span class="text-zinc-500 font-sans truncate max-w-xs">📝 {{.Notes}}</span>{{end}}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="flex items-center gap-2 shrink-0">
-                          <span class="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-zinc-300 shadow-sm">
-                            📦 <span class="font-semibold text-zinc-100">{{len $nodeDeps}}</span> <span class="text-[10px] text-zinc-500" data-i18n="word_stacks">STACKS</span>
-                          </span>
-                          <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 shadow-sm">
-                            <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics</span>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Deployments Sub-Branch (Children) -->
-                  <div id="mindmap-children-{{.ID}}" class="ml-6 relative mt-1 space-y-0">
-                    <!-- Drop Stem from Node Card down to first deployment -->
-                    <div class="w-0.5 h-3.5 bg-gradient-to-b from-indigo-500/40 to-zinc-700/80"></div>
-
-                    {{range $dep := $nodeDeps}}
-                    <!-- Deployment Leaf Wrapper -->
-                    <div class="topology-dep-leaf-wrapper relative pl-6 pb-2.5">
-                      <!-- Top Vertical Spine -->
-                      <div class="tree-dep-v-top absolute left-0 top-0 w-0.5 h-[28px] bg-zinc-700/80"></div>
-
-                      <!-- Horizontal Stem: touches the card directly -->
-                      <div class="tree-dep-h-line absolute left-0 top-[28px] w-[25px] h-0.5 bg-zinc-700/80"></div>
-
-                      <!-- Corner Junction Dot -->
-                      <div class="tree-dep-dot absolute -left-[4px] top-[23px] w-2.5 h-2.5 rounded-full border-2 border-zinc-950 {{if eq $dep.Status "running"}}bg-indigo-400 shadow-[0_0_6px_rgba(129,140,248,0.8)]{{else if eq $dep.Status "failed"}}bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]{{else}}bg-zinc-500{{end}}"></div>
-
-                      <!-- Bottom Vertical Spine -->
-                      <div class="tree-dep-v-bottom absolute left-0 top-[28px] bottom-0 w-0.5 bg-zinc-700/80"></div>
-
-                      <!-- Deployment Node Leaf Card (Cyber Container Pod) -->
-                      <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-zinc-950/90 border border-zinc-800/90 hover:border-indigo-500/50 rounded-xl p-3 max-w-xl transition shadow-sm group/dep"
-                        data-dep-id="{{$dep.ID}}"
-                        data-dep-name="{{$dep.StackName}}"
-                        data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
-                        data-dep-status="{{$dep.Status}}"
-                        data-dep-drift="{{$dep.DriftStatus}}">
-
-                        <div class="flex items-center gap-3 min-w-0">
-                          <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm shrink-0 text-indigo-400">
-                            📦
-                          </div>
-                          <div class="min-w-0">
-                            <div class="flex items-center gap-2 flex-wrap">
-                              <span class="font-bold text-xs text-zinc-100 group-hover/dep:text-indigo-300 transition truncate">{{$dep.StackName}}</span>
-                              {{if eq $dep.Status "running"}}
-                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
-                              </span>
-                              {{else if eq $dep.Status "stopped"}}
-                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-                                Stopped
-                              </span>
-                              {{else if eq $dep.Status "failed"}}
-                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                                Failed
-                              </span>
-                              {{end}}
-
-                              {{if eq $dep.DriftStatus "synced"}}
-                              <span class="text-[10px] text-emerald-400 font-medium font-mono px-1.5 py-0.5 rounded bg-emerald-500/5 border border-emerald-500/10">✓ Synced</span>
-                              {{else if eq $dep.DriftStatus "drifted"}}
-                              <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">⚠️ Drifted</span>
-                              {{end}}
-                            </div>
-                            <div class="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
-                              ~/.docker-orkes/stacks/{{$dep.StackName}}/
-                            </div>
-                          </div>
-                        </div>
-
-                        <!-- Deployment Quick Actions -->
-                        <div class="flex items-center gap-1.5 shrink-0">
-                          <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
-                            class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Browse files (Live SFTP)">
-                            📂
-                          </button>
-                          <button type="button" onclick="openRevisionsModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
-                            class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Revisions & Instant Rollback">
-                            📜
-                          </button>
-                          <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
-                            <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs transition font-semibold shadow-sm flex items-center gap-1">
-                              <span>🚀</span> <span>Up</span>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                          <div class="flex items-center gap-3">
+                            <!-- Toggle Button -->
+                            <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
+                              class="w-7 h-7 rounded-xl bg-zinc-950 hover:bg-indigo-600 hover:text-white text-zinc-300 flex items-center justify-center text-xs font-mono font-bold transition border border-zinc-700 shadow-sm shrink-0">
+                              -
                             </button>
-                          </form>
+
+                            <div>
+                              <div class="flex items-center gap-2">
+                                <span class="text-base">🖥️</span>
+                                <h4 class="font-bold text-xs tracking-wide text-zinc-100">{{.Name}}</h4>
+                                {{if eq .Status "online"}}
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online
+                                </span>
+                                {{else if eq .Status "offline"}}
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30" title="{{.LastError}}">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+                                </span>
+                                {{else}}
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/30">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Untested
+                                </span>
+                                {{end}}
+                              </div>
+                              <div class="text-[11px] font-mono text-zinc-400 mt-1 flex items-center gap-2 flex-wrap">
+                                <span class="text-cyan-400 bg-zinc-950 px-2 py-0.5 rounded-lg border border-zinc-800 font-semibold">{{.User}}@{{.Host}}:{{.Port}}</span>
+                                {{if .Notes}}<span class="text-zinc-400 font-sans truncate max-w-[200px]">📝 {{.Notes}}</span>{{end}}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="flex items-center gap-2 shrink-0">
+                            <span class="text-[11px] font-mono px-2.5 py-1 rounded-xl bg-zinc-950 border border-zinc-800 text-zinc-300 shadow-sm">
+                              📦 <span class="font-bold text-cyan-300">{{len $nodeDeps}}</span> <span class="text-[10px] text-zinc-500" data-i18n="word_stacks">STACKS</span>
+                            </span>
+                            <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/40 px-3 py-1.5 rounded-xl text-xs font-medium transition inline-flex items-center gap-1.5 shadow-sm">
+                              <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics</span>
+                            </a>
+                          </div>
                         </div>
                       </div>
                     </div>
-                    {{else}}
-                    <!-- No deployments state -->
-                    <div class="relative pl-6 pb-2 pt-0.5">
-                      <div class="absolute left-0 top-0 w-0.5 h-5 bg-zinc-700/80"></div>
-                      <div class="absolute left-0 top-5 w-[25px] h-0.5 bg-zinc-700/80"></div>
-                      <div class="text-zinc-500 italic text-[11px] py-2 px-3 border border-dashed border-zinc-800/80 rounded-lg max-w-md" data-i18n="map_no_deployments_for_node">
+
+                    <!-- Dendrites (Deployments Synapse Leaves) -->
+                    <div id="mindmap-children-{{.ID}}" class="mt-4 pl-4 sm:pl-6 space-y-3 relative ml-4">
+                      {{range $dep := $nodeDeps}}
+                      <!-- Deployment Leaf Wrapper -->
+                      <div class="topology-dep-leaf-wrapper relative">
+                        <!-- Deployment Synapse Pod -->
+                        <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-zinc-950/95 border-2 border-zinc-800/90 hover:border-cyan-400 rounded-xl p-3 transition shadow-md group/dep"
+                          data-dep-id="{{$dep.ID}}"
+                          data-dep-name="{{$dep.StackName}}"
+                          data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
+                          data-dep-status="{{$dep.Status}}"
+                          data-dep-drift="{{$dep.DriftStatus}}">
+
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <div class="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-sm shrink-0 text-cyan-300">
+                              📦
+                            </div>
+                            <div class="min-w-0">
+                              <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-bold text-xs text-zinc-100 group-hover/dep:text-cyan-300 transition truncate">{{$dep.StackName}}</span>
+                                {{if eq $dep.Status "running"}}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
+                                </span>
+                                {{else if eq $dep.Status "stopped"}}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/30">
+                                  Stopped
+                                </span>
+                                {{else if eq $dep.Status "failed"}}
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                                  Failed
+                                </span>
+                                {{end}}
+
+                                {{if eq $dep.DriftStatus "synced"}}
+                                <span class="text-[10px] text-emerald-400 font-medium font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">✓ Synced</span>
+                                {{else if eq $dep.DriftStatus "drifted"}}
+                                <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">⚠️ Drifted</span>
+                                {{end}}
+                              </div>
+                              <div class="text-[10px] font-mono text-zinc-400 mt-0.5 truncate">
+                                ~/.docker-orkes/stacks/{{$dep.StackName}}/
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- Deployment Quick Actions -->
+                          <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                              class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Browse files (Live SFTP)">
+                              📂
+                            </button>
+                            <button type="button" onclick="openRevisionsModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                              class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Revisions & Instant Rollback">
+                              📜
+                            </button>
+                            <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
+                              <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/40 px-3 py-1.5 rounded-lg text-xs transition font-semibold shadow-sm flex items-center gap-1">
+                                <span>🚀</span> <span>Up</span>
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+                      </div>
+                      {{else}}
+                      <!-- No deployments state -->
+                      <div class="pl-4 py-2 text-zinc-400 italic text-[11px] border border-dashed border-zinc-800 rounded-xl bg-zinc-950/60" data-i18n="map_no_deployments_for_node">
                         No stacks deployed on this node yet.
                       </div>
+                      {{end}}
                     </div>
-                    {{end}}
                   </div>
+                  {{end}}
                 </div>
                 {{else}}
                 <!-- No nodes state -->
-                <div class="text-zinc-500 py-6 text-center text-xs" data-i18n="empty_nodes">
+                <div class="text-zinc-500 py-8 text-center text-xs" data-i18n="empty_nodes">
                   No managed nodes registered yet. Click + Add Node to register your first server.
                 </div>
                 {{end}}
               </div>
 
               <!-- Dynamic No Search Results in Map -->
-              <div id="topology-no-results" class="hidden text-zinc-500 py-10 text-center text-xs w-full" data-i18n="map_no_match">
+              <div id="topology-no-results" class="hidden text-zinc-500 py-12 text-center text-xs w-full" data-i18n="map_no_match">
                 No servers or stacks match your filter criteria.
               </div>
             </div>
@@ -2506,6 +2523,168 @@
     window.addEventListener('scroll', closeAllDropdowns, true);
     window.addEventListener('resize', closeAllDropdowns);
 
+    // --- Dynamic Organic Neural Mesh Synapse Renderer ---
+    function renderNeuralMesh() {
+      const mapPanel = document.getElementById('tab-panel-map');
+      if (!mapPanel || mapPanel.classList.contains('hidden')) return;
+
+      const svg = document.getElementById('neural-synapse-canvas');
+      const container = document.getElementById('topology-canvas-container');
+      const nucleus = document.getElementById('neural-core-nucleus');
+      const dynamicGroup = document.getElementById('neural-dynamic-paths');
+      if (!svg || !container || !nucleus || !dynamicGroup) return;
+
+      const scrollW = container.scrollWidth;
+      const scrollH = container.scrollHeight;
+      svg.setAttribute('width', scrollW);
+      svg.setAttribute('height', scrollH);
+      svg.style.width = scrollW + 'px';
+      svg.style.height = scrollH + 'px';
+
+      dynamicGroup.innerHTML = '';
+
+      const cRect = container.getBoundingClientRect();
+      const sLeft = container.scrollLeft;
+      const sTop = container.scrollTop;
+
+      const nRect = nucleus.getBoundingClientRect();
+      const nX = nRect.left - cRect.left + sLeft + nRect.width / 2;
+      const nY = nRect.top - cRect.top + sTop + nRect.height;
+
+      const visibleNodeBranches = Array.from(document.querySelectorAll('.topology-node-branch')).filter(el => !el.classList.contains('hidden') && el.offsetParent !== null);
+      const nodeSomas = [];
+
+      visibleNodeBranches.forEach((nodeBranch, idx) => {
+        const card = nodeBranch.querySelector('.node-soma-card') || nodeBranch;
+        const cardRect = card.getBoundingClientRect();
+        const somaInX = cardRect.left - cRect.left + sLeft + cardRect.width / 2;
+        const somaInY = cardRect.top - cRect.top + sTop;
+        const somaCenterX = somaInX;
+        const somaCenterY = cardRect.top - cRect.top + sTop + cardRect.height / 2;
+        nodeSomas.push({ x: somaCenterX, y: somaCenterY });
+
+        // 1. Organic S-Curve Axon Pathway from Brain Soma Nucleus to Node Soma
+        const dx = somaInX - nX;
+        const dy = somaInY - nY;
+        const cx1 = nX + dx * 0.15;
+        const cy1 = nY + dy * 0.65;
+        const cx2 = somaInX - dx * 0.15;
+        const cy2 = somaInY - dy * 0.35;
+
+        const axonPath = `M ${nX},${nY} C ${cx1},${cy1} ${cx2},${cy2} ${somaInX},${somaInY}`;
+
+        // Glowing Synaptic Filament (Base)
+        const baseAxon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        baseAxon.setAttribute('d', axonPath);
+        baseAxon.setAttribute('fill', 'none');
+        baseAxon.setAttribute('stroke', 'url(#axonGradient)');
+        baseAxon.setAttribute('stroke-width', '2.5');
+        baseAxon.setAttribute('stroke-linecap', 'round');
+        baseAxon.setAttribute('filter', 'url(#synapseGlow)');
+        dynamicGroup.appendChild(baseAxon);
+
+        // Animated Electric Neuro-Impulse Wire (Dashed Flow)
+        const pulseAxon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pulseAxon.setAttribute('d', axonPath);
+        pulseAxon.setAttribute('fill', 'none');
+        pulseAxon.setAttribute('stroke', '#67e8f9');
+        pulseAxon.setAttribute('stroke-width', '1.5');
+        pulseAxon.setAttribute('stroke-dasharray', '8 12');
+        pulseAxon.setAttribute('class', 'animate-neural-flow');
+        dynamicGroup.appendChild(pulseAxon);
+
+        // Action Potential Traveling Photon Particle
+        const particle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        particle.setAttribute('r', '3.5');
+        particle.setAttribute('fill', '#a5f3fc');
+        particle.setAttribute('filter', 'url(#impulseGlow)');
+
+        const animMotion = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+        animMotion.setAttribute('dur', `${2 + (idx % 3) * 0.5}s`);
+        animMotion.setAttribute('repeatCount', 'indefinite');
+        animMotion.setAttribute('path', axonPath);
+        particle.appendChild(animMotion);
+        dynamicGroup.appendChild(particle);
+
+        // Synaptic Terminal Bulb (Entrance Junction Knob)
+        const knob = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        knob.setAttribute('cx', somaInX);
+        knob.setAttribute('cy', somaInY);
+        knob.setAttribute('r', '4.5');
+        knob.setAttribute('fill', '#22d3ee');
+        knob.setAttribute('filter', 'url(#impulseGlow)');
+        dynamicGroup.appendChild(knob);
+
+        // 2. Synaptic Dendrites branching to Container Stacks
+        const depLeaves = Array.from(nodeBranch.querySelectorAll('.topology-dep-leaf-wrapper')).filter(el => !el.classList.contains('hidden') && el.offsetParent !== null);
+        const somaOutX = cardRect.left - cRect.left + sLeft + 28;
+        const somaOutY = cardRect.top - cRect.top + sTop + cardRect.height;
+
+        depLeaves.forEach((depWrap, dIdx) => {
+          const depLeaf = depWrap.querySelector('.topology-dep-leaf') || depWrap;
+          const dRect = depLeaf.getBoundingClientRect();
+          const depInX = dRect.left - cRect.left + sLeft;
+          const depInY = dRect.top - cRect.top + sTop + dRect.height / 2;
+
+          const midX = somaOutX;
+          const dendritePath = `M ${somaOutX},${somaOutY} C ${midX},${somaOutY + 15} ${midX - 10},${depInY} ${depInX},${depInY}`;
+
+          const dendrite = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          dendrite.setAttribute('d', dendritePath);
+          dendrite.setAttribute('fill', 'none');
+          dendrite.setAttribute('stroke', 'url(#dendriteGradient)');
+          dendrite.setAttribute('stroke-width', '2');
+          dendrite.setAttribute('stroke-linecap', 'round');
+          dendrite.setAttribute('filter', 'url(#synapseGlow)');
+          dynamicGroup.appendChild(dendrite);
+
+          // Flowing impulse particle along dendrite
+          const depParticle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          depParticle.setAttribute('r', '2.5');
+          depParticle.setAttribute('fill', '#6ee7b7');
+          depParticle.setAttribute('filter', 'url(#impulseGlow)');
+
+          const depAnim = document.createElementNS('http://www.w3.org/2000/svg', 'animateMotion');
+          depAnim.setAttribute('dur', `${1.6 + dIdx * 0.4}s`);
+          depAnim.setAttribute('repeatCount', 'indefinite');
+          depAnim.setAttribute('path', dendritePath);
+          depParticle.appendChild(depAnim);
+          dynamicGroup.appendChild(depParticle);
+
+          // Dendrite terminal knob
+          const depKnob = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          depKnob.setAttribute('cx', depInX);
+          depKnob.setAttribute('cy', depInY);
+          depKnob.setAttribute('r', '3');
+          depKnob.setAttribute('fill', '#34d399');
+          dynamicGroup.appendChild(depKnob);
+        });
+      });
+
+      // 3. Inter-Node Cortical Cross-Talk Synapses (connects neighboring node neurons)
+      for (let i = 0; i < nodeSomas.length - 1; i++) {
+        const s1 = nodeSomas[i];
+        const s2 = nodeSomas[i + 1];
+        const midX = (s1.x + s2.x) / 2;
+        const midY = (s1.y + s2.y) / 2 + (i % 2 === 0 ? 25 : -25);
+        const interPath = `M ${s1.x},${s1.y} Q ${midX},${midY} ${s2.x},${s2.y}`;
+
+        const interSynapse = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        interSynapse.setAttribute('d', interPath);
+        interSynapse.setAttribute('fill', 'none');
+        interSynapse.setAttribute('stroke', '#818cf8');
+        interSynapse.setAttribute('stroke-width', '1.5');
+        interSynapse.setAttribute('stroke-dasharray', '4 8');
+        interSynapse.setAttribute('opacity', '0.45');
+        dynamicGroup.appendChild(interSynapse);
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      closeAllDropdowns();
+      renderNeuralMesh();
+    });
+
     // --- Topology Mindmap Collapse / Expand ---
     function toggleMindmapNode(nodeId) {
       const children = document.getElementById(`mindmap-children-${nodeId}`);
@@ -2518,16 +2697,19 @@
         children.classList.add('hidden');
         btn.innerText = '+';
       }
+      setTimeout(renderNeuralMesh, 50);
     }
 
     function expandAllMindmapNodes() {
       document.querySelectorAll('[id^="mindmap-children-"]').forEach(c => c.classList.remove('hidden'));
       document.querySelectorAll('[id^="toggle-btn-"]').forEach(b => b.innerText = '-');
+      setTimeout(renderNeuralMesh, 50);
     }
 
     function collapseAllMindmapNodes() {
       document.querySelectorAll('[id^="mindmap-children-"]').forEach(c => c.classList.add('hidden'));
       document.querySelectorAll('[id^="toggle-btn-"]').forEach(b => b.innerText = '+');
+      setTimeout(renderNeuralMesh, 50);
     }
 
     let isTopologyFullscreen = false;
@@ -2556,6 +2738,7 @@
           document.exitFullscreen().catch(() => {});
         }
       }
+      setTimeout(renderNeuralMesh, 100);
     }
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement && isTopologyFullscreen) {
@@ -2680,6 +2863,7 @@
           noResults.classList.add('hidden');
         }
       }
+      setTimeout(renderNeuralMesh, 30);
     }
 
     function resetTopologyFilter() {
@@ -3958,6 +4142,14 @@
         } catch (e) {}
       }
       switchTab(initialTab);
+      setTimeout(renderNeuralMesh, 100);
+
+      const canvasContainer = document.getElementById('topology-canvas-container');
+      if (canvasContainer) {
+        canvasContainer.addEventListener('scroll', () => {
+          requestAnimationFrame(renderNeuralMesh);
+        }, { passive: true });
+      }
     });
 
     // Handle back/forward navigation
@@ -3965,9 +4157,9 @@
       const hash = window.location.hash.replace('#', '');
       if (availableTabs.includes(hash)) {
         switchTab(hash);
+        setTimeout(renderNeuralMesh, 100);
       }
     });
-
     // Support Tab key inside code editor
     const fileContentArea = document.getElementById('file-viewer-content');
     if (fileContentArea) {
