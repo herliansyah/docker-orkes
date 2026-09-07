@@ -311,37 +311,49 @@
             </div>
           </div>
 
-          <!-- Mindmap Visual Graph Canvas / Tree Container (Internal 2D Scrollable) -->
-          <div class="bg-zinc-950/40 border border-zinc-800/80 rounded-xl p-6 overflow-auto flex-1 min-h-0">
+          <!-- Mindmap Visual Graph Canvas / Tree Container (Futuristic Cyber Matrix Canvas) -->
+          <div class="bg-zinc-950/80 bg-[linear-gradient(to_right,#312e8112_1px,transparent_1px),linear-gradient(to_bottom,#312e8112_1px,transparent_1px)] bg-[size:32px_32px] border border-zinc-800/80 rounded-2xl p-6 sm:p-8 overflow-auto flex-1 min-h-0 relative shadow-inner">
             <!-- Root Hub (Control Plane) -->
             <div class="flex flex-col items-start">
-              <div class="bg-gradient-to-r from-indigo-900/60 to-zinc-900 border-2 border-indigo-500/50 rounded-xl p-4 shadow-lg flex items-center justify-between gap-6 max-w-xl">
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-lg bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-xl">
-                    🐳
-                  </div>
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <h3 class="font-bold text-sm text-zinc-100">Docker Orkes Control Plane</h3>
-                      <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">Active</span>
+              <div class="relative group">
+                <!-- Holographic Ambient Glow -->
+                <div class="absolute -inset-1 bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-cyan-500/20 rounded-2xl blur-lg opacity-60 group-hover:opacity-100 transition duration-500"></div>
+                
+                <div class="relative bg-gradient-to-r from-zinc-900/95 via-zinc-900/90 to-indigo-950/70 border border-indigo-500/40 rounded-2xl p-4.5 shadow-xl backdrop-blur-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-6 max-w-xl">
+                  <div class="flex items-center gap-3.5">
+                    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500/20 to-purple-500/20 border border-indigo-400/40 flex items-center justify-center text-2xl shadow-inner text-indigo-300 shrink-0">
+                      🐳
                     </div>
-                    <p class="text-[11px] text-zinc-400 mt-0.5" data-i18n="map_root_desc">Central orchestrator & desired state registry</p>
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <h3 class="font-bold text-sm tracking-tight text-white">Docker Orkes Control Plane</h3>
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                          Live HUD
+                        </span>
+                      </div>
+                      <p class="text-[11px] text-zinc-400 font-mono mt-0.5 flex items-center gap-1.5" data-i18n="map_root_desc">
+                        <span>Central Orchestrator</span>
+                        <span class="text-zinc-600">•</span>
+                        <span class="text-indigo-400">Declarative Desired State</span>
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div class="flex items-center gap-2 text-[11px] font-mono">
-                  <span class="px-2 py-1 rounded bg-zinc-950/70 border border-zinc-800 text-indigo-300">
-                    🖥️ {{.NodeCount}}
-                  </span>
-                  <span class="px-2 py-1 rounded bg-zinc-950/70 border border-zinc-800 text-emerald-300">
-                    📦 {{.DeploymentCount}}
-                  </span>
+                  <div class="flex items-center gap-2 text-[11px] font-mono shrink-0">
+                    <span class="px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-indigo-300 flex items-center gap-1.5 shadow-sm">
+                      <span class="text-xs">🖥️</span> <span class="font-semibold text-zinc-100">{{.NodeCount}}</span> <span class="text-[10px] text-zinc-500">NODES</span>
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-emerald-300 flex items-center gap-1.5 shadow-sm">
+                      <span class="text-xs">📦</span> <span class="font-semibold text-zinc-100">{{.DeploymentCount}}</span> <span class="text-[10px] text-zinc-500">STACKS</span>
+                    </span>
+                  </div>
                 </div>
               </div>
 
               <!-- Main Tree Stem from Root -->
               {{if .Nodes}}
-              <div class="w-0.5 h-6 bg-indigo-500/40 ml-8"></div>
+              <div class="w-0.5 h-8 bg-gradient-to-b from-indigo-500/70 to-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.5)] ml-8"></div>
               {{end}}
 
               <!-- Main Tree Trunk Container for Nodes -->
@@ -349,66 +361,71 @@
                 {{range .Nodes}}
                 {{$nodeDeps := index $.DeploymentsByNode .ID}}
                 <!-- Node Branch Container -->
-                <div class="topology-node-branch relative pl-8 pb-6"
+                <div class="topology-node-branch relative pl-8 pb-7"
                   data-node-id="{{.ID}}"
                   data-node-name="{{.Name}}"
                   data-node-search="{{.Name}} {{.Host}} {{.User}} {{.Notes}}"
                   data-node-status="{{.Status}}">
                   
-                  <!-- Top Vertical Spine: from top to horizontal branch -->
-                  <div class="tree-node-v-top absolute left-0 top-0 w-0.5 h-7 bg-indigo-500/40"></div>
+                  <!-- Top Vertical Spine: glowing fiber cable -->
+                  <div class="tree-node-v-top absolute left-0 top-0 w-0.5 h-8 bg-gradient-to-b from-indigo-500/60 to-indigo-500/40 shadow-[0_0_6px_rgba(99,102,241,0.5)]"></div>
 
-                  <!-- Horizontal Stem: touches the card directly (pl-8 = 32px, w-[33px] touches border with 1px overlap) -->
-                  <div class="tree-node-h-line absolute left-0 top-7 w-[33px] h-0.5 bg-indigo-500/40"></div>
+                  <!-- Horizontal Stem: touches the card directly -->
+                  <div class="tree-node-h-line absolute left-0 top-8 w-[33px] h-0.5 bg-gradient-to-r from-indigo-500/60 to-indigo-500/30 shadow-[0_0_6px_rgba(99,102,241,0.5)]"></div>
 
-                  <!-- Corner Junction Status Dot: centered at (1px, 28px) -->
-                  <div class="tree-node-dot absolute -left-[5px] top-[22px] w-3 h-3 rounded-full border-2 border-zinc-950 {{if eq .Status "online"}}bg-emerald-400 ring-2 ring-emerald-500/30{{else if eq .Status "offline"}}bg-rose-400 ring-2 ring-rose-500/30{{else}}bg-zinc-400{{end}}"></div>
+                  <!-- Corner Junction Status Dot: Glowing Pulse Node -->
+                  <div class="tree-node-dot absolute -left-[6px] top-[25px] w-3.5 h-3.5 rounded-full border-2 border-zinc-950 {{if eq .Status "online"}}bg-emerald-400 ring-4 ring-emerald-500/20 shadow-[0_0_8px_rgba(52,211,153,0.8)]{{else if eq .Status "offline"}}bg-rose-400 ring-4 ring-rose-500/20 shadow-[0_0_8px_rgba(244,63,94,0.8)]{{else}}bg-zinc-400{{end}}"></div>
 
-                  <!-- Bottom Vertical Spine: continues down to next node (hidden on last node!) -->
-                  <div class="tree-node-v-bottom absolute left-0 top-7 bottom-0 w-0.5 bg-indigo-500/40"></div>
+                  <!-- Bottom Vertical Spine: continues down to next node -->
+                  <div class="tree-node-v-bottom absolute left-0 top-8 bottom-0 w-0.5 bg-indigo-500/30"></div>
 
-                  <!-- Node Card -->
-                  <div class="bg-zinc-900/90 border border-zinc-700/80 hover:border-indigo-500/60 rounded-xl p-4 shadow-md transition max-w-2xl">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div class="flex items-center gap-2.5">
-                        <!-- Collapse/Expand Toggle Button -->
-                        <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
-                          class="w-6 h-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-xs font-mono font-bold transition">
-                          -
-                        </button>
+                  <!-- Node Blade Card (Cyber Blade Server Design) -->
+                  <div class="relative group/node max-w-2xl">
+                    <div class="bg-zinc-900/90 border border-zinc-800/90 hover:border-indigo-500/50 rounded-xl p-4 shadow-lg backdrop-blur-md transition relative overflow-hidden">
+                      <!-- Left Accent Status Glow Strip -->
+                      <div class="absolute left-0 top-0 bottom-0 w-1.5 {{if eq .Status "online"}}bg-gradient-to-b from-emerald-400 to-emerald-600 shadow-[0_0_10px_rgba(52,211,153,0.6)]{{else if eq .Status "offline"}}bg-gradient-to-b from-rose-400 to-rose-600 shadow-[0_0_10px_rgba(244,63,94,0.6)]{{else}}bg-zinc-600{{end}}"></div>
+                      
+                      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pl-2.5">
+                        <div class="flex items-center gap-3">
+                          <!-- Collapse/Expand Toggle Button -->
+                          <button type="button" onclick="toggleMindmapNode('{{.ID}}')" id="toggle-btn-{{.ID}}"
+                            class="w-6 h-6 rounded-lg bg-zinc-800/90 hover:bg-indigo-600 hover:text-white text-zinc-300 flex items-center justify-center text-xs font-mono font-bold transition border border-zinc-700/60 shadow-sm shrink-0">
+                            -
+                          </button>
 
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <span class="text-sm">🖥️</span>
-                            <h4 class="font-semibold text-xs text-zinc-100">{{.Name}}</h4>
-                            {{if eq .Status "online"}}
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
-                            </span>
-                            {{else if eq .Status "offline"}}
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
-                              <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
-                            </span>
-                            {{else}}
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-                              <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Untested
-                            </span>
-                            {{end}}
-                          </div>
-                          <div class="text-[11px] font-mono text-zinc-400 mt-0.5">
-                            <span>{{.User}}@{{.Host}}:{{.Port}}</span>
-                            {{if .Notes}}<span class="text-zinc-500 font-sans ml-2">📝 {{.Notes}}</span>{{end}}
+                          <div>
+                            <div class="flex items-center gap-2">
+                              <span class="text-sm">🖥️</span>
+                              <h4 class="font-bold text-xs text-zinc-100">{{.Name}}</h4>
+                              {{if eq .Status "online"}}
+                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online
+                              </span>
+                              {{else if eq .Status "offline"}}
+                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.LastError}}">
+                                <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+                              </span>
+                              {{else}}
+                              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
+                                <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Untested
+                              </span>
+                              {{end}}
+                            </div>
+                            <div class="text-[11px] font-mono text-zinc-400 mt-1 flex items-center gap-2 flex-wrap">
+                              <span class="text-indigo-400/90 bg-zinc-950/70 px-1.5 py-0.5 rounded border border-zinc-800/70">{{.User}}@{{.Host}}:{{.Port}}</span>
+                              {{if .Notes}}<span class="text-zinc-500 font-sans truncate max-w-xs">📝 {{.Notes}}</span>{{end}}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div class="flex items-center gap-2">
-                        <span class="text-[11px] font-mono px-2 py-1 rounded bg-zinc-950 border border-zinc-800 text-zinc-300">
-                          📦 {{len $nodeDeps}} <span class="hidden sm:inline" data-i18n="word_stacks">Stacks</span>
-                        </span>
-                        <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded text-xs transition inline-flex items-center gap-1">
-                          <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics</span>
-                        </a>
+                        <div class="flex items-center gap-2 shrink-0">
+                          <span class="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-zinc-950/80 border border-zinc-800 text-zinc-300 shadow-sm">
+                            📦 <span class="font-semibold text-zinc-100">{{len $nodeDeps}}</span> <span class="text-[10px] text-zinc-500" data-i18n="word_stacks">STACKS</span>
+                          </span>
+                          <a href="/nodes/{{.ID}}" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 shadow-sm">
+                            <span>📊</span> <span class="hidden sm:inline" data-i18n="btn_metrics">Metrics</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -416,57 +433,59 @@
                   <!-- Deployments Sub-Branch (Children) -->
                   <div id="mindmap-children-{{.ID}}" class="ml-6 relative mt-1 space-y-0">
                     <!-- Drop Stem from Node Card down to first deployment -->
-                    <div class="w-0.5 h-3 bg-zinc-700/80"></div>
+                    <div class="w-0.5 h-3.5 bg-gradient-to-b from-indigo-500/40 to-zinc-700/80"></div>
 
                     {{range $dep := $nodeDeps}}
                     <!-- Deployment Leaf Wrapper -->
                     <div class="topology-dep-leaf-wrapper relative pl-6 pb-2.5">
                       <!-- Top Vertical Spine -->
-                      <div class="tree-dep-v-top absolute left-0 top-0 w-0.5 h-[26px] bg-zinc-700/80"></div>
+                      <div class="tree-dep-v-top absolute left-0 top-0 w-0.5 h-[28px] bg-zinc-700/80"></div>
 
-                      <!-- Horizontal Stem: touches the card directly (pl-6 = 24px, w-[25px] touches border with 1px overlap) -->
-                      <div class="tree-dep-h-line absolute left-0 top-[26px] w-[25px] h-0.5 bg-zinc-700/80"></div>
+                      <!-- Horizontal Stem: touches the card directly -->
+                      <div class="tree-dep-h-line absolute left-0 top-[28px] w-[25px] h-0.5 bg-zinc-700/80"></div>
 
-                      <!-- Corner Junction Dot: centered at (1px, 26px) -->
-                      <div class="tree-dep-dot absolute -left-[4px] top-[21px] w-2.5 h-2.5 rounded-full border-2 border-zinc-950 {{if eq $dep.Status "running"}}bg-indigo-400{{else if eq $dep.Status "failed"}}bg-rose-400{{else}}bg-zinc-500{{end}}"></div>
+                      <!-- Corner Junction Dot -->
+                      <div class="tree-dep-dot absolute -left-[4px] top-[23px] w-2.5 h-2.5 rounded-full border-2 border-zinc-950 {{if eq $dep.Status "running"}}bg-indigo-400 shadow-[0_0_6px_rgba(129,140,248,0.8)]{{else if eq $dep.Status "failed"}}bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]{{else}}bg-zinc-500{{end}}"></div>
 
-                      <!-- Bottom Vertical Spine: continues down to next deployment (hidden on last deployment!) -->
-                      <div class="tree-dep-v-bottom absolute left-0 top-[26px] bottom-0 w-0.5 bg-zinc-700/80"></div>
+                      <!-- Bottom Vertical Spine -->
+                      <div class="tree-dep-v-bottom absolute left-0 top-[28px] bottom-0 w-0.5 bg-zinc-700/80"></div>
 
-                      <!-- Deployment Node Leaf Card -->
-                      <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-zinc-950/80 border border-zinc-800 hover:border-zinc-700 rounded-lg p-3 max-w-xl transition"
+                      <!-- Deployment Node Leaf Card (Cyber Container Pod) -->
+                      <div class="topology-dep-leaf relative flex items-center justify-between gap-3 bg-zinc-950/90 border border-zinc-800/90 hover:border-indigo-500/50 rounded-xl p-3 max-w-xl transition shadow-sm group/dep"
                         data-dep-id="{{$dep.ID}}"
                         data-dep-name="{{$dep.StackName}}"
                         data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
                         data-dep-status="{{$dep.Status}}"
                         data-dep-drift="{{$dep.DriftStatus}}">
 
-                        <div class="flex items-center gap-3">
-                          <span class="text-base">📦</span>
-                          <div>
-                            <div class="flex items-center gap-2">
-                              <span class="font-semibold text-xs text-zinc-100">{{$dep.StackName}}</span>
+                        <div class="flex items-center gap-3 min-w-0">
+                          <div class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm shrink-0 text-indigo-400">
+                            📦
+                          </div>
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <span class="font-bold text-xs text-zinc-100 group-hover/dep:text-indigo-300 transition truncate">{{$dep.StackName}}</span>
                               {{if eq $dep.Status "running"}}
-                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                                Running
+                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
                               </span>
                               {{else if eq $dep.Status "stopped"}}
-                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 font-medium">
+                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
                                 Stopped
                               </span>
                               {{else if eq $dep.Status "failed"}}
-                              <span class="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
+                              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
                                 Failed
                               </span>
                               {{end}}
 
                               {{if eq $dep.DriftStatus "synced"}}
-                              <span class="text-[10px] text-emerald-400 font-medium font-mono">✓ Synced</span>
+                              <span class="text-[10px] text-emerald-400 font-medium font-mono px-1.5 py-0.5 rounded bg-emerald-500/5 border border-emerald-500/10">✓ Synced</span>
                               {{else if eq $dep.DriftStatus "drifted"}}
                               <span class="text-[10px] text-amber-400 font-medium font-mono bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">⚠️ Drifted</span>
                               {{end}}
                             </div>
-                            <div class="text-[10px] font-mono text-zinc-500 mt-0.5">
+                            <div class="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
                               ~/.docker-orkes/stacks/{{$dep.StackName}}/
                             </div>
                           </div>
@@ -475,16 +494,16 @@
                         <!-- Deployment Quick Actions -->
                         <div class="flex items-center gap-1.5 shrink-0">
                           <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
-                            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-[11px] transition" title="Browse files">
+                            class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Browse files (Live SFTP)">
                             📂
                           </button>
                           <button type="button" onclick="openRevisionsModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
-                            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-[11px] transition" title="Revisions & Rollback">
+                            class="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 px-2.5 py-1.5 rounded-lg text-xs transition shadow-sm" title="Revisions & Instant Rollback">
                             📜
                           </button>
                           <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
-                            <button type="submit" title="Redeploy stack" class="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 px-2 py-1 rounded text-[11px] transition font-medium">
-                              🚀 Up
+                            <button type="submit" title="Redeploy stack" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-3 py-1.5 rounded-lg text-xs transition font-semibold shadow-sm flex items-center gap-1">
+                              <span>🚀</span> <span>Up</span>
                             </button>
                           </form>
                         </div>
@@ -518,7 +537,6 @@
           </div>
         </div>
       </section>
-
       <!-- TAB 1: Deployments Panel -->
       <section id="tab-panel-deployments" class="tab-panel hidden space-y-6">
         <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-sm space-y-5">
