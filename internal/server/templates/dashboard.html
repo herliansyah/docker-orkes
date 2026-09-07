@@ -1549,203 +1549,231 @@
             </div>
           </div>
 
-          <!-- Settings Cards Grid -->
-          <div class="space-y-6">
-            <!-- Card 1: SSH Public Key -->
-            <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                <div>
-                  <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span data-i18n="ssh_key_title">Control Plane SSH Public Key</span>
-                  </h3>
-                  <p class="text-xs text-zinc-400 mt-1 max-w-2xl">
-                    <span data-i18n="ssh_key_desc">Authorize this key on your remote nodes by appending it to <code class="text-indigo-400 bg-zinc-900 px-1.5 py-0.5 rounded">~/.ssh/authorized_keys</code>, or use it as a Deploy Key on your Git mirror with write access.</span>
-                  </p>
+          <!-- Settings Sub-Tabs Navigation -->
+          <div class="flex items-center gap-1 sm:gap-2 border-b border-zinc-800/80 pb-px overflow-x-auto text-xs font-medium">
+            <button type="button" onclick="switchSettingsTab('ssh')" id="settings-tab-btn-ssh"
+              class="py-2 px-3.5 border-b-2 font-medium text-xs border-indigo-500 text-indigo-400 flex items-center gap-2 transition bg-indigo-500/10 rounded-t-lg shrink-0 cursor-pointer">
+              <span>🔑</span> <span data-i18n="settings_tab_ssh">SSH Public Key</span>
+            </button>
+            <button type="button" onclick="switchSettingsTab('git')" id="settings-tab-btn-git"
+              class="py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer">
+              <span>🔄</span> <span data-i18n="settings_tab_git">Git Mirror</span>
+            </button>
+            <button type="button" onclick="switchSettingsTab('notifications')" id="settings-tab-btn-notifications"
+              class="py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer">
+              <span>🔔</span> <span data-i18n="settings_tab_notifications">Notifications</span>
+            </button>
+            <button type="button" onclick="switchSettingsTab('poller')" id="settings-tab-btn-poller"
+              class="py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer">
+              <span>🩺</span> <span data-i18n="settings_tab_poller">Health Poller</span>
+            </button>
+          </div>
+
+          <!-- Settings Tab Panes -->
+          <div>
+            <!-- Pane 1: SSH Public Key -->
+            <div id="settings-pane-ssh" class="settings-pane space-y-4">
+              <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span data-i18n="ssh_key_title">Control Plane SSH Public Key</span>
+                    </h3>
+                    <p class="text-xs text-zinc-400 mt-1 max-w-2xl">
+                      <span data-i18n="ssh_key_desc">Authorize this key on your remote nodes by appending it to <code class="text-indigo-400 bg-zinc-900 px-1.5 py-0.5 rounded">~/.ssh/authorized_keys</code>, or use it as a Deploy Key on your Git mirror with write access.</span>
+                    </p>
+                  </div>
+                  <button type="button" onclick="copySSHKey()" id="copy-btn"
+                    class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shrink-0">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <span id="copy-text" data-i18n="btn_copy_key">Copy Key</span>
+                  </button>
                 </div>
-                <button type="button" onclick="copySSHKey()" id="copy-btn"
-                  class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shrink-0">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
-                  <span id="copy-text" data-i18n="btn_copy_key">Copy Key</span>
-                </button>
-              </div>
-              <div>
-                <pre id="ssh-pub-key" class="bg-zinc-900 border border-zinc-800 p-3.5 rounded-xl text-xs font-mono text-emerald-400 select-all overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">{{.PublicKeySSH}}</pre>
+                <div>
+                  <pre id="ssh-pub-key" class="bg-zinc-900 border border-zinc-800 p-3.5 rounded-xl text-xs font-mono text-emerald-400 select-all overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">{{.PublicKeySSH}}</pre>
+                </div>
               </div>
             </div>
 
-            <!-- Card 2: Git Mirror Backup Sync -->
-            <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div class="flex items-center gap-2.5">
-                    <h3 class="text-sm font-semibold text-zinc-100" data-i18n="git_mirror_title">Git Mirror Backup Sync</h3>
-                    <span id="git-status-badge">
-                      {{if eq .GitMirrorStatus "synced"}}
-                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Synced
+            <!-- Pane 2: Git Mirror Backup Sync -->
+            <div id="settings-pane-git" class="settings-pane hidden space-y-4">
+              <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div class="flex items-center gap-2.5">
+                      <h3 class="text-sm font-semibold text-zinc-100" data-i18n="git_mirror_title">Git Mirror Backup Sync</h3>
+                      <span id="git-status-badge">
+                        {{if eq .GitMirrorStatus "synced"}}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Synced
+                        </span>
+                        {{else if eq .GitMirrorStatus "failed"}}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.GitMirrorError}}">
+                          <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Sync Failed
+                        </span>
+                        {{else}}
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
+                          <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Idle
+                        </span>
+                        {{end}}
                       </span>
-                      {{else if eq .GitMirrorStatus "failed"}}
-                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="{{.GitMirrorError}}">
-                        <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Sync Failed
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-1">
+                      <span data-i18n="git_mirror_desc">Automated Git commit & push of Stacks, deployment environment variables, and inventory.json.</span>
+                      <span id="git-last-sync-text" class="text-zinc-500 ml-1">
+                        {{if .GitMirrorLastSync}}Last synced: {{.GitMirrorLastSync}}{{end}}
                       </span>
-                      {{else}}
-                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20">
-                        <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span> Idle
-                      </span>
-                      {{end}}
-                    </span>
+                    </p>
                   </div>
-                  <p class="text-xs text-zinc-400 mt-1">
-                    <span data-i18n="git_mirror_desc">Automated Git commit & push of Stacks, deployment environment variables, and inventory.json.</span>
-                    <span id="git-last-sync-text" class="text-zinc-500 ml-1">
-                      {{if .GitMirrorLastSync}}Last synced: {{.GitMirrorLastSync}}{{end}}
-                    </span>
-                  </p>
+                  {{if .GitMirrorURL}}
+                  <button type="button" id="sync-now-btn" onclick="syncGitMirrorAsync()"
+                    class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shadow-sm shrink-0">
+                    <span id="sync-spinner" class="hidden animate-spin">⏳</span>
+                    <span id="sync-btn-icon">🔄</span>
+                    <span id="sync-btn-text" data-i18n="btn_sync_now">Sync Now</span>
+                  </button>
+                  {{end}}
                 </div>
-                {{if .GitMirrorURL}}
-                <button type="button" id="sync-now-btn" onclick="syncGitMirrorAsync()"
-                  class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shadow-sm shrink-0">
-                  <span id="sync-spinner" class="hidden animate-spin">⏳</span>
-                  <span id="sync-btn-icon">🔄</span>
-                  <span id="sync-btn-text" data-i18n="btn_sync_now">Sync Now</span>
-                </button>
+
+                <!-- Async Progress / Notification Banner -->
+                <div id="git-sync-alert" class="hidden rounded-xl p-3.5 text-xs">
+                  <div class="flex items-center justify-between">
+                    <span id="git-sync-alert-msg" class="font-medium"></span>
+                    <button type="button" onclick="document.getElementById('git-sync-alert').classList.add('hidden')" class="text-zinc-400 hover:text-zinc-200 text-xs ml-2">✕</button>
+                  </div>
+                </div>
+
+                {{if .GitMirrorError}}
+                <div id="git-mirror-server-error" class="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300">
+                  <strong>Last Sync Error:</strong> {{.GitMirrorError}}
+                </div>
                 {{end}}
-              </div>
 
-              <!-- Async Progress / Notification Banner -->
-              <div id="git-sync-alert" class="hidden rounded-xl p-3.5 text-xs">
-                <div class="flex items-center justify-between">
-                  <span id="git-sync-alert-msg" class="font-medium"></span>
-                  <button type="button" onclick="document.getElementById('git-sync-alert').classList.add('hidden')" class="text-zinc-400 hover:text-zinc-200 text-xs ml-2">✕</button>
-                </div>
-              </div>
-
-              {{if .GitMirrorError}}
-              <div id="git-mirror-server-error" class="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3.5 text-xs text-rose-300">
-                <strong>Last Sync Error:</strong> {{.GitMirrorError}}
-              </div>
-              {{end}}
-
-              <form id="git-settings-form" onsubmit="saveGitSettingsAsync(event)" class="space-y-4 pt-1">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div class="md:col-span-2">
-                    <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_git_repo_url">Git Repository URL (SSH or HTTPS)</label>
-                    <input type="text" name="git_mirror_url" id="git_mirror_url" value="{{.GitMirrorURL}}" placeholder="git@github.com:myorg/infrastructure-backup.git"
-                      class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                    <p class="text-[11px] text-zinc-500 mt-1" data-i18n="git_deploy_key_hint">If using SSH, authorize the Control Plane public key above as a deploy key with write access.</p>
+                <form id="git-settings-form" onsubmit="saveGitSettingsAsync(event)" class="space-y-4 pt-1">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="md:col-span-2">
+                      <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_git_repo_url">Git Repository URL (SSH or HTTPS)</label>
+                      <input type="text" name="git_mirror_url" id="git_mirror_url" value="{{.GitMirrorURL}}" placeholder="git@github.com:myorg/infrastructure-backup.git"
+                        class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      <p class="text-[11px] text-zinc-500 mt-1" data-i18n="git_deploy_key_hint">If using SSH, authorize the Control Plane public key above as a deploy key with write access.</p>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_target_branch">Target Branch</label>
+                      <input type="text" name="git_mirror_branch" id="git_mirror_branch" value="{{.GitMirrorBranch}}" placeholder="main"
+                        class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
                   </div>
-                  <div>
-                    <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_target_branch">Target Branch</label>
-                    <input type="text" name="git_mirror_branch" id="git_mirror_branch" value="{{.GitMirrorBranch}}" placeholder="main"
-                      class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <div class="flex justify-end">
+                    <button type="submit" id="save-git-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm flex items-center gap-2">
+                      <span id="save-git-spinner" class="hidden animate-spin">⏳</span>
+                      <span id="save-git-btn-text" data-i18n="btn_save_sync_mirror">Save & Sync Mirror</span>
+                    </button>
                   </div>
-                </div>
-                <div class="flex justify-end">
-                  <button type="submit" id="save-git-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm flex items-center gap-2">
-                    <span id="save-git-spinner" class="hidden animate-spin">⏳</span>
-                    <span id="save-git-btn-text" data-i18n="btn_save_sync_mirror">Save & Sync Mirror</span>
-                  </button>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
 
-            <!-- Card 3: Notification Channels (ChatOps) -->
-            <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <!-- Pane 3: Notification Channels (ChatOps) -->
+            <div id="settings-pane-notifications" class="settings-pane hidden space-y-4">
+              <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>🔔</span>
+                      <span>Notification Channels (Telegram & Webhook)</span>
+                    </h3>
+                    <p class="text-xs text-zinc-400 mt-1">
+                      Receive edge-triggered alerts when nodes go offline, containers fail, or services recover.
+                    </p>
+                  </div>
+                  <button type="button" onclick="sendTestAlertAsync()" id="test-alert-btn"
+                    class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shrink-0">
+                    <span id="test-alert-icon">📡</span>
+                    <span id="test-alert-text">Send Test Alert</span>
+                  </button>
+                </div>
+
+                <!-- Test Alert Banner -->
+                <div id="test-alert-status" class="hidden rounded-xl p-3.5 text-xs">
+                  <span id="test-alert-msg" class="font-medium"></span>
+                </div>
+
+                <form method="POST" action="/settings/notifications" class="space-y-4">
+                  <div class="flex items-center gap-2">
+                    <input type="checkbox" name="notifications_enabled" id="notifications_enabled" value="true" {{if .NotificationsEnabled}}checked{{end}}
+                      class="rounded bg-zinc-900 border-zinc-700 text-indigo-600 focus:ring-indigo-500">
+                    <label for="notifications_enabled" class="text-xs font-medium text-zinc-200">
+                      Enable Notifications
+                    </label>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-[11px] font-medium text-zinc-400 mb-1">Telegram Bot Token</label>
+                      <input type="password" name="telegram_bot_token" value="{{.TelegramBotToken}}" placeholder="123456:ABC-DEF..."
+                        class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                      <label class="block text-[11px] font-medium text-zinc-400 mb-1">Telegram Chat ID</label>
+                      <input type="text" name="telegram_chat_id" value="{{.TelegramChatID}}" placeholder="-100123456789 or @channel"
+                        class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-medium text-zinc-400 mb-1">Discord / Generic Webhook URL</label>
+                    <input type="url" name="webhook_url" value="{{.WebhookURL}}" placeholder="https://discord.com/api/webhooks/... or https://hooks.slack.com/..."
+                      class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  </div>
+
+                  <div class="flex justify-end">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                      Save Notification Settings
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Pane 4: Background Health Poller -->
+            <div id="settings-pane-poller" class="settings-pane hidden space-y-4">
+              <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
                 <div>
                   <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-                    <span>🔔</span>
-                    <span>Notification Channels (Telegram & Webhook)</span>
+                    <span>🩺</span>
+                    <span>Background Health Poller</span>
                   </h3>
                   <p class="text-xs text-zinc-400 mt-1">
-                    Receive edge-triggered alerts when nodes go offline, containers fail, or services recover.
+                    Lightweight node ping and container audit running on a periodic background loop (ADR 0004).
                   </p>
                 </div>
-                <button type="button" onclick="sendTestAlertAsync()" id="test-alert-btn"
-                  class="inline-flex items-center gap-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 px-3.5 py-2 rounded-lg transition shrink-0">
-                  <span id="test-alert-icon">📡</span>
-                  <span id="test-alert-text">Send Test Alert</span>
-                </button>
-              </div>
 
-              <!-- Test Alert Banner -->
-              <div id="test-alert-status" class="hidden rounded-xl p-3.5 text-xs">
-                <span id="test-alert-msg" class="font-medium"></span>
-              </div>
-
-              <form method="POST" action="/settings/notifications" class="space-y-4">
-                <div class="flex items-center gap-2">
-                  <input type="checkbox" name="notifications_enabled" id="notifications_enabled" value="true" {{if .NotificationsEnabled}}checked{{end}}
-                    class="rounded bg-zinc-900 border-zinc-700 text-indigo-600 focus:ring-indigo-500">
-                  <label for="notifications_enabled" class="text-xs font-medium text-zinc-200">
-                    Enable Notifications
-                  </label>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label class="block text-[11px] font-medium text-zinc-400 mb-1">Telegram Bot Token</label>
-                    <input type="password" name="telegram_bot_token" value="{{.TelegramBotToken}}" placeholder="123456:ABC-DEF..."
-                      class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <form method="POST" action="/settings/poller" class="space-y-4">
+                  <div class="flex items-center gap-2">
+                    <input type="checkbox" name="poller_enabled" id="poller_enabled" value="true" {{if .PollerEnabled}}checked{{end}}
+                      class="rounded bg-zinc-900 border-zinc-700 text-indigo-600 focus:ring-indigo-500">
+                    <label for="poller_enabled" class="text-xs font-medium text-zinc-200">
+                      Enable Background Poller
+                    </label>
                   </div>
-                  <div>
-                    <label class="block text-[11px] font-medium text-zinc-400 mb-1">Telegram Chat ID</label>
-                    <input type="text" name="telegram_chat_id" value="{{.TelegramChatID}}" placeholder="-100123456789 or @channel"
+
+                  <div class="max-w-xs">
+                    <label class="block text-[11px] font-medium text-zinc-400 mb-1">Polling Interval (seconds)</label>
+                    <input type="number" name="poller_interval" value="{{.PollerInterval}}" min="10" max="3600" step="5"
                       class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    <p class="text-[10px] text-zinc-500 mt-1">Default is 120 seconds (2 minutes). Prevents SSH connection storms.</p>
                   </div>
-                </div>
 
-                <div>
-                  <label class="block text-[11px] font-medium text-zinc-400 mb-1">Discord / Generic Webhook URL</label>
-                  <input type="url" name="webhook_url" value="{{.WebhookURL}}" placeholder="https://discord.com/api/webhooks/... or https://hooks.slack.com/..."
-                    class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                </div>
-
-                <div class="flex justify-end">
-                  <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
-                    Save Notification Settings
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <!-- Card 4: Background Health Poller -->
-            <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
-              <div>
-                <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
-                  <span>🩺</span>
-                  <span>Background Health Poller</span>
-                </h3>
-                <p class="text-xs text-zinc-400 mt-1">
-                  Lightweight node ping and container audit running on a periodic background loop (ADR 0004).
-                </p>
+                  <div class="flex justify-end">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
+                      Save Poller Settings
+                    </button>
+                  </div>
+                </form>
               </div>
-
-              <form method="POST" action="/settings/poller" class="space-y-4">
-                <div class="flex items-center gap-2">
-                  <input type="checkbox" name="poller_enabled" id="poller_enabled" value="true" {{if .PollerEnabled}}checked{{end}}
-                    class="rounded bg-zinc-900 border-zinc-700 text-indigo-600 focus:ring-indigo-500">
-                  <label for="poller_enabled" class="text-xs font-medium text-zinc-200">
-                    Enable Background Poller
-                  </label>
-                </div>
-
-                <div class="max-w-xs">
-                  <label class="block text-[11px] font-medium text-zinc-400 mb-1">Polling Interval (seconds)</label>
-                  <input type="number" name="poller_interval" value="{{.PollerInterval}}" min="10" max="3600" step="5"
-                    class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  <p class="text-[10px] text-zinc-500 mt-1">Default is 120 seconds (2 minutes). Prevents SSH connection storms.</p>
-                </div>
-
-                <div class="flex justify-end">
-                  <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg text-xs transition shadow-sm">
-                    Save Poller Settings
-                  </button>
-                </div>
-              </form>
             </div>
           </div>
         </div>
@@ -1756,17 +1784,17 @@
     <footer class="h-10 shrink-0 border-t border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md text-xs text-zinc-400 px-6 flex items-center justify-between z-20 select-none">
       <!-- Left: Engine Status Indicators -->
       <div class="flex items-center gap-2 overflow-x-auto">
-        <button type="button" onclick="switchTab('settings')" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Poller Settings">
+        <button type="button" onclick="switchTab('settings', 'poller')" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Poller Settings">
           <span class="w-1.5 h-1.5 rounded-full {{if .PollerEnabled}}bg-emerald-400 animate-pulse{{else}}bg-zinc-500{{end}}"></span>
           <span>Poller: {{if .PollerEnabled}}Active ({{.PollerInterval}}s){{else}}Paused{{end}}</span>
         </button>
         
-        <button type="button" onclick="switchTab('settings')" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Git Mirror Settings">
+        <button type="button" onclick="switchTab('settings', 'git')" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Git Mirror Settings">
           <span class="w-1.5 h-1.5 rounded-full {{if eq .GitMirrorStatus "synced"}}bg-emerald-400{{else if eq .GitMirrorStatus "error"}}bg-rose-400{{else}}bg-zinc-500{{end}}"></span>
           <span>Git Mirror: {{if .GitMirrorURL}}{{.GitMirrorStatus}}{{else}}Local{{end}}</span>
         </button>
 
-        <button type="button" onclick="switchTab('settings')" class="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Alert Notifications">
+        <button type="button" onclick="switchTab('settings', 'notifications')" class="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-indigo-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Manage Alert Notifications">
           <span class="w-1.5 h-1.5 rounded-full {{if .NotificationsEnabled}}bg-emerald-400{{else}}bg-zinc-500{{end}}"></span>
           <span>Alerts: {{if .NotificationsEnabled}}Enabled{{else}}Disabled{{end}}</span>
         </button>
@@ -2217,6 +2245,10 @@
         footer_role: "Agentless Multi-Node Control Plane",
         settings_modal_title: "Control Plane Settings",
         settings_modal_desc: "SSH authorization key and automated Git Mirror repository backup.",
+        settings_tab_ssh: "SSH Key",
+        settings_tab_git: "Git Mirror",
+        settings_tab_notifications: "Notifications",
+        settings_tab_poller: "Health Poller",
         ssh_key_title: "Control Plane SSH Public Key",
         ssh_key_desc: "Authorize this key on your remote nodes by appending it to ~/.ssh/authorized_keys, or use it as a Deploy Key on your Git mirror with write access.",
         btn_copy_key: "Copy Key",
@@ -2367,6 +2399,10 @@
         footer_role: "Control Plane Multi-Node Tanpa Agen",
         settings_modal_title: "Pengaturan Control Plane",
         settings_modal_desc: "Kunci otorisasi SSH dan backup repositori Git Mirror otomatis.",
+        settings_tab_ssh: "Kunci SSH",
+        settings_tab_git: "Git Mirror",
+        settings_tab_notifications: "Notifikasi",
+        settings_tab_poller: "Health Poller",
         ssh_key_title: "Control Plane SSH Public Key",
         ssh_key_desc: "Otorisasikan kunci ini di server remote dengan menambahkannya ke ~/.ssh/authorized_keys, atau gunakan sebagai Deploy Key di Git mirror dengan akses tulis.",
         btn_copy_key: "Salin Kunci",
@@ -3045,7 +3081,7 @@
     // --- Tab Switching with Persistence ---
     const availableTabs = ['map', 'deployments', 'nodes', 'stacks', 'runbook', 'docs', 'settings'];
 
-    function switchTab(tabId) {
+    function switchTab(tabId, subTab) {
       if (!availableTabs.includes(tabId)) tabId = 'map';
 
       const titles = {
@@ -3092,8 +3128,20 @@
         }
       });
 
-      if (window.location.hash !== '#' + tabId) {
-        history.replaceState(null, null, '#' + tabId);
+      if (tabId === 'settings') {
+        if (subTab) {
+          switchSettingsTab(subTab);
+        } else {
+          let saved = 'ssh';
+          try {
+            saved = localStorage.getItem('docker_orkes_settings_subtab') || 'ssh';
+          } catch (e) {}
+          switchSettingsTab(saved);
+        }
+      } else {
+        if (window.location.hash !== '#' + tabId) {
+          history.replaceState(null, null, '#' + tabId);
+        }
       }
       try {
         localStorage.setItem('docker_orkes_active_tab', tabId);
@@ -3102,6 +3150,34 @@
       if (tabId === 'map') {
         filterTopology();
       }
+    }
+
+    function switchSettingsTab(subTab) {
+      const keys = ['ssh', 'git', 'notifications', 'poller'];
+      if (!keys.includes(subTab)) subTab = 'ssh';
+
+      keys.forEach(k => {
+        const pane = document.getElementById(`settings-pane-${k}`);
+        const btn = document.getElementById(`settings-tab-btn-${k}`);
+        if (pane) {
+          if (k === subTab) {
+            pane.classList.remove('hidden');
+          } else {
+            pane.classList.add('hidden');
+          }
+        }
+        if (btn) {
+          if (k === subTab) {
+            btn.className = 'py-2 px-3.5 border-b-2 font-medium text-xs border-indigo-500 text-indigo-400 flex items-center gap-2 transition bg-indigo-500/10 rounded-t-lg shrink-0 cursor-pointer';
+          } else {
+            btn.className = 'py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer';
+          }
+        }
+      });
+      try {
+        localStorage.setItem('docker_orkes_settings_subtab', subTab);
+      } catch (e) {}
+      history.replaceState(null, null, '#settings/' + subTab);
     }
 
     // --- Table Filtering & Searching ---
@@ -4130,7 +4206,10 @@
 
       // 2. Tab Setup (defaults to 'map')
       let initialTab = 'map';
-      const hash = window.location.hash.replace('#', '');
+      const rawHash = window.location.hash.replace('#', '');
+      const hashParts = rawHash.split('/');
+      const hash = hashParts[0];
+      const initialSubTab = hashParts[1];
       if (availableTabs.includes(hash)) {
         initialTab = hash;
       } else {
@@ -4141,7 +4220,7 @@
           }
         } catch (e) {}
       }
-      switchTab(initialTab);
+      switchTab(initialTab, initialSubTab);
       setTimeout(renderNeuralMesh, 100);
 
       const canvasContainer = document.getElementById('topology-canvas-container');
@@ -4154,9 +4233,12 @@
 
     // Handle back/forward navigation
     window.addEventListener('hashchange', () => {
-      const hash = window.location.hash.replace('#', '');
+      const rawHash = window.location.hash.replace('#', '');
+      const hashParts = rawHash.split('/');
+      const hash = hashParts[0];
+      const subTab = hashParts[1];
       if (availableTabs.includes(hash)) {
-        switchTab(hash);
+        switchTab(hash, subTab);
         setTimeout(renderNeuralMesh, 100);
       }
     });
