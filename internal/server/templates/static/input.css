@@ -2,9 +2,79 @@
 @source "../**/*.html";
 
 @layer base {
+  html {
+    font-size: 15px;
+  }
+  @media (min-width: 1536px) {
+    html {
+      font-size: 16px;
+    }
+  }
   body {
     font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #f1f5f9;
   }
+
+  /* Universal pointer cursor for all clickable elements */
+  a,
+  button,
+  summary,
+  select,
+  option,
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"],
+  [role="button"],
+  [role="tab"],
+  [role="link"],
+  [role="switch"],
+  [onclick],
+  .interactive,
+  .cursor-pointer,
+  label[for] {
+    cursor: pointer !important;
+  }
+}
+
+/* Enhanced border contrast & divider visibility */
+.border-slate-800,
+.border-zinc-800,
+.border-neutral-800 {
+  border-color: rgba(71, 85, 105, 0.55) !important;
+}
+.border-slate-800\/80,
+.border-zinc-800\/80,
+.border-slate-800\/60,
+.border-zinc-800\/60 {
+  border-color: rgba(71, 85, 105, 0.6) !important;
+}
+.border-slate-700\/50,
+.border-zinc-700\/50,
+.border-slate-700\/40,
+.border-zinc-700\/40 {
+  border-color: rgba(100, 116, 139, 0.55) !important;
+}
+.border-white\/5,
+.border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+.divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+.divide-zinc-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(71, 85, 105, 0.55) !important;
+}
+.divide-slate-700\/50 > :not([hidden]) ~ :not([hidden]),
+.divide-zinc-700\/50 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(100, 116, 139, 0.55) !important;
+}
+
+/* Readable font sizing for tiny badges & captions */
+.text-\[10px\],
+.text-\[11px\],
+.text-xs {
+  font-size: 0.775rem !important;
+  line-height: 1.15rem !important;
 }
 
 /* Neural Network & Cyber Animations */
