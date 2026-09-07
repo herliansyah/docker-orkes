@@ -121,7 +121,7 @@ func handleStop(args []string) {
 	}
 
 	fmt.Printf("🛑 Stopping Docker Orkes (PID: %d)...\n", pid)
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+	if err := killProcess(pid, syscall.SIGTERM); err != nil {
 		fmt.Printf("❌ Failed to send stop signal: %v\n", err)
 		os.Exit(1)
 	}
@@ -138,7 +138,7 @@ func handleStop(args []string) {
 
 	// Force kill if graceful timeout expires
 	fmt.Printf("⚠️ Graceful shutdown timed out. Force killing PID %d...\n", pid)
-	_ = syscall.Kill(pid, syscall.SIGKILL)
+	_ = killProcess(pid, syscall.SIGKILL)
 	_ = removePidFile(pidFile)
 	fmt.Println("✅ Docker Orkes force stopped.")
 }
@@ -148,7 +148,7 @@ func handleRestart(args []string) {
 	pid, err := readPidFile(pidFile)
 	if err == nil && isProcessAlive(pid) {
 		fmt.Printf("🛑 Stopping existing instance (PID: %d)...\n", pid)
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = killProcess(pid, syscall.SIGTERM)
 		for i := 0; i < 30; i++ {
 			time.Sleep(200 * time.Millisecond)
 			if !isProcessAlive(pid) {
@@ -216,9 +216,7 @@ func runDaemon() {
 	}
 
 	cmd := exec.Command(execPath, childArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
-	}
+	cmd.SysProcAttr = setupDaemonSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("Failed to start daemon: %v", err)
@@ -247,7 +245,7 @@ func isProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	err := syscall.Kill(pid, 0)
+	err := killProcess(pid, 0)
 	return err == nil
 }
 
