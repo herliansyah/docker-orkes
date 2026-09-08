@@ -584,6 +584,94 @@ func TestServer_DeploymentDeletionLifecycle(t *testing.T) {
 		t.Errorf("expected standard docker compose down command, executed: %v", mockExec.executedCmds)
 	}
 }
+func TestServer_DeploymentPreflightAndUp(t *testing.T) {
+	mockExec := &mockDeployExecutor{}
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+	handler := srv.Handler()
 
+	loginForm := url.Values{"password": {"secret-password"}}
+	reqLogin := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	reqLogin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recLogin := httptest.NewRecorder()
+	handler.ServeHTTP(recLogin, reqLogin)
+	cookie := recLogin.Result().Cookies()[0]
 
+	_ = srv.Store().CreateNode(store.Node{ID: "n1", Name: "node-1", Host: "10.0.0.1", Port: 22, User: "root", Status: "online"})
+	_ = srv.Store().CreateStack(store.Stack{ID: "s1", Name: "app", ComposeYAML: "services:\n  web:\n    image: nginx\n"})
+	_ = srv.Store().CreateDeployment(store.Deployment{
+		ID:       "d1",
+		StackID:  "s1",
+		NodeID:   "n1",
+		EnvVars:  "PORT=8080\nSECRET_KEY=supersecret123",
+		Status:   "running",
+	})
+
+	// 1. Preflight check endpoint (GET /deployments/{id}/preflight)
+	req := httptest.NewRequest(http.MethodGet, "/deployments/d1/preflight", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from preflight, got %d", rec.Code)
+	}
+
+	bodyStr := rec.Body.String()
+	if !strings.Contains(bodyStr, `"success":true`) || !strings.Contains(bodyStr, `"d1"`) {
+		t.Errorf("unexpected preflight body: %s", bodyStr)
+	}
+
+	// 2. Up deployment with JSON accept header (POST /deployments/{id}/up)
+	reqUp := httptest.NewRequest(http.MethodPost, "/deployments/d1/up", nil)
+	reqUp.Header.Set("Accept", "application/json")
+	reqUp.AddCookie(cookie)
+	recUp := httptest.NewRecorder()
+	handler.ServeHTTP(recUp, reqUp)
+
+	if recUp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from JSON Up action, got %d: %s", recUp.Code, recUp.Body.String())
+	}
+	upBody := recUp.Body.String()
+	if !strings.Contains(upBody, `"success":true`) {
+		t.Errorf("expected up success true, got: %s", upBody)
+	}
+
+	// 3. Rollout deployment with JSON accept header
+	reqRollout := httptest.NewRequest(http.MethodPost, "/deployments/d1/rollout", nil)
+	reqRollout.Header.Set("Accept", "application/json")
+	reqRollout.AddCookie(cookie)
+	recRollout := httptest.NewRecorder()
+	handler.ServeHTTP(recRollout, reqRollout)
+	if recRollout.Code != http.StatusOK || !strings.Contains(recRollout.Body.String(), `"success":true`) {
+		t.Errorf("expected rollout success, got: %s", recRollout.Body.String())
+	}
+
+	// 4. Restart deployment with JSON accept header
+	reqRestart := httptest.NewRequest(http.MethodPost, "/deployments/d1/restart", nil)
+	reqRestart.Header.Set("Accept", "application/json")
+	reqRestart.AddCookie(cookie)
+	recRestart := httptest.NewRecorder()
+	handler.ServeHTTP(recRestart, reqRestart)
+	if recRestart.Code != http.StatusOK || !strings.Contains(recRestart.Body.String(), `"success":true`) {
+		t.Errorf("expected restart success, got: %s", recRestart.Body.String())
+	}
+
+	// 5. Down deployment with JSON accept header
+	reqDown := httptest.NewRequest(http.MethodPost, "/deployments/d1/down", nil)
+	reqDown.Header.Set("Accept", "application/json")
+	reqDown.AddCookie(cookie)
+	recDown := httptest.NewRecorder()
+	handler.ServeHTTP(recDown, reqDown)
+	if recDown.Code != http.StatusOK || !strings.Contains(recDown.Body.String(), `"success":true`) {
+		t.Errorf("expected down success, got: %s", recDown.Body.String())
+	}
+}
 

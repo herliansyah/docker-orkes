@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,6 +152,25 @@ func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 	if !strings.Contains(node.DockerVersion, "Docker version 27.1.1") {
 		t.Errorf("expected docker version saved, got %q", node.DockerVersion)
 	}
+	// 4b. Test connection via AJAX/JSON - successful case
+	req = httptest.NewRequest(http.MethodPost, "/nodes/"+nodeID+"/test", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("Accept", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for JSON test connection, got %d", rec.Code)
+	}
+	var testJSONResp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &testJSONResp); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+	if testJSONResp["success"] != true {
+		t.Errorf("expected success true in JSON response, got %v", testJSONResp["success"])
+	}
+	if testJSONResp["docker_version"] != "Docker version 27.1.1" {
+		t.Errorf("expected docker_version in JSON response, got %v", testJSONResp["docker_version"])
+	}
 
 	// 5. Test connection - failure case
 	mockExec.testConnFunc = func(ctx context.Context, host string, port int, user string, privKey string) (string, error) {
@@ -170,6 +191,25 @@ func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 	}
 	if !strings.Contains(node.LastError, "permission denied") {
 		t.Errorf("expected last error to record failure, got %q", node.LastError)
+	}
+	// 5b. Test connection via AJAX/JSON - failure case
+	req = httptest.NewRequest(http.MethodPost, "/nodes/"+nodeID+"/test", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("Accept", "application/json")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for JSON test connection failure, got %d", rec.Code)
+	}
+	var failJSONResp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &failJSONResp); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+	if failJSONResp["success"] != false {
+		t.Errorf("expected success false in JSON failure response, got %v", failJSONResp["success"])
+	}
+	if !strings.Contains(fmt.Sprint(failJSONResp["error"]), "permission denied") {
+		t.Errorf("expected error message in JSON failure response, got %v", failJSONResp["error"])
 	}
 
 	// 6. Delete Node via POST /nodes/{id}/delete

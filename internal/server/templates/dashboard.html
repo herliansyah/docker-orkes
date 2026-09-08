@@ -457,11 +457,13 @@
                                 </span>
                                 {{end}}
 
+                                <span id="topo-dep-drift-{{$dep.ID}}">
                                 {{if eq $dep.DriftStatus "synced"}}
                                 <span class="text-[10px] text-emerald-400/90 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10">✓ Synced</span>
                                 {{else if eq $dep.DriftStatus "drifted"}}
                                 <span class="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded">⚠ Drifted</span>
                                 {{end}}
+                                </span>
                               </div>
                               <div class="text-[10px] font-mono text-zinc-500 mt-0.5 truncate">
                                 ~/.docker-orkes/stacks/{{$dep.StackName}}/
@@ -479,11 +481,9 @@
                               class="w-7 h-7 inline-flex items-center justify-center text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition" title="Revisions & Instant Rollback">
                               📜
                             </button>
-                            <form method="POST" action="/deployments/{{$dep.ID}}/up" class="m-0">
-                              <button type="submit" title="Redeploy stack" class="h-7 px-2.5 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 border border-indigo-500/30 rounded-md transition">
-                                <span>🚀</span> <span>Up</span>
-                              </button>
-                            </form>
+                            <button type="button" onclick="openPreflightModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')" title="Pre-flight check & Redeploy stack" class="h-7 px-2.5 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 border border-indigo-500/30 rounded-md transition">
+                              <span>🚀</span> <span>Up</span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -613,6 +613,17 @@
             </form>
           </div>
 
+          <!-- Async Drift Check Alert / Status Banner -->
+          <div id="deployment-drift-alert" class="hidden rounded-xl p-3.5 text-xs transition-all duration-200 mb-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span id="deployment-drift-alert-icon">⏳</span>
+                <span id="deployment-drift-alert-msg" class="font-medium"></span>
+              </div>
+              <button type="button" onclick="document.getElementById('deployment-drift-alert').classList.add('hidden')" class="text-zinc-400 hover:text-zinc-200 text-xs ml-2">✕</button>
+            </div>
+          </div>
+
           <!-- Deployments Table -->
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse" id="deployments-table">
@@ -628,7 +639,8 @@
               </thead>
               <tbody class="divide-y divide-zinc-800/60 text-xs">
                 {{range .Deployments}}
-                <tr class="deployment-row hover:bg-zinc-800/30 transition"
+                <tr class="deployment-row hover:bg-zinc-800/30 transition parent-dep-{{.ID}}"
+                  id="dep-row-{{.ID}}"
                   data-id="{{.ID}}"
                   data-search="{{.StackName}} {{.NodeName}} {{.Notes}}"
                   data-status="{{.Status}}"
@@ -667,7 +679,8 @@
                     </span>
                     {{end}}
                   </td>
-                  <td class="py-3.5 px-4">
+                  <td class="py-3.5 px-4" id="dep-drift-cell-{{.ID}}">
+                    <button type="button" id="dep-drift-badge-{{.ID}}" onclick="checkDeploymentDrift(event, '{{.ID}}', '{{.StackName}}')" class="group/drift text-left transition hover:opacity-80 focus:outline-none" title="Click to check configuration drift">
                     {{if eq .DriftStatus "synced"}}
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       ✓ Synced
@@ -681,6 +694,7 @@
                       Untested
                     </span>
                     {{end}}
+                    </button>
                   </td>
                   <td class="py-3.5 px-4 text-zinc-400 text-[11px]">
                     {{.UpdatedAt.Format "Jan 02, 15:04"}}
@@ -701,11 +715,10 @@
                       </button>
 
                       <!-- Quick Button 2: Up / Redeploy -->
-                      <form method="POST" action="/deployments/{{.ID}}/up" class="m-0">
-                        <button type="submit" title="Redeploy stack on server" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded text-xs transition shadow-sm font-medium">
-                          🚀 <span class="hidden sm:inline">Up</span>
-                        </button>
-                      </form>
+                      <!-- Quick Button 2: Up / Redeploy with Pre-flight Check -->
+                      <button type="button" onclick="openPreflightModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')" title="Pre-flight check & Redeploy stack on server" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded text-xs transition shadow-sm font-medium">
+                        🚀 <span class="hidden sm:inline">Up</span>
+                      </button>
 
                       <!-- Action Dropdown Menu -->
                       <div class="relative inline-block text-left">
@@ -716,11 +729,10 @@
 
                         <div id="dep-actions-{{.ID}}" class="action-dropdown hidden absolute right-0 mt-1 w-44 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-20 py-1 divide-y divide-zinc-800 text-left">
                           <div class="py-1">
-                            <form method="POST" action="/deployments/{{.ID}}/rollout" class="m-0" onsubmit="return confirm('Pull latest image versions from registry and recreate containers for {{.StackName}}?');">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 flex items-center gap-2 font-medium">
-                                <span>🔄</span> <span>Pull & Rollout</span>
-                              </button>
-                            </form>
+                            <button type="button" onclick="openLifecycleActionModal('rollout', '{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 flex items-center gap-2 font-medium">
+                              <span>🔄</span> <span>Pull & Rollout</span>
+                            </button>
 
                             <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
@@ -732,30 +744,28 @@
                               <span>📜</span> <span>Revisions & Rollback</span>
                             </button>
 
-
                             <button type="button" onclick="openHostTerminal('{{.NodeID}}', '{{.NodeName}} (Host)'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center gap-2">
                               <span>🖥️</span> <span data-i18n="menu_host_terminal">Host Terminal</span>
                             </button>
 
-                            <form method="POST" action="/deployments/{{.ID}}/drift/check" class="m-0">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
+                            <form method="POST" action="/deployments/{{.ID}}/drift/check" class="m-0" onsubmit="checkDeploymentDrift(event, '{{.ID}}', '{{.StackName}}'); return false;">
+                              <button type="submit" id="btn-check-drift-{{.ID}}" class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
                                 <span>🔍</span> <span data-i18n="menu_check_drift">Check Drift</span>
                               </button>
                             </form>
 
-                            <form method="POST" action="/deployments/{{.ID}}/restart" class="m-0">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
-                                <span>🔄</span> <span data-i18n="menu_restart">Restart Stack</span>
-                              </button>
-                            </form>
+                            {{if ne .Status "stopped"}}
+                            <button type="button" onclick="openLifecycleActionModal('restart', '{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
+                              <span>🔄</span> <span data-i18n="menu_restart">Restart Stack</span>
+                            </button>
 
-                            <form method="POST" action="/deployments/{{.ID}}/down" class="m-0">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-amber-400 hover:bg-zinc-800 flex items-center gap-2">
-                                <span>⏹️</span> <span data-i18n="menu_down">Stop Stack (Down)</span>
-                              </button>
-                            </form>
-                          </div>
+                            <button type="button" onclick="openLifecycleActionModal('down', '{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-amber-400 hover:bg-zinc-800 flex items-center gap-2">
+                              <span>⏹️</span> <span data-i18n="menu_down">Stop Stack (Down)</span>
+                            </button>
+                            {{end}}
 
                           <div class="py-1">
                             <button type="button" onclick="openDeleteDeploymentModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();" class="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2">
@@ -826,8 +836,7 @@
                   </td>
                 </tr>
 
-                {{if eq .DriftStatus "drifted"}}
-                <tr class="bg-amber-500/5 border-l-2 border-amber-500 child-dep-{{.ID}}">
+                <tr id="drift-diff-row-{{.ID}}" class="{{if ne .DriftStatus "drifted"}}hidden{{end}} bg-amber-500/5 border-l-2 border-amber-500 child-dep-{{.ID}}">
                   <td colspan="6" class="p-4 border-b border-zinc-800">
                     <div class="flex items-center justify-between mb-2">
                       <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5" data-i18n="drift_detected">
@@ -846,10 +855,9 @@
                         </form>
                       </div>
                     </div>
-                    <div class="bg-zinc-950 p-3 rounded-lg border border-zinc-800 text-[11px] font-mono max-h-48 overflow-y-auto whitespace-pre-wrap text-zinc-300">{{.DiffOutput}}</div>
+                    <div id="drift-diff-output-{{.ID}}" class="bg-zinc-950 p-3 rounded-lg border border-zinc-800 text-[11px] font-mono max-h-48 overflow-y-auto whitespace-pre-wrap text-zinc-300">{{.DiffOutput}}</div>
                   </td>
                 </tr>
-                {{end}}
 
                 {{if .LastLog}}
                 <tr class="bg-zinc-950/40 child-dep-{{.ID}}">
@@ -985,6 +993,17 @@
             </form>
           </div>
 
+          <!-- Async Node Test Alert / Status Banner -->
+          <div id="node-test-alert" class="hidden rounded-xl p-3.5 text-xs transition-all duration-200">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span id="node-test-alert-icon">⏳</span>
+                <span id="node-test-alert-msg" class="font-medium"></span>
+              </div>
+              <button type="button" onclick="document.getElementById('node-test-alert').classList.add('hidden')" class="text-zinc-400 hover:text-zinc-200 text-xs ml-2">✕</button>
+            </div>
+          </div>
+
           <!-- Nodes Table -->
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse" id="nodes-table">
@@ -1011,7 +1030,7 @@
                   <td class="py-3.5 px-4 font-mono text-zinc-300">
                     {{.User}}@{{.Host}}:{{.Port}}
                   </td>
-                  <td class="py-3.5 px-4">
+                  <td class="py-3.5 px-4" id="node-status-cell-{{.ID}}">
                     {{if eq .Status "online"}}
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
@@ -1026,7 +1045,7 @@
                     </span>
                     {{end}}
                   </td>
-                  <td class="py-3.5 px-4 text-zinc-400">
+                  <td class="py-3.5 px-4 text-zinc-400" id="node-docker-cell-{{.ID}}">
                     {{if .DockerVersion}}
                       <span class="font-mono text-[11px] text-zinc-300">{{.DockerVersion}}</span>
                     {{else if .LastError}}
@@ -1068,11 +1087,10 @@
                               <span>✏️</span> <span data-i18n="menu_edit_node">Edit Node</span>
                             </button>
 
-                            <form method="POST" action="/nodes/{{.ID}}/test" class="m-0">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
-                                <span>🔌</span> <span data-i18n="menu_test_conn">Test Connection</span>
-                              </button>
-                            </form>
+                            <button type="button" id="btn-test-node-{{.ID}}" onclick="testNodeConnectionAsync('{{.ID}}', '{{.Name}}'); closeAllDropdowns();"
+                              class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2 transition">
+                              <span>🔌</span> <span data-i18n="menu_test_conn">Test Connection</span>
+                            </button>
 
                             {{if ne .Status "online"}}
                             <button type="button" onclick="document.getElementById('inject-key-{{.ID}}').classList.toggle('hidden'); closeAllDropdowns();"
@@ -2036,6 +2054,101 @@
       </form>
     </div>
   </div>
+  <!-- Pre-flight Check & Deployment Execution Modal (ADR 0014) -->
+  <div id="preflight-modal" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl" id="preflight-modal-icon">🚀</span>
+          <div>
+            <h3 class="text-base font-semibold text-zinc-100" id="preflight-modal-title">Pre-flight Check</h3>
+            <p class="text-xs text-zinc-400">
+              Stack <span id="preflight-modal-stack" class="font-mono text-indigo-400 font-semibold"></span> on <span id="preflight-modal-node" class="text-zinc-200 font-medium"></span>
+            </p>
+          </div>
+        </div>
+        <button type="button" onclick="closePreflightModal()" class="text-zinc-400 hover:text-zinc-200 text-lg p-1.5 rounded-lg hover:bg-zinc-800 transition">✕</button>
+      </div>
+
+      <!-- Pre-flight Inspect View -->
+      <div id="preflight-inspect-view" class="flex-1 flex flex-col min-h-0 overflow-y-auto p-6 space-y-4">
+        <!-- Loading State -->
+        <div id="preflight-loading" class="py-12 text-center text-zinc-400 space-y-3">
+          <div class="inline-block animate-spin text-2xl">⏳</div>
+          <p class="text-xs">Connecting to node over SSH & auditing configuration state...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="preflight-error-box" class="hidden p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs space-y-2">
+          <div class="font-semibold flex items-center gap-2">
+            <span>⚠️</span> <span>Pre-flight Audit Failed / Node Unreachable</span>
+          </div>
+          <div id="preflight-error-msg" class="font-mono text-[11px] text-rose-400 bg-rose-950/40 p-2.5 rounded border border-rose-900/50 break-all"></div>
+          <p class="text-[11px] text-zinc-400">Deployment blocked. Please ensure node is online and SSH key permissions are valid.</p>
+        </div>
+
+        <!-- Details & Diff Content -->
+        <div id="preflight-content-box" class="hidden space-y-4">
+          <!-- Impact Summary Banner -->
+          <div id="preflight-impact-banner" class="p-3.5 rounded-xl border flex items-start gap-3"></div>
+
+          <!-- Container Impact List -->
+          <div id="preflight-containers-section" class="p-3.5 rounded-xl bg-zinc-950/40 border border-zinc-800 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Affected Containers</span>
+              <span id="preflight-container-count-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700"></span>
+            </div>
+            <div id="preflight-containers-list" class="space-y-1.5 text-xs"></div>
+          </div>
+
+          <!-- Diff Inspection Section -->
+          <div id="preflight-diff-section" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Configuration Diff (Desired vs Node Actual)</span>
+              <button type="button" id="preflight-mask-btn" onclick="togglePreflightMask()" class="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-indigo-300 border border-zinc-700 px-2 py-0.5 rounded transition inline-flex items-center gap-1">
+                <span id="preflight-mask-icon">👁️</span> <span id="preflight-mask-label">Reveal Secrets</span>
+              </button>
+            </div>
+            <pre id="preflight-diff-view" class="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 font-mono text-[11px] text-zinc-300 overflow-x-auto max-h-60 whitespace-pre leading-relaxed"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pre-flight Inspect Footer -->
+      <div id="preflight-inspect-footer" class="px-6 py-4 border-t border-zinc-800 bg-zinc-950/60 flex items-center justify-between shrink-0">
+        <span class="text-[11px] text-zinc-500">All mutative actions require explicit confirmation (ADR 0014).</span>
+        <div class="flex items-center gap-2.5">
+          <button type="button" onclick="closePreflightModal()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-4 py-2 rounded-xl text-xs font-medium transition">
+            Cancel
+          </button>
+          <button type="button" id="preflight-confirm-btn" onclick="executePreflightDeploy()" disabled
+            class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5">
+            <span>🚀</span> <span id="preflight-confirm-btn-label">Confirm & Up</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Execution Console View (Anti-Flicker) -->
+      <div id="preflight-exec-view" class="hidden flex-1 flex flex-col min-h-0 bg-[#090d16]">
+        <div class="p-4 border-b border-zinc-800/80 bg-zinc-950/40 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-2">
+            <span id="preflight-exec-spinner" class="inline-block animate-spin text-sm">⏳</span>
+            <span id="preflight-exec-status-title" class="text-xs font-medium text-zinc-300">Deploying stack to remote node...</span>
+          </div>
+          <span id="preflight-exec-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">EXECUTING</span>
+        </div>
+        <pre id="preflight-exec-output" class="p-4 text-xs font-mono text-zinc-300 flex-1 overflow-y-auto whitespace-pre-wrap leading-relaxed">Connecting to remote executor...</pre>
+        <div class="p-4 border-t border-zinc-800/80 bg-zinc-950/40 flex items-center justify-between shrink-0">
+          <span class="text-[11px] text-zinc-500 font-mono" id="preflight-exec-footer-note">Waiting for command exit code...</span>
+          <button type="button" id="preflight-exec-done-btn" onclick="finishPreflightExecution()" class="hidden bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-4 py-1.5 rounded-lg text-xs font-medium transition">
+            Close & Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 
   <!-- Container Logs Modal -->
   <div id="logs-modal" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
@@ -2324,6 +2437,7 @@
         col_endpoint: "Endpoint",
         col_docker_info: "Docker Info",
         run_test_conn: "Run test connection",
+        status_testing: "Testing...",
         btn_metrics: "Metrics & Containers",
         menu_edit_node: "Edit Node",
         menu_test_conn: "Test Connection",
@@ -2480,6 +2594,7 @@
         col_endpoint: "Endpoint",
         col_docker_info: "Info Docker",
         run_test_conn: "Uji koneksi server",
+        status_testing: "Menguji...",
         btn_metrics: "Metrik & Container",
         menu_edit_node: "Edit Node",
         menu_test_conn: "Uji Koneksi",
@@ -3536,6 +3651,123 @@
       filterNodes();
     }
 
+    function testNodeConnectionAsync(nodeId, nodeName) {
+      const alertBox = document.getElementById('node-test-alert');
+      const alertMsg = document.getElementById('node-test-alert-msg');
+      const alertIcon = document.getElementById('node-test-alert-icon');
+      const statusCell = document.getElementById(`node-status-cell-${nodeId}`);
+      const dockerCell = document.getElementById(`node-docker-cell-${nodeId}`);
+      const row = document.querySelector(`tr.node-row[data-id="${nodeId}"]`);
+      const testBtn = document.getElementById(`btn-test-node-${nodeId}`);
+
+      if (testBtn) {
+        testBtn.disabled = true;
+        testBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      }
+
+      if (statusCell) {
+        const testingText = (typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Menguji...' : 'Testing...';
+        statusCell.innerHTML = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> ${testingText}
+          </span>
+        `;
+      }
+      if (dockerCell) {
+        dockerCell.innerHTML = `<span class="text-zinc-400 italic text-[11px] animate-pulse">${(typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Menghubungi via SSH & cek Docker...' : 'Connecting via SSH & Docker daemon...'}</span>`;
+      }
+
+      if (alertBox && alertMsg) {
+        alertBox.className = 'rounded-xl p-3.5 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 transition-all duration-200';
+        alertBox.classList.remove('hidden');
+        if (alertIcon) alertIcon.innerText = '⏳';
+        alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+          ? `Menguji koneksi SSH dan Docker daemon pada "${nodeName}"...`
+          : `Testing SSH connection and Docker daemon on "${nodeName}"...`;
+      }
+
+      fetch(`/nodes/${nodeId}/test`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      })
+      .then(async res => {
+        let data;
+        try {
+          data = await res.json();
+        } catch {
+          data = { success: res.ok };
+        }
+        return data;
+      })
+      .then(data => {
+        if (testBtn) {
+          testBtn.disabled = false;
+          testBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+
+        if (data.success) {
+          const ver = data.docker_version || 'Docker online';
+          if (row) {
+            row.setAttribute('data-status', 'online');
+          }
+          if (statusCell) {
+            statusCell.innerHTML = `
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online
+              </span>
+            `;
+          }
+          if (dockerCell) {
+            dockerCell.innerHTML = `<span class="font-mono text-[11px] text-zinc-300">${escapeHtml(ver)}</span>`;
+          }
+          if (alertBox && alertMsg) {
+            alertBox.className = 'rounded-xl p-3.5 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 transition-all duration-200';
+            if (alertIcon) alertIcon.innerText = '✓';
+            alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `✓ Koneksi ke "${nodeName}" berhasil terhubung! (${ver})`
+              : `✓ Connection to "${nodeName}" verified successfully! (${ver})`;
+          }
+        } else {
+          const errMsg = data.error || 'Connection failed';
+          if (row) {
+            row.setAttribute('data-status', 'offline');
+          }
+          if (statusCell) {
+            statusCell.innerHTML = `
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${escapeHtml(errMsg)}">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+              </span>
+            `;
+          }
+          if (dockerCell) {
+            dockerCell.innerHTML = `<span class="text-rose-400 text-[11px] truncate max-w-xs block" title="${escapeHtml(errMsg)}">${escapeHtml(errMsg)}</span>`;
+          }
+          if (alertBox && alertMsg) {
+            alertBox.className = 'rounded-xl p-3.5 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 transition-all duration-200';
+            if (alertIcon) alertIcon.innerText = '✕';
+            alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `✕ Gagal terhubung ke "${nodeName}": ${errMsg}`
+              : `✕ Connection failed for "${nodeName}": ${errMsg}`;
+          }
+        }
+        filterNodes();
+      })
+      .catch(err => {
+        if (testBtn) {
+          testBtn.disabled = false;
+          testBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        }
+        if (alertBox && alertMsg) {
+          alertBox.className = 'rounded-xl p-3.5 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 transition-all duration-200';
+          if (alertIcon) alertIcon.innerText = '✕';
+          alertMsg.innerText = `Network error: ${err.message}`;
+        }
+      });
+    }
+
     function filterStacks() {
       const query = (document.getElementById('stacks-search')?.value || '').toLowerCase().trim();
 
@@ -4365,6 +4597,286 @@
       currentDeleteDepId = '';
       currentDeleteDepName = '';
     }
+    // --- Pre-flight Check & Execution Modal Handlers (ADR 0014) ---
+    // --- Unified Lifecycle Action & Execution Modal Handlers (ADR 0014) ---
+    let currentLifecycleAction = 'up'; // 'up', 'rollout', 'restart', 'down'
+    let currentPreflightDepId = '';
+    let currentPreflightStackName = '';
+    let currentPreflightNodeName = '';
+    let currentPreflightDiffRaw = '';
+    let isPreflightMasked = true;
+
+    function openPreflightModal(depId, stackName, nodeName) {
+      openLifecycleActionModal('up', depId, stackName, nodeName);
+    }
+
+    function openLifecycleActionModal(action, depId, stackName, nodeName) {
+      currentLifecycleAction = action;
+      currentPreflightDepId = depId;
+      currentPreflightStackName = stackName;
+      currentPreflightNodeName = nodeName;
+      currentPreflightDiffRaw = '';
+      isPreflightMasked = true;
+
+      document.getElementById('preflight-modal-stack').innerText = stackName;
+      document.getElementById('preflight-modal-node').innerText = nodeName;
+
+      // Configure header based on action
+      const iconEl = document.getElementById('preflight-modal-icon');
+      const titleEl = document.getElementById('preflight-modal-title');
+      const confirmBtn = document.getElementById('preflight-confirm-btn');
+      const confirmBtnLabel = document.getElementById('preflight-confirm-btn-label');
+
+      confirmBtn.disabled = true;
+      confirmBtn.className = 'disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5 ';
+
+      if (action === 'up') {
+        iconEl.innerText = '🚀';
+        titleEl.innerText = 'Pre-flight Check & Up';
+        confirmBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+        confirmBtnLabel.innerText = 'Confirm & Up';
+      } else if (action === 'rollout') {
+        iconEl.innerText = '🔄';
+        titleEl.innerText = 'Confirm Pull & Rollout';
+        confirmBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-500');
+        confirmBtnLabel.innerText = 'Confirm & Rollout';
+      } else if (action === 'restart') {
+        iconEl.innerText = '🔄';
+        titleEl.innerText = 'Confirm Restart Stack';
+        confirmBtn.classList.add('bg-zinc-700', 'hover:bg-zinc-600');
+        confirmBtnLabel.innerText = 'Confirm & Restart';
+      } else if (action === 'down') {
+        iconEl.innerText = '⏹️';
+        titleEl.innerText = 'Confirm Stop Stack (Down)';
+        confirmBtn.classList.add('bg-amber-600', 'hover:bg-amber-500');
+        confirmBtnLabel.innerText = 'Confirm & Stop';
+      }
+
+      // Reset views
+      document.getElementById('preflight-inspect-view').classList.remove('hidden');
+      document.getElementById('preflight-inspect-footer').classList.remove('hidden');
+      document.getElementById('preflight-exec-view').classList.add('hidden');
+
+      document.getElementById('preflight-loading').classList.remove('hidden');
+      document.getElementById('preflight-error-box').classList.add('hidden');
+      document.getElementById('preflight-content-box').classList.add('hidden');
+
+      const modal = document.getElementById('preflight-modal');
+      modal.classList.remove('hidden');
+
+      // Fetch preflight audit
+      fetch(`/deployments/${depId}/preflight`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('preflight-loading').classList.add('hidden');
+          if (!data.success || !data.preflight) {
+            showPreflightError(data.error || 'Failed to query deployment telemetry');
+            return;
+          }
+          renderLifecycleActionData(data.preflight);
+        })
+        .catch(err => {
+          document.getElementById('preflight-loading').classList.add('hidden');
+          showPreflightError(err.message || 'Network error reaching Control Plane');
+        });
+    }
+
+    function showPreflightError(msg) {
+      const errBox = document.getElementById('preflight-error-box');
+      document.getElementById('preflight-error-msg').innerText = msg;
+      errBox.classList.remove('hidden');
+      document.getElementById('preflight-confirm-btn').disabled = true;
+    }
+
+    function renderLifecycleActionData(p) {
+      document.getElementById('preflight-content-box').classList.remove('hidden');
+      const banner = document.getElementById('preflight-impact-banner');
+      const diffSection = document.getElementById('preflight-diff-section');
+      currentPreflightDiffRaw = p.diff || '';
+
+      if (currentLifecycleAction === 'up') {
+        if (p.has_drift) {
+          banner.className = 'p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-start gap-3';
+          banner.innerHTML = `
+            <span class="text-base shrink-0">⚠️</span>
+            <div class="text-xs">
+              <div class="font-semibold text-amber-200">Pending Configuration Changes Detected</div>
+              <div class="text-zinc-300 mt-0.5">Control Plane Desired State differs from Node Actual State. Deploying will synchronize files and recreate modified containers.</div>
+            </div>
+          `;
+          diffSection.classList.remove('hidden');
+          applyPreflightDiffText();
+        } else {
+          banner.className = 'p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 flex items-start gap-3';
+          banner.innerHTML = `
+            <span class="text-base shrink-0">✓</span>
+            <div class="text-xs">
+              <div class="font-semibold text-emerald-200">Configurations Identical (Zero Drift)</div>
+              <div class="text-zinc-300 mt-0.5">No configuration or environment changes detected. Executing Up will idempotently verify and ensure containers are running.</div>
+            </div>
+          `;
+          diffSection.classList.add('hidden');
+        }
+      } else if (currentLifecycleAction === 'rollout') {
+        banner.className = 'p-3.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 flex items-start gap-3';
+        banner.innerHTML = `
+          <span class="text-base shrink-0">🔄</span>
+          <div class="text-xs">
+            <div class="font-semibold text-indigo-200">Pull Latest Images & Recreate Containers</div>
+            <div class="text-zinc-300 mt-0.5">Contacts upstream registries for all services in this stack. Downloads new layer updates and recreates containers with minimal downtime. Volume data is preserved.</div>
+          </div>
+        `;
+        diffSection.classList.add('hidden');
+      } else if (currentLifecycleAction === 'restart') {
+        banner.className = 'p-3.5 rounded-xl border border-zinc-700 bg-zinc-800/40 text-zinc-300 flex items-start gap-3';
+        banner.innerHTML = `
+          <span class="text-base shrink-0">ℹ️</span>
+          <div class="text-xs">
+            <div class="font-semibold text-zinc-200">Restart Container Processes</div>
+            <div class="text-zinc-400 mt-0.5"><strong class="text-zinc-200">Notice:</strong> Restart only restarts existing running container processes. It <strong class="text-amber-400">does NOT</strong> apply new .env or Compose configuration changes (use 'Up' to apply changes).</div>
+          </div>
+        `;
+        diffSection.classList.add('hidden');
+      } else if (currentLifecycleAction === 'down') {
+        banner.className = 'p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 flex items-start gap-3';
+        banner.innerHTML = `
+          <span class="text-base shrink-0">⚠️</span>
+          <div class="text-xs">
+            <div class="font-semibold text-amber-200">Stop & Remove Stack Containers (Downtime Warning)</div>
+            <div class="text-zinc-300 mt-0.5">Executes <code class="font-mono text-zinc-200">docker compose down</code>. Containers will be stopped and removed. Service will be offline until deployed again. <strong class="text-emerald-400">Named Docker volumes are preserved.</strong></div>
+          </div>
+        `;
+        diffSection.classList.add('hidden');
+      }
+
+      // Render Containers
+      const containerBadge = document.getElementById('preflight-container-count-badge');
+      const containersList = document.getElementById('preflight-containers-list');
+      containerBadge.innerText = `${p.container_count} container${p.container_count === 1 ? '' : 's'}`;
+
+      if (p.containers && p.containers.length > 0) {
+        containersList.innerHTML = p.containers.map(c => `
+          <div class="flex items-center justify-between p-2 rounded bg-zinc-900/80 border border-zinc-800">
+            <div class="flex items-center gap-2">
+              <span class="text-xs">🐳</span>
+              <span class="font-mono font-medium text-zinc-200 text-xs">${escapeHtml(c.names || c.id)}</span>
+              <span class="text-[11px] text-zinc-500 truncate max-w-xs">${escapeHtml(c.image || '')}</span>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono ${c.state === 'running' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">${escapeHtml(c.status || c.state)}</span>
+          </div>
+        `).join('');
+      } else {
+        containersList.innerHTML = `<div class="text-zinc-500 italic text-xs py-1">No active containers found for this stack.</div>`;
+      }
+
+      // Enable confirm button
+      const confirmBtn = document.getElementById('preflight-confirm-btn');
+      confirmBtn.disabled = false;
+    }
+
+    function applyPreflightDiffText() {
+      const diffView = document.getElementById('preflight-diff-view');
+      const maskBtnLabel = document.getElementById('preflight-mask-label');
+      if (isPreflightMasked) {
+        diffView.innerText = maskEnvContent(currentPreflightDiffRaw);
+        if (maskBtnLabel) maskBtnLabel.innerText = 'Reveal Secrets';
+      } else {
+        diffView.innerText = currentPreflightDiffRaw;
+        if (maskBtnLabel) maskBtnLabel.innerText = 'Mask Secrets';
+      }
+    }
+
+    function togglePreflightMask() {
+      isPreflightMasked = !isPreflightMasked;
+      applyPreflightDiffText();
+    }
+
+    function closePreflightModal() {
+      const modal = document.getElementById('preflight-modal');
+      if (modal) modal.classList.add('hidden');
+      currentPreflightDepId = '';
+    }
+
+    function executePreflightDeploy() {
+      if (!currentPreflightDepId) return;
+
+      // Switch to Execution View (Anti-flicker)
+      document.getElementById('preflight-inspect-view').classList.add('hidden');
+      document.getElementById('preflight-inspect-footer').classList.add('hidden');
+
+      const execView = document.getElementById('preflight-exec-view');
+      execView.classList.remove('hidden');
+
+      const outPre = document.getElementById('preflight-exec-output');
+      let endpoint = `/deployments/${currentPreflightDepId}/up`;
+      let actionTitle = 'Deploying stack to remote node...';
+      let commandDesc = 'docker compose up -d';
+
+      if (currentLifecycleAction === 'rollout') {
+        endpoint = `/deployments/${currentPreflightDepId}/rollout`;
+        actionTitle = 'Pulling images & rolling out stack...';
+        commandDesc = 'docker compose pull && docker compose up -d';
+      } else if (currentLifecycleAction === 'restart') {
+        endpoint = `/deployments/${currentPreflightDepId}/restart`;
+        actionTitle = 'Restarting stack containers...';
+        commandDesc = 'docker compose restart';
+      } else if (currentLifecycleAction === 'down') {
+        endpoint = `/deployments/${currentPreflightDepId}/down`;
+        actionTitle = 'Stopping stack containers...';
+        commandDesc = 'docker compose down';
+      }
+
+      document.getElementById('preflight-exec-status-title').innerText = actionTitle;
+      outPre.innerText = `[Docker Orkes Control Plane]\nInitiating ${currentLifecycleAction.toUpperCase()} for ${currentPreflightStackName} on ${currentPreflightNodeName}...\nExecuting: ${commandDesc}\n\n`;
+
+      const badge = document.getElementById('preflight-exec-badge');
+      badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20';
+      badge.innerText = 'EXECUTING...';
+
+      const spinner = document.getElementById('preflight-exec-spinner');
+      spinner.classList.remove('hidden');
+
+      const doneBtn = document.getElementById('preflight-exec-done-btn');
+      doneBtn.classList.add('hidden');
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' }
+      })
+      .then(res => res.json())
+      .then(data => {
+        spinner.classList.add('hidden');
+        doneBtn.classList.remove('hidden');
+
+        if (data.success) {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+          badge.innerText = 'SUCCESS';
+          document.getElementById('preflight-exec-status-title').innerText = data.message || 'Operation executed successfully!';
+          document.getElementById('preflight-exec-footer-note').innerText = 'Completed. Click Close & Refresh to update dashboard.';
+          outPre.innerText += data.output || 'Command executed with status 0.';
+        } else {
+          badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+          badge.innerText = 'FAILED';
+          document.getElementById('preflight-exec-status-title').innerText = 'Operation failed';
+          document.getElementById('preflight-exec-footer-note').innerText = 'Check command output above for error details.';
+          outPre.innerText += `\n[ERROR]: ${data.error || 'Execution failed'}\n` + (data.output ? `\nOutput:\n${data.output}` : '');
+        }
+      })
+      .catch(err => {
+        spinner.classList.add('hidden');
+        doneBtn.classList.remove('hidden');
+        badge.className = 'px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20';
+        badge.innerText = 'ERROR';
+        document.getElementById('preflight-exec-status-title').innerText = 'Request failed';
+        outPre.innerText += `\n[NETWORK ERROR]: ${err.message}`;
+      });
+    }
+
+    function finishPreflightExecution() {
+      closePreflightModal();
+      window.location.reload();
+    }
+
 
     function updateDeleteModalState() {
       const actionTeardown = document.getElementById('delete-action-teardown')?.checked;
@@ -4885,8 +5397,242 @@
       }
     });
 
+    // --- Global Toast Notification Helper ---
+    let toastTimeout = null;
+    function showToast(title, msg, type = 'info') {
+      const toast = document.getElementById('global-toast');
+      const iconEl = document.getElementById('global-toast-icon');
+      const titleEl = document.getElementById('global-toast-title');
+      const msgEl = document.getElementById('global-toast-msg');
+      if (!toast) return;
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+
+      if (titleEl) titleEl.innerText = title;
+      if (msgEl) msgEl.innerText = msg;
+
+      toast.classList.remove('border-emerald-500/40', 'border-amber-500/40', 'border-rose-500/40', 'border-indigo-500/40', 'border-zinc-700');
+      if (type === 'success') {
+        if (iconEl) {
+          iconEl.innerText = '✓';
+          iconEl.className = 'text-base shrink-0 text-emerald-400 select-none';
+        }
+        toast.classList.add('border-emerald-500/40');
+      } else if (type === 'warning') {
+        if (iconEl) {
+          iconEl.innerText = '⚠️';
+          iconEl.className = 'text-base shrink-0 text-amber-400 select-none';
+        }
+        toast.classList.add('border-amber-500/40');
+      } else if (type === 'error') {
+        if (iconEl) {
+          iconEl.innerText = '✕';
+          iconEl.className = 'text-base shrink-0 text-rose-400 select-none';
+        }
+        toast.classList.add('border-rose-500/40');
+      } else {
+        if (iconEl) {
+          iconEl.innerText = 'ℹ️';
+          iconEl.className = 'text-base shrink-0 text-indigo-400 select-none';
+        }
+        toast.classList.add('border-indigo-500/40');
+      }
+
+      toast.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+        toast.classList.add('translate-y-0', 'opacity-100');
+      });
+
+      toastTimeout = setTimeout(() => {
+        hideGlobalToast();
+      }, 4500);
+    }
+
+    function hideGlobalToast() {
+      const toast = document.getElementById('global-toast');
+      if (!toast) return;
+      toast.classList.remove('translate-y-0', 'opacity-100');
+      toast.classList.add('translate-y-2', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('hidden');
+      }, 300);
+    }
+
+    // --- Smooth Drift Check Handler ---
+    function checkDeploymentDrift(event, depId, stackName) {
+      if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      closeAllDropdowns();
+
+      const alertBox = document.getElementById('deployment-drift-alert');
+      const alertMsg = document.getElementById('deployment-drift-alert-msg');
+      const alertIcon = document.getElementById('deployment-drift-alert-icon');
+      const row = document.getElementById('dep-row-' + depId);
+      const badgeBtn = document.getElementById('dep-drift-badge-' + depId);
+      const diffRow = document.getElementById('drift-diff-row-' + depId);
+      const diffOutput = document.getElementById('drift-diff-output-' + depId);
+      const topoDrift = document.getElementById('topo-dep-drift-' + depId);
+      const checkBtn = document.getElementById('btn-check-drift-' + depId);
+
+      if (checkBtn) {
+        checkBtn.disabled = true;
+      }
+
+      const prevBadgeHTML = badgeBtn ? badgeBtn.innerHTML : '';
+      if (badgeBtn) {
+        badgeBtn.innerHTML = `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> ${(typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Memeriksa...' : 'Checking...'}
+          </span>
+        `;
+      }
+
+      if (alertBox && alertMsg) {
+        alertBox.className = 'rounded-xl p-3.5 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 transition-all duration-200 mb-3';
+        alertBox.classList.remove('hidden');
+        if (alertIcon) alertIcon.innerText = '⏳';
+        alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+          ? `Memeriksa perbedaan konfigurasi (drift) pada "${stackName || depId}"...`
+          : `Checking configuration drift for "${stackName || depId}"...`;
+      }
+
+      showToast(
+        (typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Memeriksa Drift' : 'Checking Drift',
+        (typeof currentLang !== 'undefined' && currentLang === 'id')
+          ? `Memeriksa konfigurasi stack "${stackName || depId}" terhadap server remote...`
+          : `Comparing desired configuration against remote server for "${stackName || depId}"...`,
+        'info'
+      );
+
+      fetch('/deployments/' + depId + '/drift/check', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      })
+      .then(async res => {
+        let data;
+        try {
+          data = await res.json();
+        } catch {
+          data = { success: res.ok };
+        }
+        if (!res.ok) {
+          throw new Error(data.error || ('HTTP ' + res.status));
+        }
+        return data;
+      })
+      .then(data => {
+        if (checkBtn) {
+          checkBtn.disabled = false;
+        }
+
+        if (data.is_drifted) {
+          if (row) {
+            row.setAttribute('data-drift', 'drifted');
+          }
+          if (badgeBtn) {
+            badgeBtn.innerHTML = `
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                ⚠️ Drifted
+              </span>
+            `;
+          }
+          if (diffRow && diffOutput) {
+            diffOutput.textContent = data.diff || '';
+            diffRow.classList.remove('hidden');
+          }
+          if (topoDrift) {
+            topoDrift.innerHTML = `<span class="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded">⚠ Drifted</span>`;
+            const topoLeaf = topoDrift.closest('.topology-dep-leaf');
+            if (topoLeaf) topoLeaf.setAttribute('data-dep-drift', 'drifted');
+          }
+
+          if (alertBox && alertMsg) {
+            alertBox.className = 'rounded-xl p-3.5 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-300 transition-all duration-200 mb-3';
+            if (alertIcon) alertIcon.innerText = '⚠️';
+            alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `⚠️ Drift terdeteksi! Konfigurasi aktual "${stackName || depId}" di remote server berbeda dengan Desired State.`
+              : `⚠️ Configuration drift detected! Actual state on remote node for "${stackName || depId}" differs from Desired State.`;
+          }
+
+          showToast(
+            (typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Drift Terdeteksi' : 'Drift Detected',
+            (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `⚠️ Konfigurasi "${stackName || depId}" di server remote telah mengalami perubahan!`
+              : `⚠️ Configuration drift detected on remote server for "${stackName || depId}"!`,
+            'warning'
+          );
+        } else {
+          if (row) {
+            row.setAttribute('data-drift', 'synced');
+          }
+          if (badgeBtn) {
+            badgeBtn.innerHTML = `
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                ✓ Synced
+              </span>
+            `;
+          }
+          if (diffRow) {
+            diffRow.classList.add('hidden');
+          }
+          if (topoDrift) {
+            topoDrift.innerHTML = `<span class="text-[10px] text-emerald-400/90 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10">✓ Synced</span>`;
+            const topoLeaf = topoDrift.closest('.topology-dep-leaf');
+            if (topoLeaf) topoLeaf.setAttribute('data-dep-drift', 'synced');
+          }
+
+          if (alertBox && alertMsg) {
+            alertBox.className = 'rounded-xl p-3.5 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 transition-all duration-200 mb-3';
+            if (alertIcon) alertIcon.innerText = '✓';
+            alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `✓ Konfigurasi sinkron! Tidak ada drift pada "${stackName || depId}". Server remote 100% sesuai Desired State.`
+              : `✓ In sync! No drift detected on "${stackName || depId}". Remote configuration matches Desired State perfectly.`;
+          }
+
+          showToast(
+            (typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Konfigurasi Sinkron' : 'In Sync (No Drift)',
+            (typeof currentLang !== 'undefined' && currentLang === 'id')
+              ? `✓ Tidak ada drift pada "${stackName || depId}". Server remote 100% sinkron.`
+              : `✓ No drift detected on "${stackName || depId}". Remote server is 100% in sync.`,
+            'success'
+          );
+        }
+
+        filterDeployments();
+      })
+      .catch(err => {
+        if (checkBtn) {
+          checkBtn.disabled = false;
+        }
+        if (badgeBtn && prevBadgeHTML) {
+          badgeBtn.innerHTML = prevBadgeHTML;
+        }
+        const errMsg = err.message || 'Error checking drift';
+        if (alertBox && alertMsg) {
+          alertBox.className = 'rounded-xl p-3.5 text-xs bg-rose-500/10 border border-rose-500/30 text-rose-300 transition-all duration-200 mb-3';
+          if (alertIcon) alertIcon.innerText = '✕';
+          alertMsg.innerText = (typeof currentLang !== 'undefined' && currentLang === 'id')
+            ? `✕ Gagal cek drift pada "${stackName || depId}": ${errMsg}`
+            : `✕ Failed to check drift for "${stackName || depId}": ${errMsg}`;
+        }
+        showToast(
+          (typeof currentLang !== 'undefined' && currentLang === 'id') ? 'Gagal Cek Drift' : 'Check Drift Failed',
+          (typeof currentLang !== 'undefined' && currentLang === 'id')
+            ? `✕ Terjadi kesalahan saat memeriksa drift: ${errMsg}`
+            : `✕ Error occurred while checking drift: ${errMsg}`,
+          'error'
+        );
+      });
+    }
+
     // Close Modals on backdrop click
-    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal', 'terminal-modal', 'container-picker-modal', 'delete-deployment-modal'].forEach(id => {
+    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal', 'terminal-modal', 'container-picker-modal', 'delete-deployment-modal', 'preflight-modal'].forEach(id => {
       const modal = document.getElementById(id);
       if (modal) {
         modal.addEventListener('click', (e) => {
@@ -4901,5 +5647,15 @@
       }
     });
   </script>
+
+  <!-- Global Toast Notification Container -->
+  <div id="global-toast" class="hidden fixed bottom-5 right-5 z-50 max-w-sm w-full bg-zinc-900 border border-zinc-700 rounded-xl p-3.5 shadow-2xl transition-all duration-300 transform translate-y-2 opacity-0 flex items-start gap-3 pointer-events-auto">
+    <span id="global-toast-icon" class="text-base shrink-0 select-none">✓</span>
+    <div class="flex-1 min-w-0">
+      <div id="global-toast-title" class="text-xs font-semibold text-zinc-100"></div>
+      <div id="global-toast-msg" class="text-[11px] text-zinc-400 mt-0.5 break-words"></div>
+    </div>
+    <button type="button" onclick="hideGlobalToast()" class="text-zinc-500 hover:text-zinc-300 transition text-xs p-1 focus:outline-none">✕</button>
+  </div>
 </body>
 </html>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
@@ -28,6 +29,21 @@ type SaveFileResult struct {
 	Output      string `json:"output"`
 	DriftStatus string `json:"drift_status"`
 }
+type DeploymentPreflightResult struct {
+	DeploymentID  string                   `json:"deployment_id"`
+	StackName     string                   `json:"stack_name"`
+	NodeID        string                   `json:"node_id"`
+	NodeName      string                   `json:"node_name"`
+	NodeHost      string                   `json:"node_host"`
+	Status        string                   `json:"status"`
+	HasDrift      bool                     `json:"has_drift"`
+	Diff          string                   `json:"diff"`
+	DesiredHash   string                   `json:"desired_hash"`
+	ActualHash    string                   `json:"actual_hash"`
+	Containers    []nodeclient.ContainerInfo `json:"containers"`
+	ContainerCount int                     `json:"container_count"`
+}
+
 
 // Engine encapsulates core Control Plane domain operations.
 type Engine interface {
@@ -52,6 +68,7 @@ type Engine interface {
 	ListDeploymentFiles(ctx context.Context, deploymentID string, subpath ...string) (remoteDir string, files []ssh.RemoteFileEntry, err error)
 	ViewDeploymentFile(ctx context.Context, deploymentID string, filename string) (remoteFilePath string, content []byte, err error)
 	SaveDeploymentFile(ctx context.Context, deploymentID string, filename string, content []byte, redeploy bool) (*SaveFileResult, error)
+	GetDeploymentPreflight(ctx context.Context, deploymentID string) (*DeploymentPreflightResult, error)
 	CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error
 	DeleteDeploymentPath(ctx context.Context, deploymentID string, path string) error
 	ExtractDeploymentArchive(ctx context.Context, deploymentID string, archiveFilename string, targetDir string) error
@@ -406,11 +423,73 @@ func (e *engine) AdoptDrift(ctx context.Context, deploymentID string) error {
 	return nil
 }
 
+func (e *engine) GetDeploymentPreflight(ctx context.Context, deploymentID string) (*DeploymentPreflightResult, error) {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return nil, fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return nil, fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("node not found: %w", err)
+	}
+
+	client := e.getNodeClient(node)
+	remoteComposeBytes, errCompose := client.ReadStackFile(ctx, stack.Name, "docker-compose.yml")
+	remoteEnvBytes, errEnv := client.ReadStackFile(ctx, stack.Name, ".env")
+	if errCompose != nil && errEnv != nil {
+		return nil, fmt.Errorf("failed to reach node or read stack directory: %w", errCompose)
+	}
+
+	desired := drift.Snapshot{
+		ComposeYAML: stack.ComposeYAML,
+		EnvVars:     dep.EnvVars,
+	}
+	actual := drift.Snapshot{
+		ComposeYAML: string(remoteComposeBytes),
+		EnvVars:     string(remoteEnvBytes),
+	}
+	eval := drift.Evaluate(desired, actual)
+
+	// Query running containers on this node
+	_, containers, _ := client.GetTelemetry(ctx)
+	var matching []nodeclient.ContainerInfo
+	stackLower := strings.ToLower(stack.Name)
+	for _, c := range containers {
+		if strings.EqualFold(c.Names, stack.Name) || strings.Contains(strings.ToLower(c.Names), stackLower) {
+			matching = append(matching, c)
+		}
+	}
+	if matching == nil {
+		matching = []nodeclient.ContainerInfo{}
+	}
+
+	res := &DeploymentPreflightResult{
+		DeploymentID:   dep.ID,
+		StackName:      stack.Name,
+		NodeID:         node.ID,
+		NodeName:       node.Name,
+		NodeHost:       node.Host,
+		Status:         dep.Status,
+		HasDrift:       eval.IsDrifted,
+		Diff:           eval.Diff,
+		DesiredHash:    eval.DesiredHash,
+		ActualHash:     eval.ActualHash,
+		Containers:     matching,
+		ContainerCount: len(matching),
+	}
+	return res, nil
+}
+
 func (e *engine) ListDeploymentFiles(ctx context.Context, deploymentID string, subpath ...string) (string, []ssh.RemoteFileEntry, error) {
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return "", nil, fmt.Errorf("deployment not found: %w", err)
 	}
+
 	stack, err := e.cfg.Store.GetStack(dep.StackID)
 	if err != nil {
 		return "", nil, fmt.Errorf("stack not found: %w", err)
