@@ -100,6 +100,15 @@ func validateSegment(segment string) error {
 	if strings.Contains(trimmed, "..") || strings.Contains(trimmed, "/") || strings.Contains(trimmed, "\\") {
 		return errors.New("invalid path segment")
 	}
+	first := trimmed[0]
+	if !((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || (first >= '0' && first <= '9')) {
+		return errors.New("path segment must start with alphanumeric character")
+	}
+	for _, c := range trimmed {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+			return errors.New("invalid character in path segment")
+		}
+	}
 	return nil
 }
 
@@ -113,6 +122,11 @@ func validateFilename(filename string) error {
 	}
 	if strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, "\\") {
 		return errors.New("absolute paths are not allowed")
+	}
+	for _, c := range trimmed {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
+			return errors.New("invalid characters in filename")
+		}
 	}
 	clean := path.Clean(trimmed)
 	if clean == "." || strings.HasPrefix(clean, "..") {
@@ -132,6 +146,11 @@ func validateSubpath(subpath string) (string, error) {
 	}
 	if strings.HasPrefix(trimmed, "/") {
 		return "", errors.New("absolute paths are not allowed")
+	}
+	for _, c := range trimmed {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/') {
+			return "", errors.New("invalid characters in subpath")
+		}
 	}
 	clean := path.Clean(trimmed)
 	if clean == "." || clean == "" {
@@ -301,9 +320,8 @@ func (c *nodeClient) ExtractStackArchive(ctx context.Context, stackName string, 
 	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar") || strings.HasSuffix(lower, ".tar.bz2") || strings.HasSuffix(lower, ".tar.xz") {
 		cmd = fmt.Sprintf("mkdir -p %q && tar -xf %q -C %q", destDir, fullArchive, destDir)
 	} else if strings.HasSuffix(lower, ".zip") {
-		// ponytail: unzip with fallback to python3/python zipfile module if unzip is not installed on remote node
-		cmd = fmt.Sprintf("mkdir -p %q && if command -v unzip >/dev/null 2>&1; then unzip -o %q -d %q; elif command -v python3 >/dev/null 2>&1; then python3 -c \"import zipfile; zipfile.ZipFile('%s').extractall('%s')\"; elif command -v python >/dev/null 2>&1; then python -c \"import zipfile; zipfile.ZipFile('%s').extractall('%s')\"; else echo 'Neither unzip nor python found on remote node to extract zip archive' >&2; exit 1; fi",
-			destDir, fullArchive, destDir, fullArchive, destDir, fullArchive, destDir)
+		// ponytail: unzip with standard remote CLI tool
+		cmd = fmt.Sprintf("mkdir -p %q && unzip -o %q -d %q", destDir, fullArchive, destDir)
 	} else {
 		return fmt.Errorf("unsupported archive format: %s (supported: .tar.gz, .tgz, .tar, .zip)", cleanArchive)
 	}

@@ -276,6 +276,10 @@ func TestClient_PathSanitation(t *testing.T) {
 		"/etc/shadow",
 		"..",
 		"",
+		"test$(whoami)",
+		"test;id;",
+		"test'quote",
+		"test\"quote",
 	}
 
 	for _, fname := range traversalFilenames {
@@ -300,6 +304,10 @@ func TestClient_PathSanitation(t *testing.T) {
 		"/root",
 		"stack/sub",
 		"",
+		"-bad-name",
+		"stack with space",
+		"stack;id",
+		"stack$(whoami)",
 	}
 
 	for _, sname := range traversalStacks {
