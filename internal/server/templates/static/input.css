@@ -77,38 +77,6 @@
   line-height: 1.15rem !important;
 }
 
-/* Neural Network & Cyber Animations */
-@keyframes pulseGlow {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.03); }
-}
-@keyframes neuralFlow {
-  from { stroke-dashoffset: 40; }
-  to { stroke-dashoffset: 0; }
-}
-@keyframes orbitSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-@keyframes orbitSpinReverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
-}
-
-.animate-neural-pulse {
-  animation: pulseGlow 4s ease-in-out infinite;
-}
-.animate-neural-flow {
-  stroke-dasharray: 6 6;
-  animation: neuralFlow 1.2s linear infinite;
-}
-.animate-orbit-spin {
-  animation: orbitSpin 30s linear infinite;
-}
-.animate-orbit-spin-rev {
-  animation: orbitSpinReverse 40s linear infinite;
-}
-
 /* Collapsible Sidebar Styles */
 #app-sidebar.is-collapsed {
   width: 4.5rem !important;
