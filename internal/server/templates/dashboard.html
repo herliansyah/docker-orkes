@@ -433,8 +433,8 @@
                           data-dep-id="{{$dep.ID}}"
                           data-dep-name="{{$dep.StackName}}"
                           data-dep-search="{{$dep.StackName}} {{$dep.Notes}}"
-                          data-dep-status="{{$dep.Status}}"
-                          data-dep-drift="{{$dep.DriftStatus}}">
+                          data-dep-status="{{if eq $dep.NodeStatus "offline"}}offline{{else}}{{$dep.Status}}{{end}}"
+                          data-dep-drift="{{if eq $dep.NodeStatus "offline"}}offline{{else}}{{$dep.DriftStatus}}{{end}}">
 
                           <div class="flex items-center gap-2.5 min-w-0">
                             <div class="w-7 h-7 rounded-md bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs shrink-0 text-zinc-400">
@@ -443,7 +443,11 @@
                             <div class="min-w-0">
                               <div class="flex items-center gap-2 flex-wrap">
                                 <span class="font-semibold text-xs text-zinc-100 group-hover/dep:text-zinc-50 transition truncate">{{$dep.StackName}}</span>
-                                {{if eq $dep.Status "running"}}
+                                {{if eq $dep.NodeStatus "offline"}}
+                                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="Node is offline">
+                                  <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Offline
+                                </span>
+                                {{else if eq $dep.Status "running"}}
                                 <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                                   <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
                                 </span>
@@ -458,7 +462,9 @@
                                 {{end}}
 
                                 <span id="topo-dep-drift-{{$dep.ID}}">
-                                {{if eq $dep.DriftStatus "synced"}}
+                                {{if eq $dep.NodeStatus "offline"}}
+                                <span class="text-[10px] text-zinc-500 font-mono px-1.5 py-0.5 rounded bg-zinc-800/40" title="Node is offline">Offline</span>
+                                {{else if eq $dep.DriftStatus "synced"}}
                                 <span class="text-[10px] text-emerald-400/90 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10">✓ Synced</span>
                                 {{else if eq $dep.DriftStatus "drifted"}}
                                 <span class="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded">⚠ Drifted</span>
@@ -473,6 +479,13 @@
 
                           <!-- Deployment Quick Actions -->
                           <div class="flex items-center gap-1 shrink-0">
+                            {{if eq $dep.NodeStatus "offline"}}
+                            <span class="text-[10px] text-zinc-500 italic pr-1">Node offline</span>
+                            <button type="button" onclick="openRevisionsModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
+                              class="w-7 h-7 inline-flex items-center justify-center text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition" title="Revisions & Instant Rollback">
+                              📜
+                            </button>
+                            {{else}}
                             <button type="button" onclick="openFileBrowser('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')"
                               class="w-7 h-7 inline-flex items-center justify-center text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800 rounded-md transition" title="Browse files (Live SFTP)">
                               📂
@@ -484,6 +497,7 @@
                             <button type="button" onclick="openPreflightModal('{{$dep.ID}}', '{{$dep.StackName}}', '{{$dep.NodeName}}')" title="Pre-flight check & Redeploy stack" class="h-7 px-2.5 inline-flex items-center gap-1 text-[11px] font-medium text-indigo-300 hover:text-indigo-200 hover:bg-indigo-500/10 border border-indigo-500/30 rounded-md transition">
                               <span>🚀</span> <span>Up</span>
                             </button>
+                            {{end}}
                           </div>
                         </div>
                       </div>
@@ -544,7 +558,7 @@
                   <option value="running">Running</option>
                   <option value="stopped">Stopped</option>
                   <option value="failed">Failed</option>
-                </select>
+                  <option value="offline">Node Offline</option>
 
                 <select id="deployments-drift-filter" onchange="filterDeployments()"
                   class="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
@@ -552,7 +566,7 @@
                   <option value="synced">Synced</option>
                   <option value="drifted">Drifted</option>
                   <option value="untested">Untested</option>
-                </select>
+                  <option value="offline">Offline</option>
               </div>
             </div>
 
@@ -643,8 +657,8 @@
                   id="dep-row-{{.ID}}"
                   data-id="{{.ID}}"
                   data-search="{{.StackName}} {{.NodeName}} {{.Notes}}"
-                  data-status="{{.Status}}"
-                  data-drift="{{.DriftStatus}}">
+                  data-status="{{if eq .NodeStatus "offline"}}offline{{else}}{{.Status}}{{end}}"
+                  data-drift="{{if eq .NodeStatus "offline"}}offline{{else}}{{.DriftStatus}}{{end}}">
                   <td class="py-3.5 px-4 font-semibold text-zinc-100">
                     <div class="flex items-center gap-2">
                       <span class="text-sm">📦</span>
@@ -661,7 +675,11 @@
                     </span>
                   </td>
                   <td class="py-3.5 px-4">
-                    {{if eq .Status "running"}}
+                    {{if eq .NodeStatus "offline"}}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="Host node is offline">
+                      <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> Node Offline
+                    </span>
+                    {{else if eq .Status "running"}}
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Running
                     </span>
@@ -680,6 +698,11 @@
                     {{end}}
                   </td>
                   <td class="py-3.5 px-4" id="dep-drift-cell-{{.ID}}">
+                    {{if eq .NodeStatus "offline"}}
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-zinc-500/10 text-zinc-400 border border-zinc-500/20 cursor-not-allowed" title="Node is offline; cannot check drift">
+                      Offline
+                    </span>
+                    {{else}}
                     <button type="button" id="dep-drift-badge-{{.ID}}" onclick="checkDeploymentDrift(event, '{{.ID}}', '{{.StackName}}')" class="group/drift text-left transition hover:opacity-80 focus:outline-none" title="Click to check configuration drift">
                     {{if eq .DriftStatus "synced"}}
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -695,6 +718,7 @@
                     </span>
                     {{end}}
                     </button>
+                    {{end}}
                   </td>
                   <td class="py-3.5 px-4 text-zinc-400 text-[11px]">
                     {{.UpdatedAt.Format "Jan 02, 15:04"}}
@@ -703,22 +727,39 @@
                     <!-- Action Group: Quick Primary + Dropdown -->
                     <div class="inline-flex items-center gap-1.5">
                       <!-- Quick Button 0: Containers Browser -->
+                      {{if eq .NodeStatus "offline"}}
+                      <button type="button" disabled class="opacity-40 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-700 px-2.5 py-1 rounded text-xs inline-flex items-center gap-1" title="Node is offline">
+                        <span>🐳</span> <span class="hidden sm:inline" data-i18n="btn_containers">Containers</span>
+                      </button>
+                      {{else}}
                       <button type="button" onclick="toggleDeploymentContainers('{{.ID}}')"
                         class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-2.5 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Inspect containers in this stack">
                         <span>🐳</span> <span class="hidden sm:inline" data-i18n="btn_containers">Containers</span>
                       </button>
+                      {{end}}
 
                       <!-- Quick Button 1: Files Browser -->
+                      {{if eq .NodeStatus "offline"}}
+                      <button type="button" disabled class="opacity-40 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-700 px-2.5 py-1 rounded text-xs inline-flex items-center gap-1" title="Node is offline">
+                        <span>📂</span> <span class="hidden sm:inline" data-i18n="btn_files">Files</span>
+                      </button>
+                      {{else}}
                       <button type="button" onclick="openFileBrowser('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')"
                         class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2.5 py-1 rounded text-xs transition" title="Browse files in remote directory">
                         📂 <span class="hidden sm:inline" data-i18n="btn_files">Files</span>
                       </button>
+                      {{end}}
 
-                      <!-- Quick Button 2: Up / Redeploy -->
                       <!-- Quick Button 2: Up / Redeploy with Pre-flight Check -->
+                      {{if eq .NodeStatus "offline"}}
+                      <button type="button" disabled class="opacity-40 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-700 px-2.5 py-1 rounded text-xs font-medium" title="Node is offline">
+                        🚀 <span class="hidden sm:inline">Up</span>
+                      </button>
+                      {{else}}
                       <button type="button" onclick="openPreflightModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}')" title="Pre-flight check & Redeploy stack on server" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded text-xs transition shadow-sm font-medium">
                         🚀 <span class="hidden sm:inline">Up</span>
                       </button>
+                      {{end}}
 
                       <!-- Action Dropdown Menu -->
                       <div class="relative inline-block text-left">
@@ -729,10 +770,16 @@
 
                         <div id="dep-actions-{{.ID}}" class="action-dropdown hidden absolute right-0 mt-1 w-44 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-20 py-1 divide-y divide-zinc-800 text-left">
                           <div class="py-1">
+                            {{if eq .NodeStatus "offline"}}
+                            <span class="w-full text-left px-3 py-1.5 text-xs text-zinc-500 cursor-not-allowed flex items-center gap-2 font-medium opacity-50" title="Node is offline">
+                              <span>🔄</span> <span>Pull & Rollout</span>
+                            </span>
+                            {{else}}
                             <button type="button" onclick="openLifecycleActionModal('rollout', '{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 flex items-center gap-2 font-medium">
                               <span>🔄</span> <span>Pull & Rollout</span>
                             </button>
+                            {{end}}
 
                             <button type="button" onclick="document.getElementById('edit-dep-{{.ID}}').classList.toggle('hidden'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
@@ -744,18 +791,30 @@
                               <span>📜</span> <span>Revisions & Rollback</span>
                             </button>
 
+                            {{if eq .NodeStatus "offline"}}
+                            <span class="w-full text-left px-3 py-1.5 text-xs text-zinc-500 cursor-not-allowed flex items-center gap-2 opacity-50" title="Node is offline">
+                              <span>🖥️</span> <span data-i18n="menu_host_terminal">Host Terminal</span>
+                            </span>
+                            {{else}}
                             <button type="button" onclick="openHostTerminal('{{.NodeID}}', '{{.NodeName}} (Host)'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center gap-2">
                               <span>🖥️</span> <span data-i18n="menu_host_terminal">Host Terminal</span>
                             </button>
+                            {{end}}
 
+                            {{if eq .NodeStatus "offline"}}
+                            <span class="w-full text-left px-3 py-1.5 text-xs text-zinc-500 cursor-not-allowed flex items-center gap-2 opacity-50" title="Node is offline">
+                              <span>🔍</span> <span data-i18n="menu_check_drift">Check Drift</span>
+                            </span>
+                            {{else}}
                             <form method="POST" action="/deployments/{{.ID}}/drift/check" class="m-0" onsubmit="checkDeploymentDrift(event, '{{.ID}}', '{{.StackName}}'); return false;">
                               <button type="submit" id="btn-check-drift-{{.ID}}" class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
                                 <span>🔍</span> <span data-i18n="menu_check_drift">Check Drift</span>
                               </button>
                             </form>
+                            {{end}}
 
-                            {{if ne .Status "stopped"}}
+                            {{if and (ne .Status "stopped") (ne .NodeStatus "offline")}}
                             <button type="button" onclick="openLifecycleActionModal('restart', '{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
                               <span>🔄</span> <span data-i18n="menu_restart">Restart Stack</span>
@@ -766,7 +825,7 @@
                               <span>⏹️</span> <span data-i18n="menu_down">Stop Stack (Down)</span>
                             </button>
                             {{end}}
-
+                          </div>
                           <div class="py-1">
                             <button type="button" onclick="openDeleteDeploymentModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();" class="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2">
                               <span>🗑️</span> <span data-i18n="menu_delete">Delete Deployment</span>

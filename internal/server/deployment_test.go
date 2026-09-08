@@ -675,3 +675,89 @@ func TestServer_DeploymentPreflightAndUp(t *testing.T) {
 	}
 }
 
+func TestServer_OfflineNodeDeploymentSafety(t *testing.T) {
+	mockExec := &mockDeployExecutor{}
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+	handler := srv.Handler()
+
+	loginForm := url.Values{"password": {"secret-password"}}
+	reqLogin := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	reqLogin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recLogin := httptest.NewRecorder()
+	handler.ServeHTTP(recLogin, reqLogin)
+	cookie := recLogin.Result().Cookies()[0]
+
+	// Seed offline node and stack
+	_ = srv.Store().CreateNode(store.Node{
+		ID:     "node-offline",
+		Name:   "Offline Node",
+		Host:   "10.0.0.99",
+		Port:   22,
+		Status: "offline",
+	})
+	_ = srv.Store().CreateStack(store.Stack{
+		ID:          "stack-off",
+		Name:        "off-stack",
+		ComposeYAML: "services:\n  web:\n    image: nginx\n",
+	})
+	_ = srv.Store().CreateDeployment(store.Deployment{
+		ID:          "dep-offline",
+		StackID:     "stack-off",
+		NodeID:      "node-offline",
+		Status:      "running",
+		DriftStatus: "synced",
+	})
+
+	// 1. Verify store query loads NodeStatus
+	deps, err := srv.Store().ListDeployments()
+	if err != nil {
+		t.Fatalf("ListDeployments: %v", err)
+	}
+	if len(deps) != 1 || deps[0].NodeStatus != "offline" {
+		t.Fatalf("expected NodeStatus 'offline', got %+v", deps)
+	}
+
+	// 2. Query containers on offline node
+	reqContainers := httptest.NewRequest(http.MethodGet, "/deployments/dep-offline/containers", nil)
+	reqContainers.AddCookie(cookie)
+	recContainers := httptest.NewRecorder()
+	handler.ServeHTTP(recContainers, reqContainers)
+	if !strings.Contains(recContainers.Body.String(), "is offline") {
+		t.Errorf("expected container check to report offline node, got: %s", recContainers.Body.String())
+	}
+
+	// 3. Drift check on offline node
+	reqDrift := httptest.NewRequest(http.MethodPost, "/deployments/dep-offline/drift/check", nil)
+	reqDrift.Header.Set("Accept", "application/json")
+	reqDrift.AddCookie(cookie)
+	recDrift := httptest.NewRecorder()
+	handler.ServeHTTP(recDrift, reqDrift)
+	if recDrift.Code != http.StatusInternalServerError || !strings.Contains(recDrift.Body.String(), "offline") {
+		t.Errorf("expected drift check error for offline node, got %d: %s", recDrift.Code, recDrift.Body.String())
+	}
+
+	// 4. Dashboard renders Node Offline badge and disabled actions
+	reqDash := httptest.NewRequest(http.MethodGet, "/", nil)
+	reqDash.AddCookie(cookie)
+	recDash := httptest.NewRecorder()
+	handler.ServeHTTP(recDash, reqDash)
+	if recDash.Code != http.StatusOK {
+		t.Fatalf("expected 200 from dashboard, got %d", recDash.Code)
+	}
+	dashHTML := recDash.Body.String()
+	if !strings.Contains(dashHTML, "Node Offline") {
+		t.Errorf("expected dashboard to display 'Node Offline' badge")
+	}
+	if !strings.Contains(dashHTML, `data-status="offline"`) {
+		t.Errorf("expected deployment row data-status='offline'")
+	}
+}
+

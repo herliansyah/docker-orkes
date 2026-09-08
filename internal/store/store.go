@@ -65,6 +65,7 @@ type Deployment struct {
 	NodeID        string    `json:"node_id"`
 	StackName     string    `json:"stack_name,omitempty"`
 	NodeName      string    `json:"node_name,omitempty"`
+	NodeStatus    string    `json:"node_status,omitempty"`
 	EnvVars       string    `json:"env_vars"`
 	Notes         string    `json:"notes"`
 	Status        string    `json:"status"` // pending, deploying, running, stopped, failed
@@ -370,7 +371,7 @@ func (s *Store) CreateDeployment(d Deployment) error {
 
 func (s *Store) ListDeployments() ([]Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
@@ -385,7 +386,7 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 	var deps []Deployment
 	for rows.Next() {
 		var d Deployment
-		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		deps = append(deps, d)
@@ -395,7 +396,7 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 
 func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
@@ -411,7 +412,7 @@ func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 	var deps []Deployment
 	for rows.Next() {
 		var d Deployment
-		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		deps = append(deps, d)
@@ -421,14 +422,14 @@ func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 
 func (s *Store) GetDeployment(id string) (*Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
 		WHERE d.id = ?
 	`
 	var d Deployment
-	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt)
+	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
