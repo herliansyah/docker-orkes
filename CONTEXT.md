@@ -36,6 +36,10 @@ _Avoid_: Conflict, sync mismatch, diff
 The verification operation that compares SHA-256 checksums and generates line diffs between the Desired State and the Actual State on a Node.
 _Avoid_: Diff scan, sync check
 
+**Pre-flight Check**:
+An interactive evaluation comparing Desired State against Actual State, detailing configuration diffs and container impacts presented to an operator immediately prior to executing a Deployment mutation.
+_Avoid_: Dry run scan, pre-deploy verification, diff preview
+
 
 **Git Mirror**:
 An external Git repository maintained by the Control Plane as a versioned backup and audit log of all Stacks and Node assignments.

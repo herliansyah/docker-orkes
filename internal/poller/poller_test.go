@@ -113,6 +113,10 @@ func (f *fakeEngine) ViewDeploymentFile(ctx context.Context, deploymentID string
 func (f *fakeEngine) SaveDeploymentFile(ctx context.Context, deploymentID string, filename string, content []byte, redeploy bool) (*controlplane.SaveFileResult, error) {
 	return nil, nil
 }
+func (f *fakeEngine) GetDeploymentPreflight(ctx context.Context, deploymentID string) (*controlplane.DeploymentPreflightResult, error) {
+	return nil, nil
+}
+
 
 func (f *fakeEngine) CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error {
 	return nil

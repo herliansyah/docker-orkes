@@ -207,6 +207,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/down", s.requireAuth(http.HandlerFunc(s.handleDownDeployment)))
 	mux.Handle("POST /deployments/{id}/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeployment)))
 	mux.Handle("GET /deployments/{id}/containers", s.requireAuth(http.HandlerFunc(s.handleGetDeploymentContainers)))
+	mux.Handle("GET /deployments/{id}/preflight", s.requireAuth(http.HandlerFunc(s.handleDeploymentPreflight)))
 
 
 	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
@@ -405,7 +406,22 @@ func (s *Server) handleBootstrapNode(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTestNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_, _ = s.cp.TestNode(r.Context(), id)
+	dockerVer, err := s.cp.TestNode(r.Context(), id)
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":        true,
+			"docker_version": dockerVer,
+		})
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -636,23 +652,81 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 
 
 
+func (s *Server) handleDeploymentPreflight(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	preflight, err := s.cp.GetDeploymentPreflight(r.Context(), id)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"preflight": preflight,
+	})
+}
+
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_ = s.cp.Deploy(r.Context(), id)
+	err := s.cp.Deploy(r.Context(), id)
+	dep, _ := s.store.GetDeployment(id)
+	lastLog := ""
+	if dep != nil {
+		lastLog = dep.LastLog
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+				"output":  lastLog,
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"output":  lastLog,
+			"message": "Stack deployed successfully and containers are running",
+		})
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleRolloutDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	err := s.cp.Deploy(r.Context(), id)
+	dep, _ := s.store.GetDeployment(id)
+	lastLog := ""
+	if dep != nil {
+		lastLog = dep.LastLog
+	}
+
 	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 		w.Header().Set("Content-Type", "application/json")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+				"output":  lastLog,
+			})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Deployment rolled out successfully with latest images"})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"output":  lastLog,
+			"message": "Images pulled and stack rolled out successfully",
+		})
 		return
 	}
 	if err != nil {
@@ -664,13 +738,61 @@ func (s *Server) handleRolloutDeployment(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleRestartDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_ = s.cp.Restart(r.Context(), id)
+	err := s.cp.Restart(r.Context(), id)
+	dep, _ := s.store.GetDeployment(id)
+	lastLog := ""
+	if dep != nil {
+		lastLog = dep.LastLog
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+				"output":  lastLog,
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"output":  lastLog,
+			"message": "Stack containers restarted successfully",
+		})
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleDownDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_ = s.cp.Down(r.Context(), id)
+	err := s.cp.Down(r.Context(), id)
+	dep, _ := s.store.GetDeployment(id)
+	lastLog := ""
+	if dep != nil {
+		lastLog = dep.LastLog
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+				"output":  lastLog,
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"output":  lastLog,
+			"message": "Stack stopped and containers removed (volumes preserved)",
+		})
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -747,7 +869,39 @@ func computeDesiredHash(composeYAML, envVars string) string {
 
 func (s *Server) handleCheckDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_, _ = s.cp.CheckDrift(r.Context(), id)
+	result, err := s.cp.CheckDrift(r.Context(), id)
+
+	isJSON := strings.Contains(r.Header.Get("Accept"), "application/json") || r.Header.Get("X-Requested-With") == "XMLHttpRequest"
+	if isJSON {
+		w.Header().Set("Content-Type", "application/json")
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		driftStatus := "synced"
+		diff := ""
+		isDrifted := false
+		if result != nil {
+			isDrifted = result.IsDrifted
+			diff = result.Diff
+			if isDrifted {
+				driftStatus = "drifted"
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":       true,
+			"deployment_id": id,
+			"is_drifted":    isDrifted,
+			"drift_status":  driftStatus,
+			"diff":          diff,
+		})
+		return
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
