@@ -91,6 +91,10 @@ type DeploymentRevision struct {
 func (s *Store) Close() error {
 	return s.db.Close()
 }
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
 
 func (s *Store) initSchema() error {
 	schema := `
@@ -204,7 +208,7 @@ func (s *Store) ValidateSession(token string) bool {
 		return false
 	}
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token = ?`, token).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token = ? AND created_at >= datetime('now', '-7 days')`, token).Scan(&count)
 	return err == nil && count > 0
 }
 

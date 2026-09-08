@@ -15,6 +15,10 @@ _Avoid_: Server, target, agent machine, host
 **Stack**:
 A reusable application template defined by a `docker-compose.yml` file and default environment variable definitions.
 _Avoid_: Compose project, service, bundle
+**Stack Slug**:
+The canonical, URL-safe alphanumeric identifier that uniquely names a Stack and defines its isolated Stack Directory path.
+_Avoid_: Stack identifier, stack folder, display name
+
 
 **Deployment**:
 An active instantiation of a Stack assigned to a specific Node, containing the resolved environment variables and runtime state.
@@ -72,6 +76,10 @@ _Avoid_: Active node, master node, main server
 **Standby Control Plane**:
 A passive replica instance of the Control Plane that receives periodic database state updates from the Primary Control Plane and remains stopped to prevent split-brain polling until manually promoted during an incident.
 _Avoid_: Backup node, slave, secondary worker
+
+**Operator Session**:
+An authenticated access window granted to an operator upon verifying the master password, bounded by a finite time-to-live in the Control Plane database.
+_Avoid_: User session, login token, auth cookie
 
 **Image Registry**:
 An internal OCI-compliant registry running as a Stack on a designated Node that provides both local repository storage for custom application images and pull-through caching for upstream registries.

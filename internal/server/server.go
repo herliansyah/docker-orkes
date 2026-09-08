@@ -7,17 +7,19 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"io/fs"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
 	"sync"
 
 	"docker-orkes/internal/controlplane"
@@ -502,6 +504,11 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateStackSlug(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := validateComposeYAML(composeYAML); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -540,6 +547,11 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" || composeYAML == "" {
 		http.Error(w, "Name and compose_yaml are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := validateStackSlug(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -585,6 +597,16 @@ func validateComposeYAML(content string) error {
 	}
 	return nil
 }
+var stackSlugRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
+var gitBranchRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$`)
+
+func validateStackSlug(name string) error {
+	if !stackSlugRegex.MatchString(name) {
+		return errors.New("invalid stack name: must be 1-64 characters alphanumeric, dashes, dots, or underscores, starting with alphanumeric")
+	}
+	return nil
+}
+
 
 func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	s.handleDashboard(w, r)
@@ -1348,6 +1370,23 @@ func (s *Server) handleUpdateGitSettings(w http.ResponseWriter, r *http.Request)
 		branch = "main"
 	}
 
+	if repoURL != "" {
+		if strings.HasPrefix(repoURL, "-") {
+			http.Error(w, "Invalid git mirror repository URL", http.StatusBadRequest)
+			return
+		}
+		lowerURL := strings.ToLower(repoURL)
+		if !strings.HasPrefix(lowerURL, "https://") && !strings.HasPrefix(lowerURL, "http://") && !strings.HasPrefix(lowerURL, "ssh://") && !strings.HasPrefix(lowerURL, "git@") {
+			http.Error(w, "Invalid git mirror URL protocol: must start with https://, http://, ssh://, or git@", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if strings.HasPrefix(branch, "-") || !gitBranchRegex.MatchString(branch) {
+		http.Error(w, "Invalid git mirror branch name", http.StatusBadRequest)
+		return
+	}
+
 	_ = s.store.SetSetting("git_mirror_url", repoURL)
 	_ = s.store.SetSetting("git_mirror_branch", branch)
 
@@ -1624,8 +1663,17 @@ func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	containerID := r.PathValue("container_id")
-
+	containerID := strings.TrimSpace(r.PathValue("container_id"))
+	if containerID == "" {
+		http.Error(w, "Invalid container ID", http.StatusBadRequest)
+		return
+	}
+	for _, c := range containerID {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+			http.Error(w, "Invalid container ID", http.StatusBadRequest)
+			return
+		}
+	}
 	node, err := s.store.GetNode(id)
 	if err != nil {
 		http.Error(w, "Node not found", http.StatusNotFound)
@@ -2252,6 +2300,14 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 	defer ws.Close()
 
 	r := ws.Request()
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
+			_, _ = ws.Write([]byte("\r\n\x1b[31mError: Cross-origin WebSocket connection rejected\x1b[0m\r\n"))
+			return
+		}
+	}
+
 	nodeID := strings.TrimSpace(r.URL.Query().Get("node_id"))
 	if nodeID == "" {
 		_, _ = ws.Write([]byte("\r\n\x1b[31mError: node_id parameter is required\x1b[0m\r\n"))

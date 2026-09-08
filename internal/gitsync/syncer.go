@@ -25,6 +25,9 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 	if branch == "" {
 		branch = "main"
 	}
+	if strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid branch name: %s", branch)
+	}
 
 	if err := os.MkdirAll(mirrorDir, 0755); err != nil {
 		return fmt.Errorf("failed to create git mirror dir: %w", err)
@@ -89,21 +92,23 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 
 	// If remote repo URL is provided, configure origin and push
 	if repoURL != "" {
+		if strings.HasPrefix(repoURL, "-") {
+			return fmt.Errorf("invalid repository url: %s", repoURL)
+		}
 		// Set remote
 		remotesCmd := exec.CommandContext(ctx, "git", "remote")
 		remotesCmd.Dir = mirrorDir
 		remotesOut, _ := remotesCmd.Output()
 
 		if strings.Contains(string(remotesOut), "origin") {
-			cmdSetURL := exec.CommandContext(ctx, "git", "remote", "set-url", "origin", repoURL)
+			cmdSetURL := exec.CommandContext(ctx, "git", "remote", "set-url", "origin", "--", repoURL)
 			cmdSetURL.Dir = mirrorDir
 			_ = cmdSetURL.Run()
 		} else {
-			cmdAddRemote := exec.CommandContext(ctx, "git", "remote", "add", "origin", repoURL)
+			cmdAddRemote := exec.CommandContext(ctx, "git", "remote", "add", "origin", "--", repoURL)
 			cmdAddRemote.Dir = mirrorDir
 			_ = cmdAddRemote.Run()
 		}
-
 		// Write SSH key to temporary file for GIT_SSH_COMMAND if key is provided
 		var env []string
 		if privKey != "" {
@@ -119,7 +124,7 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 			}
 		}
 
-		cmdPush := exec.CommandContext(ctx, "git", "push", "-u", "origin", branch)
+		cmdPush := exec.CommandContext(ctx, "git", "push", "-u", "origin", "--", branch)
 		cmdPush.Dir = mirrorDir
 		if len(env) > 0 {
 			cmdPush.Env = env

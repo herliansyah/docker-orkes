@@ -304,4 +304,110 @@ func TestServer_StaticAssetsAndTerminalAuth(t *testing.T) {
 	}
 }
 
+func TestServer_SecurityHardening(t *testing.T) {
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "test-password",
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// Log in to obtain valid auth cookie
+	loginForm := url.Values{"password": {"test-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	// 1. Rejection of invalid container_id in logs (injection prevention)
+	invalidContainerIDs := []string{
+		"c123;id",
+		"c123$(whoami)",
+		"c123|reboot",
+		"c123&touch",
+		"c 123",
+		"c'123",
+		"c\"123",
+	}
+	for _, cid := range invalidContainerIDs {
+		req = httptest.NewRequest(http.MethodGet, "/nodes/node-1/containers/"+url.PathEscape(cid)+"/logs", nil)
+		req.AddCookie(cookie)
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for container ID %q, got %d", cid, rec.Code)
+		}
+	}
+
+	// 2. Rejection of invalid stack slug names
+	invalidStackNames := []string{
+		"-leading-dash",
+		".leading-dot",
+		"has spaces",
+		"has;semicolon",
+		"has$dollar",
+		"has`backtick`",
+		"has/slash",
+	}
+	for _, sname := range invalidStackNames {
+		form := url.Values{
+			"name":         {sname},
+			"compose_yaml": {"services:\n  app:\n    image: nginx:alpine\n"},
+		}
+		req = httptest.NewRequest(http.MethodPost, "/stacks", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for stack name %q, got %d", sname, rec.Code)
+		}
+	}
+
+	// 3. Rejection of invalid git branch / repoURL settings
+	invalidGitBranches := []string{
+		"-b",
+		"--upload-pack=evil",
+		"has space",
+	}
+	for _, branch := range invalidGitBranches {
+		form := url.Values{
+			"git_mirror_url":    {"https://github.com/example/repo.git"},
+			"git_mirror_branch": {branch},
+		}
+		req = httptest.NewRequest(http.MethodPost, "/settings/git", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.AddCookie(cookie)
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("expected 400 Bad Request for git branch %q, got %d", branch, rec.Code)
+		}
+	}
+
+	// 4. Session 7-day TTL expiration
+	st := srv.Store()
+	// Insert old session token directly with timestamp 8 days ago
+	oldToken := "old-expired-session-token"
+	_, err = st.DB().Exec("INSERT INTO sessions (token, created_at) VALUES (?, datetime('now', '-8 days'))", oldToken)
+	if err != nil {
+		t.Fatalf("failed to insert expired session: %v", err)
+	}
+	if st.ValidateSession(oldToken) {
+		t.Errorf("expected expired session (8 days old) to be invalid")
+	}
+
+	// Fresh session should be valid
+	freshToken := "fresh-valid-session-token"
+	_ = st.CreateSession(freshToken)
+	if !st.ValidateSession(freshToken) {
+		t.Errorf("expected fresh session to be valid")
+	}
+}
+
 
