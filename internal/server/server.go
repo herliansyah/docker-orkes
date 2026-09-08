@@ -1104,6 +1104,18 @@ func (s *Server) handleGetDeploymentContainers(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// ponytail: Reject container inspection early when node is offline (ADR 0004).
+	if node.Status == "offline" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":      fmt.Sprintf("Node %s is offline", node.Name),
+			"node_id":    node.ID,
+			"node_name":  node.Name,
+			"stack_name": dep.StackName,
+			"containers": []ContainerInfo{},
+		})
+		return
+	}
 	psOut, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")

@@ -368,8 +368,16 @@ func (e *engine) CheckDrift(ctx context.Context, deploymentID string) (*drift.Dr
 		return nil, fmt.Errorf("node not found: %w", err)
 	}
 
+	// ponytail: Reject drift check if node is offline to avoid false drift alerts (ADR 0004).
+	if node.Status == "offline" {
+		return nil, fmt.Errorf("node %s is offline", node.Name)
+	}
+
 	client := e.getNodeClient(node)
-	remoteComposeBytes, _ := client.ReadStackFile(ctx, stack.Name, "docker-compose.yml")
+	remoteComposeBytes, err := client.ReadStackFile(ctx, stack.Name, "docker-compose.yml")
+	if err != nil {
+		return nil, fmt.Errorf("read remote docker-compose.yml on %s: %w", node.Name, err)
+	}
 	remoteEnvBytes, _ := client.ReadStackFile(ctx, stack.Name, ".env")
 
 	desired := drift.Snapshot{
