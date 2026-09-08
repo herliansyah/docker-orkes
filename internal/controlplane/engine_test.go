@@ -193,6 +193,40 @@ func TestControlPlane_DeploymentLifecycle(t *testing.T) {
 	if !hasDown {
 		t.Errorf("expected docker compose down in executor commands")
 	}
+
+	// 6. Test DeleteDeployment with Detach
+	if err := eng.DeleteDeployment(ctx, "d1", false, false, false); err != nil {
+		t.Fatalf("DeleteDeployment detach failed: %v", err)
+	}
+	if _, err := st.GetDeployment("d1"); err == nil {
+		t.Errorf("expected deployment d1 to be deleted from store")
+	}
+
+	// Create d2 for Teardown test
+	if err := st.CreateDeployment(store.Deployment{ID: "d2", StackID: "s1", NodeID: "n1", EnvVars: "PORT=8080"}); err != nil {
+		t.Fatalf("create deployment d2: %v", err)
+	}
+	if err := eng.DeleteDeployment(ctx, "d2", true, true, false); err != nil {
+		t.Fatalf("DeleteDeployment teardown with purge failed: %v", err)
+	}
+	mockExec.mu.Lock()
+	var hasDownV bool
+	var hasRmStackDir bool
+	for _, cmd := range mockExec.commands {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down -v") {
+			hasDownV = true
+		}
+		if strings.Contains(cmd, "rm -rf") && strings.Contains(cmd, ".docker-orkes/stacks/web-proxy") {
+			hasRmStackDir = true
+		}
+	}
+	mockExec.mu.Unlock()
+	if !hasDownV {
+		t.Errorf("expected docker compose down -v in executor commands")
+	}
+	if !hasRmStackDir {
+		t.Errorf("expected rm -rf stack directory in executor commands")
+	}
 }
 
 func TestControlPlane_DriftWorkflow(t *testing.T) {

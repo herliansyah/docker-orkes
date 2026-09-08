@@ -391,6 +391,199 @@ func TestServer_DeploymentLifecycle(t *testing.T) {
 		t.Fatalf("expected 200 OK for auxiliary file delete, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }
+func TestServer_DeploymentDeletionLifecycle(t *testing.T) {
+	mockExec := &mockDeployExecutor{}
+
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	loginForm := url.Values{"password": {"secret-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	if err := srv.Store().CreateNode(store.Node{
+		ID:     "node-1",
+		Name:   "Worker 1",
+		Host:   "10.0.0.1",
+		Port:   22,
+		User:   "root",
+		Status: "online",
+	}); err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	if err := srv.Store().CreateStack(store.Stack{
+		ID:          "stack-1",
+		Name:        "web-app",
+		ComposeYAML: "services:\n  web:\n    image: nginx:alpine\n",
+	}); err != nil {
+		t.Fatalf("failed to create stack: %v", err)
+	}
+
+	// 1. Test Detach (action=detach)
+	// Detach must delete metadata from store, but NOT run docker compose down on node.
+	dep1 := store.Deployment{
+		ID:      "dep-detach",
+		StackID: "stack-1",
+		NodeID:  "node-1",
+		Status:  "running",
+	}
+	if err := srv.Store().CreateDeployment(dep1); err != nil {
+		t.Fatalf("failed to create deployment: %v", err)
+	}
+
+	mockExec.mu.Lock()
+	mockExec.executedCmds = nil
+	mockExec.mu.Unlock()
+
+	detachForm := url.Values{
+		"action": {"detach"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/dep-detach/delete", strings.NewReader(detachForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after detach delete, got %d", rec.Code)
+	}
+
+	if _, err := srv.Store().GetDeployment("dep-detach"); err == nil {
+		t.Errorf("expected dep-detach to be removed from store")
+	}
+
+	mockExec.mu.Lock()
+	for _, cmd := range mockExec.executedCmds {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down") {
+			t.Errorf("detach should NOT run docker compose down, found command: %s", cmd)
+		}
+	}
+	mockExec.mu.Unlock()
+
+	// 2. Test Purge Safety Validation
+	// Purge volumes requires confirm_name == stack name
+	dep2 := store.Deployment{
+		ID:      "dep-purge-check",
+		StackID: "stack-1",
+		NodeID:  "node-1",
+		Status:  "running",
+	}
+	if err := srv.Store().CreateDeployment(dep2); err != nil {
+		t.Fatalf("failed to create deployment: %v", err)
+	}
+
+	purgeBadForm := url.Values{
+		"action":        {"teardown"},
+		"purge_volumes": {"true"},
+		"confirm_name":  {"wrong-name"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/dep-purge-check/delete", strings.NewReader(purgeBadForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when confirm_name does not match, got %d", rec.Code)
+	}
+	if _, err := srv.Store().GetDeployment("dep-purge-check"); err != nil {
+		t.Errorf("deployment should not be deleted on failed confirmation")
+	}
+
+	// 3. Test Teardown with Purge Volumes & Confirmation
+	purgeGoodForm := url.Values{
+		"action":        {"teardown"},
+		"purge_volumes": {"true"},
+		"confirm_name":  {"web-app"},
+	}
+	mockExec.mu.Lock()
+	mockExec.executedCmds = nil
+	mockExec.mu.Unlock()
+
+	req = httptest.NewRequest(http.MethodPost, "/deployments/dep-purge-check/delete", strings.NewReader(purgeGoodForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after successful purge delete, got %d", rec.Code)
+	}
+
+	mockExec.mu.Lock()
+	var hasDownV bool
+	var hasRmStackDir bool
+	for _, cmd := range mockExec.executedCmds {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down -v") {
+			hasDownV = true
+		}
+		if strings.Contains(cmd, "rm -rf") && strings.Contains(cmd, ".docker-orkes/stacks/web-app") {
+			hasRmStackDir = true
+		}
+	}
+	mockExec.mu.Unlock()
+
+	if !hasDownV {
+		t.Errorf("expected docker compose down -v command, executed: %v", mockExec.executedCmds)
+	}
+	if !hasRmStackDir {
+		t.Errorf("expected rm -rf stack directory command, executed: %v", mockExec.executedCmds)
+	}
+
+	// 4. Test Standard Teardown (no purge)
+	dep3 := store.Deployment{
+		ID:      "dep-teardown",
+		StackID: "stack-1",
+		NodeID:  "node-1",
+		Status:  "running",
+	}
+	if err := srv.Store().CreateDeployment(dep3); err != nil {
+		t.Fatalf("failed to create deployment: %v", err)
+	}
+
+	mockExec.mu.Lock()
+	mockExec.executedCmds = nil
+	mockExec.mu.Unlock()
+
+	teardownForm := url.Values{
+		"action": {"teardown"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/deployments/dep-teardown/delete", strings.NewReader(teardownForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound && rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected redirect after teardown delete, got %d", rec.Code)
+	}
+
+	mockExec.mu.Lock()
+	var hasDownNormal bool
+	for _, cmd := range mockExec.executedCmds {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down") && !strings.Contains(cmd, "-v") {
+			hasDownNormal = true
+		}
+	}
+	mockExec.mu.Unlock()
+
+	if !hasDownNormal {
+		t.Errorf("expected standard docker compose down command, executed: %v", mockExec.executedCmds)
+	}
+}
 
 
 

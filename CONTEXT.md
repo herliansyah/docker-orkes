@@ -125,6 +125,34 @@ _Avoid_: Stack storage, internal network
 A volume or network created outside the Control Plane (via manual `docker volume create` / `docker network create` or external tools).
 _Avoid_: External volume, orphan network, foreign storage
 
+**Deployment Deletion**:
+The removal of a Deployment record from the Control Plane, with operator-selected lifecycle actions on the target Node (teardown or detach).
+_Avoid_: Stack uninstall, purge instance, cluster removal
+
+**Detached Deployment**:
+A Deployment removed from the Control Plane without tearing down Node resources, leaving existing containers running as Unmanaged Containers and volumes intact.
+_Avoid_: Orphaned deployment, unlinked stack
+
+**Teardown**:
+The execution of `docker compose down` on a Node via the SSH Executor to stop and remove containers and networks associated with a Deployment.
+_Avoid_: Destroy, wipe, uninstall
+
+**Data Purge**:
+The explicit, destructive removal of Managed Volumes and Stack Directory contents on a Node during Deployment Deletion, requiring typed safety confirmation.
+_Avoid_: Hard delete, format, scrub
+
+**Force Deletion**:
+The removal of a Deployment metadata record from the Control Plane when the target Node is unreachable, bypassing remote SSH cleanup.
+_Avoid_: Hard kill, bypass delete, ignore offline
+
+**Deployment Adoption**:
+The process of attaching the Control Plane to existing Unmanaged Containers and volumes on a Node, reconciling them with a Desired State without unnecessary recreation.
+_Avoid_: Container import, hijack, take over
+
+**In-Place Convergence**:
+The alignment of a Node's runtime state to a Desired State using `docker compose up -d --no-recreate`, preserving running containers that already match configuration and protecting existing Node Volumes.
+_Avoid_: Soft sync, non-destructive deploy, graceful reload
+
 
 
 

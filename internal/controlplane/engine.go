@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
-
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
 	"docker-orkes/internal/nodeclient"
@@ -45,6 +45,7 @@ type Engine interface {
 	ListRevisions(ctx context.Context, deploymentID string) ([]store.DeploymentRevision, error)
 	Restart(ctx context.Context, deploymentID string) error
 	Down(ctx context.Context, deploymentID string) error
+	DeleteDeployment(ctx context.Context, deploymentID string, teardown bool, purgeVolumes bool, force bool) error
 	CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error)
 	ReconcileDrift(ctx context.Context, deploymentID string) error
 	AdoptDrift(ctx context.Context, deploymentID string) error
@@ -288,6 +289,53 @@ func (e *engine) Down(ctx context.Context, deploymentID string) error {
 	_ = e.cfg.Store.UpdateDeploymentStatus(dep.ID, "stopped", out)
 	return nil
 }
+func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, teardown bool, purgeVolumes bool, force bool) error {
+	dep, err := e.cfg.Store.GetDeployment(deploymentID)
+	if err != nil {
+		return fmt.Errorf("deployment not found: %w", err)
+	}
+	stack, err := e.cfg.Store.GetStack(dep.StackID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	node, err := e.cfg.Store.GetNode(dep.NodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+
+	if teardown {
+		stackDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
+		composeFile := fmt.Sprintf("%s/docker-compose.yml", stackDir)
+		downCmd := fmt.Sprintf("docker compose -f %s down", composeFile)
+		if purgeVolumes {
+			downCmd = fmt.Sprintf("docker compose -f %s down -v", composeFile)
+		}
+
+		_, sshErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, downCmd)
+		if sshErr != nil {
+			if !force {
+				return fmt.Errorf("failed to teardown stack on node: %w", sshErr)
+			}
+			log.Printf("[WARN] SSH teardown failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, sshErr)
+		} else if purgeVolumes {
+			rmCmd := fmt.Sprintf("rm -rf -- %q", stackDir)
+			if _, rmErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, rmCmd); rmErr != nil {
+				if !force {
+					return fmt.Errorf("failed to purge stack directory on node: %w", rmErr)
+				}
+				log.Printf("[WARN] SSH purge stack directory failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, rmErr)
+			}
+		}
+	}
+
+	if err := e.cfg.Store.DeleteDeployment(deploymentID); err != nil {
+		return fmt.Errorf("failed to delete deployment metadata: %w", err)
+	}
+
+	_ = e.SyncGitMirror(ctx)
+	return nil
+}
+
 
 func (e *engine) CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error) {
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)

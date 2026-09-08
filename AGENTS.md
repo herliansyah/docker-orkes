@@ -11,3 +11,7 @@ Canonical 5-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `r
 ### Domain docs
 
 Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
+
+### Build output
+
+Always build Go binaries into `bin/` directory (`go build -o bin/docker-orkes ./cmd/docker-orkes`).

@@ -673,18 +673,8 @@
                   data-drift="{{.DriftStatus}}">
                   <td class="py-3.5 px-4 font-semibold text-zinc-100">
                     <div class="flex items-center gap-2">
-                      <button type="button" onclick="toggleDeploymentContainers('{{.ID}}')" id="dep-chevron-btn-{{.ID}}"
-                        class="text-zinc-400 hover:text-indigo-400 p-0.5 rounded hover:bg-zinc-800 transition" title="Show containers in this stack">
-                        <svg id="dep-chevron-{{.ID}}" class="w-4 h-4 transform transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                        </svg>
-                      </button>
                       <span class="text-sm">📦</span>
                       <span>{{.StackName}}</span>
-                      <button type="button" onclick="toggleDeploymentContainers('{{.ID}}')"
-                        class="ml-1 text-[10px] font-normal px-2 py-0.5 rounded-full bg-zinc-800/90 hover:bg-indigo-950/60 text-zinc-300 hover:text-indigo-300 border border-zinc-700/60 transition inline-flex items-center gap-1" title="View containers">
-                        <span>🐳</span> <span class="hidden sm:inline" data-i18n="btn_containers">Containers</span>
-                      </button>
                     </div>
                     {{if .Notes}}<div class="text-[11px] text-zinc-400 mt-0.5 max-w-xs truncate font-normal" title="{{.Notes}}">📝 {{.Notes}}</div>{{end}}
                     <div class="text-[11px] font-mono text-indigo-400 mt-0.5 flex items-center gap-1" title="Remote Directory Path"><span class="text-zinc-500">📁</span> ~/.docker-orkes/stacks/{{.StackName}}/</div>
@@ -774,20 +764,12 @@
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 flex items-center gap-2">
                               <span>✏️</span> <span data-i18n="menu_edit_env">Edit Env (.env)</span>
                             </button>
-                            <button type="button" onclick="toggleDeploymentContainers('{{.ID}}'); closeAllDropdowns();"
-                              class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 flex items-center gap-2">
-                              <span>🐳</span> <span data-i18n="menu_inspect_containers">Inspect Containers</span>
-                            </button>
 
                             <button type="button" onclick="openRevisionsModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 flex items-center gap-2">
                               <span>📜</span> <span>Revisions & Rollback</span>
                             </button>
 
-                            <button type="button" onclick="openDeploymentContainerTerminal('{{.NodeID}}', '{{.NodeName}}', '{{.StackName}}'); closeAllDropdowns();"
-                              class="w-full text-left px-3 py-1.5 text-xs text-emerald-300 hover:bg-zinc-800 flex items-center gap-2">
-                              <span>💻</span> <span data-i18n="menu_container_terminal">Container Terminal</span>
-                            </button>
 
                             <button type="button" onclick="openHostTerminal('{{.NodeID}}', '{{.NodeName}} (Host)'); closeAllDropdowns();"
                               class="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 flex items-center gap-2">
@@ -814,11 +796,9 @@
                           </div>
 
                           <div class="py-1">
-                            <form method="POST" action="/deployments/{{.ID}}/delete" onsubmit="return confirm('Delete this deployment record?');" class="m-0">
-                              <button type="submit" class="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2">
-                                <span>🗑️</span> <span data-i18n="menu_delete">Delete Deployment</span>
-                              </button>
-                            </form>
+                            <button type="button" onclick="openDeleteDeploymentModal('{{.ID}}', '{{.StackName}}', '{{.NodeName}}'); closeAllDropdowns();" class="w-full text-left px-3 py-1.5 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2">
+                              <span>🗑️</span> <span data-i18n="menu_delete">Delete Deployment</span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1990,6 +1970,108 @@
           Close
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Delete Deployment Modal (ADR 0013 Lifecycle & Safety) -->
+  <div id="delete-deployment-modal" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">🗑️</span>
+          <div>
+            <h3 class="text-base font-semibold text-zinc-100">Delete Deployment</h3>
+            <p class="text-xs text-zinc-400">
+              Stack <span id="delete-modal-dep-name" class="font-mono text-indigo-400 font-semibold"></span> on <span id="delete-modal-node-name" class="text-zinc-200 font-medium"></span>
+            </p>
+          </div>
+        </div>
+        <button type="button" onclick="closeDeleteDeploymentModal()" class="text-zinc-400 hover:text-zinc-200 text-lg p-1.5 rounded-lg hover:bg-zinc-800 transition">✕</button>
+      </div>
+
+      <!-- Form Body -->
+      <form id="delete-deployment-form" method="POST" action="" class="flex-1 flex flex-col min-h-0 overflow-y-auto m-0">
+        <div class="p-6 space-y-4">
+          <!-- Lifecycle Mode Selection -->
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400">Lifecycle Action</label>
+            <div class="grid grid-cols-1 gap-2.5">
+              <!-- Option A: Tear Down Containers -->
+              <label class="relative flex items-start gap-3.5 p-4 rounded-xl border border-zinc-700 bg-zinc-950/60 hover:bg-zinc-800/40 cursor-pointer transition select-none has-[:checked]:border-rose-500/60 has-[:checked]:bg-rose-500/5">
+                <input type="radio" id="delete-action-teardown" name="action" value="teardown" checked onchange="updateDeleteModalState()"
+                  class="mt-1 text-rose-600 bg-zinc-900 border-zinc-700 focus:ring-rose-500 focus:ring-1 shrink-0">
+                <div class="flex-1">
+                  <span class="text-xs font-semibold text-zinc-100 block">Tear Down Containers</span>
+                  <span class="text-[11px] text-zinc-400 leading-relaxed block mt-1">Stops and removes containers on the remote node via SSH (<code class="font-mono text-zinc-300 text-[10px]">docker compose down</code>).</span>
+                </div>
+              </label>
+
+              <!-- Option B: Detach Only -->
+              <label class="relative flex items-start gap-3.5 p-4 rounded-xl border border-zinc-700 bg-zinc-950/60 hover:bg-zinc-800/40 cursor-pointer transition select-none has-[:checked]:border-indigo-500/60 has-[:checked]:bg-indigo-500/5">
+                <input type="radio" id="delete-action-detach" name="action" value="detach" onchange="updateDeleteModalState()"
+                  class="mt-1 text-indigo-600 bg-zinc-900 border-zinc-700 focus:ring-indigo-500 focus:ring-1 shrink-0">
+                <div class="flex-1">
+                  <span class="text-xs font-semibold text-zinc-100 block">Detach Only</span>
+                  <span class="text-[11px] text-zinc-400 leading-relaxed block mt-1">Leaves containers running as unmanaged containers on the node; preserves all runtime data and stack files.</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Purge Data & Volumes Section -->
+          <div id="delete-purge-section" class="p-3.5 rounded-xl border border-zinc-800 bg-zinc-950/40 space-y-3 transition-opacity">
+            <label class="flex items-start gap-3 cursor-pointer select-none">
+              <input type="checkbox" id="delete-modal-purge" name="purge_volumes" value="true" onchange="updateDeleteModalState()"
+                class="mt-0.5 rounded bg-zinc-900 border-zinc-700 text-rose-600 focus:ring-rose-500 shrink-0">
+              <div class="flex-1">
+                <span class="text-xs font-semibold text-rose-400 block">Purge Data & Named Volumes</span>
+                <span class="text-[11px] text-zinc-400 block mt-1">Passes <code class="font-mono text-zinc-300 text-[10px]">-v</code> flag to remove volumes and deletes stack directory on the node.</span>
+              </div>
+            </label>
+
+            <!-- Warning Notice -->
+            <div class="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 flex items-start gap-2">
+              <span class="text-sm shrink-0">⚠️</span>
+              <span>This permanently deletes all named Docker volumes and runtime assets on the Node.</span>
+            </div>
+
+            <!-- Typed Confirmation Input -->
+            <div id="delete-confirm-wrapper" class="hidden pt-1 space-y-1.5">
+              <label class="block text-[11px] text-zinc-300">
+                Type <strong id="delete-modal-confirm-target" class="font-mono text-rose-300 select-all"></strong> to confirm data purge:
+              </label>
+              <input type="text" id="delete-modal-confirm-input" name="confirm_name" oninput="updateDeleteModalState()"
+                placeholder="Type deployment name exactly" autocomplete="off"
+                class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 font-mono focus:outline-none focus:ring-1 focus:ring-rose-500">
+            </div>
+          </div>
+
+          <!-- Force Deletion Option -->
+          <div class="pt-1">
+            <label class="flex items-start gap-3 cursor-pointer select-none">
+              <input type="checkbox" id="delete-modal-force" name="force" value="true"
+                class="mt-0.5 rounded bg-zinc-900 border-zinc-700 text-amber-500 focus:ring-amber-500 shrink-0">
+              <div class="flex-1">
+                <span class="text-xs font-medium text-zinc-300 block">Force Delete (Node Unreachable)</span>
+                <span class="text-[11px] text-zinc-500 block mt-1">Remove deployment metadata immediately from Control Plane if node is offline or SSH fails.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="px-6 py-4 border-t border-zinc-800 bg-zinc-950/60 flex items-center justify-end gap-2.5 shrink-0">
+          <button type="button" onclick="closeDeleteDeploymentModal()"
+            class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-4 py-2 rounded-xl text-xs font-medium transition" data-i18n="btn_cancel">
+            Cancel
+          </button>
+          <button type="submit" id="delete-modal-submit-btn"
+            class="bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600 text-white font-medium px-4 py-2 rounded-xl text-xs transition shadow-sm flex items-center gap-1.5">
+            <span>🗑️</span> <span data-i18n="btn_delete_deployment">Delete Deployment</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -4328,6 +4410,85 @@
       document.getElementById('revisions-modal').classList.add('hidden');
     }
 
+    // --- Delete Deployment Modal (ADR 0013) ---
+    let currentDeleteDepId = '';
+    let currentDeleteDepName = '';
+
+    function openDeleteDeploymentModal(depId, stackName, nodeName) {
+      currentDeleteDepId = depId;
+      currentDeleteDepName = stackName;
+
+      const form = document.getElementById('delete-deployment-form');
+      if (form) form.action = `/deployments/${depId}/delete`;
+
+      const depNameEl = document.getElementById('delete-modal-dep-name');
+      if (depNameEl) depNameEl.textContent = stackName;
+
+      const nodeNameEl = document.getElementById('delete-modal-node-name');
+      if (nodeNameEl) nodeNameEl.textContent = nodeName;
+
+      const confirmTargetEl = document.getElementById('delete-modal-confirm-target');
+      if (confirmTargetEl) confirmTargetEl.textContent = stackName;
+
+      const teardownRadio = document.getElementById('delete-action-teardown');
+      if (teardownRadio) teardownRadio.checked = true;
+
+      const purgeCheckbox = document.getElementById('delete-modal-purge');
+      if (purgeCheckbox) purgeCheckbox.checked = false;
+
+      const confirmInput = document.getElementById('delete-modal-confirm-input');
+      if (confirmInput) confirmInput.value = '';
+
+      const forceCheckbox = document.getElementById('delete-modal-force');
+      if (forceCheckbox) forceCheckbox.checked = false;
+
+      updateDeleteModalState();
+
+      const modal = document.getElementById('delete-deployment-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeDeleteDeploymentModal() {
+      const modal = document.getElementById('delete-deployment-modal');
+      if (modal) modal.classList.add('hidden');
+      currentDeleteDepId = '';
+      currentDeleteDepName = '';
+    }
+
+    function updateDeleteModalState() {
+      const actionTeardown = document.getElementById('delete-action-teardown')?.checked;
+      const purgeCheckbox = document.getElementById('delete-modal-purge');
+      const purgeSection = document.getElementById('delete-purge-section');
+      const confirmWrapper = document.getElementById('delete-confirm-wrapper');
+      const confirmInput = document.getElementById('delete-modal-confirm-input');
+      const submitBtn = document.getElementById('delete-modal-submit-btn');
+
+      if (!actionTeardown) {
+        if (purgeCheckbox) {
+          purgeCheckbox.checked = false;
+          purgeCheckbox.disabled = true;
+        }
+        if (purgeSection) purgeSection.classList.add('opacity-40', 'pointer-events-none');
+        if (confirmWrapper) confirmWrapper.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+
+      if (purgeCheckbox) purgeCheckbox.disabled = false;
+      if (purgeSection) purgeSection.classList.remove('opacity-40', 'pointer-events-none');
+
+      if (purgeCheckbox && purgeCheckbox.checked) {
+        if (confirmWrapper) confirmWrapper.classList.remove('hidden');
+        const typed = confirmInput ? confirmInput.value.trim() : '';
+        if (submitBtn) {
+          submitBtn.disabled = (typed !== currentDeleteDepName);
+        }
+      } else {
+        if (confirmWrapper) confirmWrapper.classList.add('hidden');
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
     // --- Notification Test Alert ---
     function sendTestAlertAsync() {
       const btn = document.getElementById('test-alert-btn');
@@ -4793,6 +4954,7 @@
         const settingsModal = document.getElementById('settings-modal');
         const docsModal = document.getElementById('docs-modal');
         const revsModal = document.getElementById('revisions-modal');
+        const delModal = document.getElementById('delete-deployment-modal');
 
         if (termModal && !termModal.classList.contains('hidden')) {
           closeTerminalModal();
@@ -4806,12 +4968,14 @@
           closeDocsModal();
         } else if (revsModal && !revsModal.classList.contains('hidden')) {
           closeRevisionsModal();
+        } else if (delModal && !delModal.classList.contains('hidden')) {
+          closeDeleteDeploymentModal();
         }
       }
     });
 
     // Close Modals on backdrop click
-    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal', 'terminal-modal', 'container-picker-modal'].forEach(id => {
+    ['settings-modal', 'file-browser-modal', 'docs-modal', 'revisions-modal', 'terminal-modal', 'container-picker-modal', 'delete-deployment-modal'].forEach(id => {
       const modal = document.getElementById(id);
       if (modal) {
         modal.addEventListener('click', (e) => {

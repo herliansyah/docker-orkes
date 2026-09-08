@@ -676,11 +676,64 @@ func (s *Server) handleDownDeployment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.store.DeleteDeployment(id); err != nil {
+	dep, err := s.store.GetDeployment(id)
+	if err != nil {
+		http.Error(w, "Deployment not found", http.StatusNotFound)
+		return
+	}
+
+	var action string = "teardown"
+	var purgeVolumes bool
+	var confirmName string
+	var force bool
+
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var payload struct {
+			Action       string `json:"action"`
+			PurgeVolumes bool   `json:"purge_volumes"`
+			ConfirmName  string `json:"confirm_name"`
+			Force        bool   `json:"force"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			if payload.Action != "" {
+				action = payload.Action
+			}
+			purgeVolumes = payload.PurgeVolumes
+			confirmName = payload.ConfirmName
+			force = payload.Force
+		}
+	} else {
+		_ = r.ParseMultipartForm(32 << 20)
+		if r.Form == nil {
+			_ = r.ParseForm()
+		}
+		if a := r.FormValue("action"); a != "" {
+			action = a
+		}
+		pv := strings.ToLower(r.FormValue("purge_volumes"))
+		purgeVolumes = pv == "true" || pv == "1" || pv == "on"
+		confirmName = r.FormValue("confirm_name")
+		fc := strings.ToLower(r.FormValue("force"))
+		force = fc == "true" || fc == "1" || fc == "on"
+	}
+
+	if purgeVolumes && confirmName != dep.StackName {
+		http.Error(w, "Typed confirmation does not match stack name", http.StatusBadRequest)
+		return
+	}
+
+	teardown := action != "detach"
+	if err := s.cp.DeleteDeployment(r.Context(), id, teardown, purgeVolumes, force); err != nil {
 		http.Error(w, "Failed to delete deployment: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	_ = s.cp.SyncGitMirror(r.Context())
+
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

@@ -85,6 +85,10 @@ func (f *fakeEngine) Restart(ctx context.Context, deploymentID string) error {
 func (f *fakeEngine) Down(ctx context.Context, deploymentID string) error {
 	return nil
 }
+func (f *fakeEngine) DeleteDeployment(ctx context.Context, deploymentID string, teardown bool, purgeVolumes bool, force bool) error {
+	return nil
+}
+
 
 func (f *fakeEngine) CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error) {
 	return nil, nil
