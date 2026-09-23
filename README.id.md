@@ -27,6 +27,13 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 - Deteksi otomatis perbedaan konfigurasi (*drift*) antara status yang diinginkan (*Desired State*) dan kondisi aktual di server remote (*Actual State*).
 - Pencadangan otomatis semua manifest stack dan penugasan node ke repositori **Git Mirror**.
 
+### Filosofi Desain: Pragmatis, Ramping, dan Mandiri
+
+- **Agentless Tanpa Daemon**: Tanpa agen atau daemon kluster (Swarm/Kubernetes) yang memakan RAM atau butuh perawatan berkala di server remote. Cukup SSH standar dan Docker Engine.
+- **Deklaratif Bukan Imperatif**: Kelola aplikasi sebagai template Compose dan deployment yang dapat direproduksi dengan deteksi drift otomatis, bukan manipulasi kontainer ad-hoc.
+- **Keamanan di CI/CD, Bukan Bloat di Runtime**: Docker Orkes sengaja tidak mem-bundle scanner kerentanan image (seperti Trivy atau database CVE berat). Pemindaian kerentanan adalah tanggung jawab pipeline CI/CD saat build atau container registry aman, sehingga control plane deployment Anda tetap ringan, gesit, dan 100% beroperasi offline.
+- **100% Mandiri (Self-Contained)**: Single static binary Go tanpa dependensi CDN eksternal, SQLite tertanam, dan web terminal offline.
+
 ---
 
 ## Fitur Utama

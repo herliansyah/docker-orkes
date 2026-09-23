@@ -27,6 +27,13 @@ Everything is performed over secure, agentless **SSH**:
 - Automatically detect configuration drift between desired state and actual remote state.
 - Backup all stacks and deployment manifests to an external **Git Mirror**.
 
+### Design Philosophy: Pragmatic, Lean, and Self-Contained
+
+- **Agentless over Daemons**: No agents or cluster daemons (Swarm/Kubernetes) consuming RAM or requiring maintenance on target nodes. Plain SSH and Docker are all you need.
+- **Declarative over Imperative**: Manage applications as reproducible Compose templates and deployments with automatic drift detection, rather than ad-hoc container clicking.
+- **Security in CI/CD, Not Runtime Bloat**: Docker Orkes deliberately does not bundle heavy container vulnerability scanners (like Trivy or external CVE feeds). Vulnerability scanning belongs in your CI/CD build pipeline or secure container registry, keeping your production deployment control plane lean, fast, and 100% offline-capable.
+- **100% Self-Contained**: Single static Go binary with zero external CDN dependencies, embedded SQLite, and embedded web terminal.
+
 ---
 
 ## Key Features

@@ -10,6 +10,7 @@ Dokumen ini menjelaskan rancangan arsitektur, model operasional, dan kapabilitas
 - **Stack Deklaratif**: Setiap aplikasi didefinisikan sebagai template reusable Docker Compose yang modular.
 - **Single-Binary Footprint**: Control Plane berjalan sebagai satu binary Go mandiri yang membungkus database SQLite serta asset UI (`embed.FS`).
 - **Auditabilitas Penuh via Git Mirror**: Seluruh perubahan manifest stack, variabel deployment, dan inventaris server dicatat ke dalam audit log Git berversi.
+- **Batasan Keamanan Pragmatis**: Pemindaian kerentanan (*vulnerability scan*) adalah domain pipeline CI/CD saat build atau container registry, bukan membebani control plane deployment dengan database CVE yang rapuh dan dependensi internet eksternal.
 
 ---
 
