@@ -56,7 +56,8 @@ Active deployments offer a comprehensive remote filesystem manager for `~/.docke
 - **Drag-and-Drop & Folder Uploads**: Upload single files, multiple files, or entire nested folder hierarchies preserving relative paths (`webkitdirectory`).
 - **Remote Archive Extraction**: Extract `.tar.gz` and `.zip` archives directly on the target host via native remote tar/unzip utilities.
 - **Live Code Editor with Secret Masking**: View and edit files inline, toggle **Mask Secrets** for `.env` credentials, and trigger one-click **Save & Redeploy** (`docker compose up -d`).
-- **Drift Isolation**: Files other than `docker-compose.yml` and `.env` are classified as *Runtime Assets* (e.g., config snippets, certificates, static data) and are excluded from configuration drift detection ([ADR 0008](adr/0008-remote-stack-filesystem-and-runtime-assets.md)).
+- **Drift Isolation**: Files other than `docker-compose.yml` and `.env` are classified as *Runtime Assets* (e.g., config snippets, certificates) and are excluded from configuration drift detection ([ADR 0008](adr/0008-remote-stack-filesystem-and-runtime-assets.md)).
+- **Persistent Storage Boundary & Purge Safety**: The Stack Directory is ephemeral and strictly for declarative configurations. Databases and persistent state must use Docker Named Volumes or external host paths ([ADR 0016](adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)). An automated 50 MB pre-purge guardrail blocks `rm -rf` if large data files are detected.
 
 ---
 

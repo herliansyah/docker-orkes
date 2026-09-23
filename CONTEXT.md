@@ -54,8 +54,8 @@ The agentless transport mechanism within the Control Plane that executes Docker 
 _Avoid_: Agent, runner, worker daemon
 
 **Stack Directory**:
-The dedicated filesystem path on a Node (`~/.docker-orkes/stacks/<stack-name>/`) where a Stack's `docker-compose.yml` and `.env` files are stored and executed.
-_Avoid_: App folder, project path, workspace
+The dedicated, isolated filesystem path on a Node (`~/.docker-orkes/stacks/<stack-name>/`) reserved strictly for a Stack's declarative configuration (`docker-compose.yml`, `.env`) and lightweight auxiliary Runtime Assets (configs, certificates). It is explicitly NOT intended for persistent database or heavy stateful storage.
+_Avoid_: App folder, project path, workspace, data folder
 
 **Revision**:
 A versioned, immutable snapshot of a Deployment's Desired State (compose configuration, environment variables, and timestamp) captured at deployment time to enable rollbacks.
@@ -150,7 +150,7 @@ The execution of `docker compose down` on a Node via the SSH Executor to stop an
 _Avoid_: Destroy, wipe, uninstall
 
 **Data Purge**:
-The explicit, destructive removal of Managed Volumes and Stack Directory contents on a Node during Deployment Deletion, requiring typed safety confirmation.
+The explicit, destructive removal of Managed Volumes and Stack Directory contents on a Node during Deployment Deletion, requiring typed safety confirmation and protected by safety threshold checks to prevent accidental destruction of misplaced persistent data.
 _Avoid_: Hard delete, format, scrub
 
 **Force Deletion**:

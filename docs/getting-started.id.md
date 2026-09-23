@@ -101,6 +101,9 @@ Docker Orkes akan secara otomatis:
 - Menjalankan `docker compose up -d`.
 - Mencatat status, hash Desired State, dan entri snapshot revisi awal di database.
 
+> [!WARNING]
+> **Aturan Penting Persistensi Data**: Direktori stack `~/.docker-orkes/stacks/<stack-name>/` dialokasikan khusus untuk template compose, file `.env`, dan konfigurasi pendukung yang bersifat ringan. **Jangan pernah menyimpan direktori database atau data persisten produksi (seperti `./data:/var/lib/mysql`) di dalam direktori stack ini**, karena folder tersebut akan dihapus total (`rm -rf`) jika operator memilih opsi "Purge Data" saat menghapus deployment. Selalu gunakan Docker Named Volumes atau bind-mount path absolut di luar `~/.docker-orkes/` (misal `/data/...` atau `/mydocker/...`) untuk data persisten.
+
 ---
 
 ## 6. Mengaktifkan Backup Git Mirror (Opsional)

@@ -107,6 +107,44 @@ Buka peramban (browser) Anda dan akses `http://localhost:8080`. Masuk menggunaka
 
 ---
 
+## ⚠️ Arsitektur Penyimpanan & Praktik Terbaik Persistensi Data
+
+> [!CAUTION]
+> **PANTANG MENYIMPAN DATA PERSISTEN ATAU DATABASE DI DALAM `~/.docker-orkes/`**
+>
+> Stack Directory (`~/.docker-orkes/stacks/<stack-name>/`) dialokasikan secara ketat hanya untuk **file konfigurasi deklaratif** (`docker-compose.yml`, `.env`) dan aset konfigurasi ringan (seperti file config Nginx atau sertifikat SSL).
+> 
+> Saat operator menjalankan **Deployment Deletion dengan opsi Purge Data**, Docker Orkes akan mengeksekusi `docker compose down -v` dilanjutkan dengan perintah pemusnahan total `rm -rf` terhadap Stack Directory. Jika Anda menaruh folder database (misal bind mount `./data:/var/lib/mysql`) di dalam folder stack ini, **DATABASE AKAN HILANG PERMANEN SECARA TOTAL**.
+>
+> **Fitur Pengaman Otomatis (Safety Guardrail)**: Untuk mencegah malapetaka terhapusnya database yang salah taruh, Docker Orkes secara otomatis mengaudit ukuran folder Stack Directory sebelum menjalankan `rm -rf`. Jika ukuran folder melebihi **50 MB**, proses purge akan **DIBLOKIR OTOMATIS** oleh Control Plane.
+
+### Pola yang Benar untuk Partisi Khusus (misal `/mydocker`) & Data Persisten
+
+Jika server Node Anda memiliki partisi disk terpisah (seperti `/mydocker` atau `/data`) khusus untuk Docker:
+
+1. **Penyimpanan Database / Data Aplikasi Persisten**:
+   Selalu gunakan **absolute path di luar `~/.docker-orkes/`** atau gunakan **Docker Named Volumes**:
+   ```yaml
+   services:
+     db:
+       image: mysql:8.0
+       volumes:
+         # ✅ BENAR: Absolute host path di partisi khusus Anda
+         - /mydocker/mysql-data:/var/lib/mysql
+         # ATAU
+         # ✅ BENAR: Docker Named Volume (disimpan di data-root daemon Docker)
+         - mysql_data:/var/lib/mysql
+   ```
+2. **Memindahkan Seluruh `.docker-orkes` ke Partisi Khusus**:
+   Jangan mengubah kode aplikasi. Cukup gunakan symbolic link native OS di server Node:
+   ```bash
+   mkdir -p /mydocker/docker-orkes
+   ln -s /mydocker/docker-orkes ~/.docker-orkes
+   ```
+   Folder stack akan tersimpan di partisi Anda secara transparan dengan keamanan dan isolasi yang tetap terjaga penuh.
+
+---
+
 ## Dokumentasi Lengkap
 
 Panduan langkah demi langkah dan rincian teknis telah tersedia:
@@ -125,6 +163,13 @@ Panduan langkah demi langkah dan rincian teknis telah tersedia:
   - [ADR 0007: Internal Hybrid Image Registry Architecture](docs/adr/0007-internal-hybrid-image-registry.md)
   - [ADR 0008: Remote Stack Filesystem and Runtime Assets Management](docs/adr/0008-remote-stack-filesystem-and-runtime-assets.md)
   - [ADR 0009: Offline Web Terminal Architecture via WebSocket and PTY](docs/adr/0009-offline-web-terminal-pty.md)
+  - [ADR 0010: Node Images and On-Demand Retention](docs/adr/0010-node-images-and-ondemand-retention.md)
+  - [ADR 0011: Self-Contained Enterprise UI](docs/adr/0011-self-contained-enterprise-ui.md)
+  - [ADR 0012: Node Volumes and Networks Observability](docs/adr/0012-node-volumes-and-networks-observability.md)
+  - [ADR 0013: Deployment Deletion Lifecycle and Adoption Safety](docs/adr/0013-deployment-deletion-lifecycle-and-adoption-safety.md)
+  - [ADR 0014: Deployment Preflight Checks and Execution Feedback](docs/adr/0014-deployment-preflight-checks-and-execution-feedback.md)
+  - [ADR 0015: Agentless Transport Security and Filesystem Isolation](docs/adr/0015-agentless-transport-security-and-filesystem-isolation.md)
+  - [ADR 0016: Stack Directory Isolation and Data Purge Guardrails](docs/adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)
 
 ---
 

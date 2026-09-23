@@ -107,6 +107,44 @@ Open your browser and navigate to `http://localhost:8080`. Log in with your pass
 
 ---
 
+## ⚠️ Storage Architecture & Data Persistence Best Practices
+
+> [!CAUTION]
+> **NEVER STORE PERSISTENT APPLICATION DATA OR DATABASES INSIDE `~/.docker-orkes/`**
+>
+> The Stack Directory (`~/.docker-orkes/stacks/<stack-name>/`) is reserved strictly for **declarative configuration files** (`docker-compose.yml`, `.env`) and lightweight auxiliary assets (Nginx configs, SSL certificates).
+> 
+> When an operator performs a **Deployment Deletion with Data Purge**, Docker Orkes executes `docker compose down -v` followed by an automated `rm -rf` on the Stack Directory. If persistent databases (e.g. `./data:/var/lib/mysql`) are placed inside this directory, **THEY WILL BE PERMANENTLY DESTROYED**.
+>
+> **Built-in Guardrail**: To protect against accidental destruction of misplaced databases, Docker Orkes audits the Stack Directory size before running `rm -rf`. If the directory exceeds **50 MB**, the automated purge is **blocked immediately** by the Control Plane.
+
+### Proper Patterns for Dedicated Partitions & Persistent Data (e.g. `/mydocker`)
+
+If your Node has a dedicated disk partition (e.g. `/mydocker` or `/data`) intended for Docker data:
+
+1. **Persistent Databases / App Storage**:
+   Always mount volumes using **absolute host paths outside `~/.docker-orkes/`** or **Docker Named Volumes**:
+   ```yaml
+   services:
+     db:
+       image: mysql:8.0
+       volumes:
+         # ✅ CORRECT: Absolute host path on your dedicated partition
+         - /mydocker/mysql-data:/var/lib/mysql
+         # OR
+         # ✅ CORRECT: Docker Named Volume (stored under Docker daemon's data-root)
+         - mysql_data:/var/lib/mysql
+   ```
+2. **Relocating Entire `.docker-orkes` to a Dedicated Partition**:
+   Do not modify application code. Use a native OS symbolic link on the Node:
+   ```bash
+   mkdir -p /mydocker/docker-orkes
+   ln -s /mydocker/docker-orkes ~/.docker-orkes
+   ```
+   This offloads stack files transparently to your partition while maintaining full compatibility and sandboxing.
+
+---
+
 ## Documentation
 
 Comprehensive guides and technical documentation are available:
@@ -125,6 +163,13 @@ Comprehensive guides and technical documentation are available:
   - [ADR 0007: Internal Hybrid Image Registry Architecture](docs/adr/0007-internal-hybrid-image-registry.md)
   - [ADR 0008: Remote Stack Filesystem and Runtime Assets Management](docs/adr/0008-remote-stack-filesystem-and-runtime-assets.md)
   - [ADR 0009: Offline Web Terminal Architecture via WebSocket and PTY](docs/adr/0009-offline-web-terminal-pty.md)
+  - [ADR 0010: Node Images and On-Demand Retention](docs/adr/0010-node-images-and-ondemand-retention.md)
+  - [ADR 0011: Self-Contained Enterprise UI](docs/adr/0011-self-contained-enterprise-ui.md)
+  - [ADR 0012: Node Volumes and Networks Observability](docs/adr/0012-node-volumes-and-networks-observability.md)
+  - [ADR 0013: Deployment Deletion Lifecycle and Adoption Safety](docs/adr/0013-deployment-deletion-lifecycle-and-adoption-safety.md)
+  - [ADR 0014: Deployment Preflight Checks and Execution Feedback](docs/adr/0014-deployment-preflight-checks-and-execution-feedback.md)
+  - [ADR 0015: Agentless Transport Security and Filesystem Isolation](docs/adr/0015-agentless-transport-security-and-filesystem-isolation.md)
+  - [ADR 0016: Stack Directory Isolation and Data Purge Guardrails](docs/adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)
 
 ---
 

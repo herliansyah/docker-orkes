@@ -56,7 +56,8 @@ Setiap deployment aktif menyediakan pengelola sistem berkas remote yang andal pa
 - **Upload Drag-and-Drop & Folder Rekursif**: Mengunggah file tunggal, banyak file sekaligus, atau seluruh struktur folder bersarang dengan mempertahankan path relatifnya (`webkitdirectory`).
 - **Ekstraksi Arsip Remote**: Mengekstrak arsip `.tar.gz` dan `.zip` langsung di server tujuan menggunakan utility bawaan sistem operasi Linux host (`tar`/`unzip`).
 - **Live Code Editor & Masking Secrets**: Menyunting file teks/kode secara instan, menyamarkan (*mask*) nilai kredensial sensitif pada `.env`, dan mengeksekusi **Save & Redeploy** (`docker compose up -d`) dalam satu kali klik.
-- **Isolasi Drift**: File selain `docker-compose.yml` dan `.env` diklasifikasikan sebagai *Runtime Assets* (misal: file konfigurasi aplikasi, sertifikat SSL, aset statis) dan dikecualikan dari deteksi drift konfigurasi ([ADR 0008](adr/0008-remote-stack-filesystem-and-runtime-assets.md)).
+- **Isolasi Drift**: File selain `docker-compose.yml` dan `.env` diklasifikasikan sebagai *Runtime Assets* (misal: file konfigurasi aplikasi, sertifikat SSL) dan dikecualikan dari deteksi drift konfigurasi ([ADR 0008](adr/0008-remote-stack-filesystem-and-runtime-assets.md)).
+- **Batasan Storage Persisten & Pengaman Purge**: Stack Directory bersifat *ephemeral* (sementara) dan hanya untuk konfigurasi deklaratif. Database dan data persisten wajib menggunakan Docker Named Volumes atau host path eksternal ([ADR 0016](adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)). Guardrail otomatis 50 MB memblokir `rm -rf` jika terdeteksi data berukuran besar.
 
 ---
 

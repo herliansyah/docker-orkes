@@ -2070,9 +2070,17 @@
             </label>
 
             <!-- Warning Notice -->
-            <div class="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[11px] text-rose-300 flex items-start gap-2">
-              <span class="text-sm shrink-0">⚠️</span>
-              <span>This permanently deletes all named Docker volumes and runtime assets on the Node.</span>
+            <div class="p-3 rounded-lg bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-300 space-y-1.5">
+              <div class="flex items-center gap-2 font-semibold text-rose-200">
+                <span class="text-sm shrink-0">🚨</span>
+                <span>CRITICAL DATA LOSS WARNING</span>
+              </div>
+              <p class="leading-relaxed text-zinc-300">
+                This permanently deletes all named Docker volumes (<code class="font-mono text-rose-300 text-[10px]">-v</code>) and executes <code class="font-mono text-rose-300 text-[10px]">rm -rf</code> on the Stack Directory (<code class="font-mono text-zinc-300 text-[10px]">~/.docker-orkes/stacks/&lt;name&gt;</code>).
+              </p>
+              <p class="leading-relaxed text-amber-300/90 font-medium">
+                ⚠️ Never store persistent databases (e.g. <code class="font-mono text-[10px]">./data</code> bind mounts) inside the Stack Directory. If the directory exceeds 50MB, purge will be blocked by the Control Plane to prevent accidental data loss.
+              </p>
             </div>
 
             <!-- Typed Confirmation Input -->

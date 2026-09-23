@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 	"docker-orkes/internal/drift"
@@ -335,12 +336,29 @@ func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, tear
 			}
 			log.Printf("[WARN] SSH teardown failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, sshErr)
 		} else if purgeVolumes {
-			rmCmd := fmt.Sprintf("rm -rf -- %q", stackDir)
-			if _, rmErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, rmCmd); rmErr != nil {
+			// ponytail: check directory size before rm -rf to prevent accidental deletion of misplaced databases or persistent data
+			const maxPurgeStackDirSizeMB = 50
+			sizeCmd := fmt.Sprintf("if [ -d %q ]; then du -sm -- %q 2>/dev/null || echo 0; else echo 0; fi", stackDir, stackDir)
+			sizeOut, _ := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, sizeCmd)
+			var sizeMB int
+			fields := strings.Fields(strings.TrimSpace(sizeOut))
+			if len(fields) > 0 {
+				sizeMB, _ = strconv.Atoi(fields[0])
+			}
+
+			if sizeMB > maxPurgeStackDirSizeMB {
 				if !force {
-					return fmt.Errorf("failed to purge stack directory on node: %w", rmErr)
+					return fmt.Errorf("data purge blocked: stack directory size (%d MB) exceeds safety threshold (%d MB); aborting rm -rf to prevent accidental loss of persistent data; please inspect and clean up manually on node", sizeMB, maxPurgeStackDirSizeMB)
 				}
-				log.Printf("[WARN] SSH purge stack directory failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, rmErr)
+				log.Printf("[WARN] Skipping stack directory rm -rf for deployment %s: size (%d MB) exceeds safety threshold (%d MB) (force=true)", deploymentID, sizeMB, maxPurgeStackDirSizeMB)
+			} else {
+				rmCmd := fmt.Sprintf("rm -rf -- %q", stackDir)
+				if _, rmErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, rmCmd); rmErr != nil {
+					if !force {
+						return fmt.Errorf("failed to purge stack directory on node: %w", rmErr)
+					}
+					log.Printf("[WARN] SSH purge stack directory failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, rmErr)
+				}
 			}
 		}
 	}
