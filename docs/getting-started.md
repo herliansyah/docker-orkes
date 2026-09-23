@@ -101,6 +101,9 @@ Docker Orkes will:
 - Execute `docker compose up -d`.
 - Store the deployment status, desired state hash, and initial revision snapshot in the database.
 
+> [!WARNING]
+> **Data Persistence Rule**: The stack directory `~/.docker-orkes/stacks/<stack-name>/` is strictly for compose templates, environment files, and lightweight auxiliary configs. **Never store database directories or heavy persistent data (e.g. `./data:/var/lib/mysql`) inside this directory**, as it is completely removed (`rm -rf`) if an operator chooses "Purge Data" during deployment deletion. Always use Docker Named Volumes or absolute host paths outside `~/.docker-orkes/` (e.g. `/data/...` or `/mydocker/...`) for persistent data.
+
 ---
 
 ## 6. Configuring Git Mirror Backup (Optional)

@@ -32,6 +32,12 @@ func (m *mockExecutor) RunCommand(ctx context.Context, host string, port int, us
 	if strings.Contains(cmd, "docker ps") {
 		return `{"ID":"c1","Names":"web","Image":"nginx","Status":"Up","State":"running"}` + "\n", nil
 	}
+	if strings.Contains(cmd, "du -sm") {
+		if strings.Contains(cmd, "large-stack") {
+			return "150\t.docker-orkes/stacks/large-stack", nil
+		}
+		return "2\t.docker-orkes/stacks/web-proxy", nil
+	}
 	return "done", nil
 }
 
@@ -227,6 +233,30 @@ func TestControlPlane_DeploymentLifecycle(t *testing.T) {
 	if !hasRmStackDir {
 		t.Errorf("expected rm -rf stack directory in executor commands")
 	}
+
+	// Create d3 (large-stack) to test purge size safety guardrail
+	if err := st.CreateStack(store.Stack{ID: "s-large", Name: "large-stack", ComposeYAML: "services:\n  app:\n    image: nginx\n"}); err != nil {
+		t.Fatalf("create stack s-large: %v", err)
+	}
+	if err := st.CreateDeployment(store.Deployment{ID: "d3", StackID: "s-large", NodeID: "n1", EnvVars: "PORT=8080"}); err != nil {
+		t.Fatalf("create deployment d3: %v", err)
+	}
+
+	purgeErr := eng.DeleteDeployment(ctx, "d3", true, true, false)
+	if purgeErr == nil {
+		t.Fatalf("expected DeleteDeployment to fail due to large directory size, got nil")
+	}
+	if !strings.Contains(purgeErr.Error(), "data purge blocked") || !strings.Contains(purgeErr.Error(), "exceeds safety threshold") {
+		t.Errorf("unexpected error message: %v", purgeErr)
+	}
+
+	mockExec.mu.Lock()
+	for _, cmd := range mockExec.commands {
+		if strings.Contains(cmd, "rm -rf") && strings.Contains(cmd, ".docker-orkes/stacks/large-stack") {
+			t.Errorf("rm -rf was executed on large stack directory despite safety threshold violation!")
+		}
+	}
+	mockExec.mu.Unlock()
 }
 
 func TestControlPlane_DriftWorkflow(t *testing.T) {

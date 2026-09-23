@@ -1,0 +1,13 @@
+# Stack Directory Isolation and Data Purge Guardrails
+
+We decided to strictly define the Stack Directory (`~/.docker-orkes/stacks/<stack-name>/`) as an ephemeral, declarative configuration repository, enforce a pre-purge directory size threshold check before executing destructive filesystem deletions (`rm -rf`), and mandate external host mount paths or Docker Named Volumes for all stateful application data.
+
+## Context & Problem
+Operators sometimes conflate Docker Orkes's Stack Directory with their host's persistent data storage, placing database data sources (e.g. MySQL `./data` bind mounts) or custom partition targets (e.g. `/mydocker`) directly within or as the Stack Directory. During Deployment Deletion with the "Purge Data" option enabled, the Control Plane executes `docker compose down -v` followed by `rm -rf -- <stackDir>`. If persistent database files or large storage partitions reside within the Stack Directory, this automated cleanup causes catastrophic, unrecoverable data loss. Furthermore, opening arbitrary root host paths for stack execution introduces privilege and security isolation hazards.
+
+## Decision
+1. **Strict Ephemeral Scope for Stack Directories**: The Stack Directory on a Node is strictly designated for declarative stack definitions (`docker-compose.yml`, `.env`) and lightweight auxiliary Runtime Assets (configuration snippets, certificates). Persistent data must never reside directly within the Stack Directory.
+2. **Stateful Data Persistence Pattern**: Stateful data (such as database storage or user uploads) must use Docker Named Volumes (managed by the Docker daemon under its configured `data-root`) or explicit absolute host bind mounts located outside `~/.docker-orkes/` (such as `/mydocker/<app>-data:/var/lib/mysql`).
+3. **Pre-Purge Size Guardrail**: Before executing `rm -rf` on a Stack Directory during Data Purge, the Control Plane measures the directory size on the remote Node via SSH (`du -sm`). If the directory size exceeds the safety threshold (50 MB), the automated purge is immediately aborted with a safety violation error, requiring manual operator inspection and remediation.
+4. **Transparent Partition Offloading via OS Symlinks**: When an operator provisions a dedicated disk partition (such as `/mydocker`) to hold stack configurations, it must be mapped transparently at the OS level using symbolic links (`ln -s /mydocker/.docker-orkes ~/.docker-orkes`) rather than expanding the Control Plane codebase with custom host path configurations.
+5. **High-Visibility UI Safety Disclaimers**: The Deployment Deletion modal explicitly presents a prominent hazard warning advising operators that the Stack Directory will be completely destroyed on purge, warning against embedded database bind mounts.
