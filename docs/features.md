@@ -10,6 +10,7 @@ This document provides a comprehensive technical overview of Docker Orkes' desig
 - **Declarative Stacks**: Applications are defined as standard, reusable Docker Compose templates.
 - **Single-Binary Footprint**: Control Plane runs as a standalone Go binary with embedded assets (`embed.FS`) and an embedded SQLite database.
 - **Auditability via Git Mirror**: Every change, deployment configuration, and inventory change is committed to a versioned Git audit log.
+- **Pragmatic Security Boundaries**: Vulnerability scanning belongs in the CI/CD build pipeline or secure container registry, rather than bloating the deployment control plane with volatile CVE databases and flaky external network dependencies.
 
 ---
 
