@@ -132,3 +132,15 @@ For air-gapped or bandwidth-constrained environments, Docker Orkes incorporates 
 - Deployed as a standard Docker Compose stack on an designated node.
 - Provides private image hosting alongside pull-through caching for upstream registries (Docker Hub, GitHub Container Registry) to speed up deployments across node clusters.
 - For complete step-by-step deployment instructions, compose configuration, and daemon setup, see the [Internal Hybrid Image Registry Setup Guide](internal-registry.md).
+
+---
+
+## 12. In-App Activity Console & Live Telemetry Stream
+
+For real-time operational feedback without accessing server terminal logs ([ADR 0017](adr/0017-in-app-activity-console-and-live-telemetry-stream.md)):
+- **Zero-Dependency SSE Streaming**: Control Plane serves structured diagnostic events over Server-Sent Events (`GET /api/telemetry/stream`) using native Go standard library `http.Flusher` and browser native `EventSource`.
+- **Bounded In-Memory Ring Buffer**: Retains a fixed-capacity 100-event circular buffer in Go daemon memory for instant replay/hydration, with non-blocking fan-out drops on slow subscribers to protect system latency and prevent memory bloat.
+- **Client-Side Ergonomics & Auto-Scroll**: Interactive 6-column running drawer (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`) accessible via `Ctrl+`` or footer button, with smart auto-scroll freezing during review, level filtering (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`), quick search, unread error counters, and one-click `.log` and `.json` client exports.
+- **Background Noise Reduction**: High-frequency background poller audits run under `DEBUG` severity (filtered out by default) across 7 canonical modules (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`), keeping logs actionable during idle hours.
+
+

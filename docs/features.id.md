@@ -132,3 +132,14 @@ Untuk lingkungan jaringan terisolasi (*air-gapped*) atau server dengan keterbata
 - Dijalankan sebagai template Docker Compose standar di salah satu node yang ditunjuk.
 - Berfungsi ganda sebagai penyimpanan image lokal kustom dan *pull-through cache* untuk upstream registry (Docker Hub, GitHub Container Registry) guna mempercepat proses deployment di seluruh cluster node.
 - Panduan implementasi teknis dan konfigurasi lengkap tersedia di [Panduan Setup Registry Internal](internal-registry.id.md).
+
+---
+
+## 12. In-App Activity Console & Live Telemetry Stream
+
+Untuk visibilitas operasional real-time tanpa perlu membuka terminal server atau memeriksa file log secara manual ([ADR 0017](adr/0017-in-app-activity-console-and-live-telemetry-stream.md)):
+- **Streaming SSE Zero-Dependency**: Control Plane menyiarkan kejadian diagnostik terstruktur melalui Server-Sent Events (`GET /api/telemetry/stream`) murni menggunakan pustaka standar Go `http.Flusher` dan browser native `EventSource`.
+- **Telemetry Ring Buffer Terbatas**: Menyimpan 100 event terbaru dalam memori sirkular daemon Go untuk hidrasi instan saat UI dibuka, dilengkapi mekanisme *non-blocking drop* pada klien yang lambat untuk menjaga latensi sistem dan mencegah pembengkakan memori.
+- **Ergonomi Klien & Smart Auto-Scroll**: Drawer tabel interaktif 6 kolom (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`) yang dapat dibuka-tutup via tombol footer atau shortcut `Ctrl+``, fitur pembekuan auto-scroll otomatis saat meninjau log lama, filter keparahan (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`), pencarian cepat, indikator error baru, serta ekspor instan client-side ke `.log` dan `.json`.
+- **Peredam Kebisingan Latar Belakang**: Audit rutin background poller diklasifikasikan pada tingkat `DEBUG` (tersembunyi secara default) dalam 7 modul kanonikal (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`), menjaga konsol tetap bersih dan fokus pada tindakan penting.
+

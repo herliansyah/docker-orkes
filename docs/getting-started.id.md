@@ -21,12 +21,12 @@ Sebelum memulai, pastikan Anda telah menyiapkan:
 ```bash
 git clone https://github.com/herliansyah/docker-orkes.git
 cd docker-orkes
-go build -o docker-orkes ./cmd/docker-orkes
+go build -o bin/docker-orkes ./cmd/docker-orkes
 ```
 
 ### Menjalankan Control Plane
 ```bash
-./docker-orkes -addr :8080 -pass password-rahasia-anda
+./bin/docker-orkes -addr :8080 -pass password-rahasia-anda
 ```
 
 Atau menggunakan variabel lingkungan (*environment variables*):
@@ -34,7 +34,9 @@ Atau menggunakan variabel lingkungan (*environment variables*):
 export ADDR=":8080"
 export MASTER_PASSWORD="password-rahasia-anda"
 export DB_PATH="docker-orkes.db"
-./docker-orkes
+export LOG_FILE="docker-orkes.log"
+export LOG_LEVEL="info"
+./bin/docker-orkes
 ```
 
 Akses `http://localhost:8080` melalui browser Anda dan login dengan password yang telah Anda masukkan.
@@ -157,3 +159,18 @@ Docker Orkes akan secara otomatis:
    - **Discord**: Masukkan Webhook URL dari channel Discord Anda.
    - **Custom Webhook**: Masukkan URL HTTP endpoint yang menerima payload JSON.
 4. Klik tombol **Send Test Alert** untuk memastikan notifikasi terkirim, lalu simpan pengaturan.
+
+---
+
+## 11. Memantau In-App Activity Console & Live Telemetry Stream
+
+Untuk melihat seluruh operasi internal Control Plane, eksekusi SSH, dan audit kesehatan sistem secara langsung dari browser tanpa perlu membuka terminal server:
+1. Klik tombol **⚡ Activity** di status bar footer bagian bawah (atau tekan tombol pintas `Ctrl+``` di layar mana saja).
+2. Drawer interaktif 6 kolom Activity Console akan terbuka:
+   - **Live Telemetry Stream**: Memantau event dari 7 modul inti (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`).
+   - **Jeda & Lanjutkan (Pause & Resume)**: Klik **⏸ Pause** untuk menahan guliran log saat Anda sedang menganalisis insiden tertentu tanpa memutus koneksi streaming.
+   - **Smart Auto-Scroll**: Tampilan otomatis bergulir mengikuti log terbaru, namun otomatis membeku saat Anda men-scroll ke atas untuk meninjau log lama.
+   - **Filter & Pencarian**: Saring menurut tingkat keparahan (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`) atau gunakan kotak pencarian instan untuk memfilter menurut nama node, modul, atau teks pesan.
+   - **Inspeksi Detail**: Klik baris log yang memiliki metadata untuk membuka rincian atribut JSON terstruktur.
+   - **Ekspor Log**: Klik **💾 Export** untuk mengunduh rekaman log browser saat itu juga ke dalam format teks `.log` atau data `.json`.
+

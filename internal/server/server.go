@@ -26,6 +26,7 @@ import (
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
 	"docker-orkes/internal/notifier"
+	"docker-orkes/internal/logger"
 	"docker-orkes/internal/nodeclient"
 	"docker-orkes/internal/poller"
 	"docker-orkes/internal/ssh"
@@ -244,6 +245,9 @@ func (s *Server) Handler() http.Handler {
 	// Web Terminal WebSocket
 	mux.Handle("GET /ws/terminal", s.requireAuth(websocket.Handler(s.handleTerminalWebSocket)))
 
+	// In-App Telemetry Stream (ADR 0017)
+	mux.Handle("GET /api/telemetry/stream", s.requireAuth(http.HandlerFunc(s.handleTelemetryStream)))
+
 	return mux
 }
 
@@ -251,7 +255,7 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("orkes_session")
 		if err != nil || !s.store.ValidateSession(cookie.Value) {
-			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || strings.HasPrefix(r.URL.Path, "/api/") {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -260,6 +264,56 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// handleTelemetryStream streams live diagnostic telemetry events over Server-Sent Events (SSE).
+// ponytail: Standard library http.Flusher and EventSource with bounded memory ring buffer hydration (ADR 0017).
+func (s *Server) handleTelemetryStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	broadcaster := logger.DefaultBroadcaster()
+	if broadcaster == nil {
+		http.Error(w, "Telemetry broadcaster unavailable", http.StatusInternalServerError)
+		return
+	}
+
+	// 1. Cold start: hydrate UI with historical events from ring buffer
+	history := broadcaster.History()
+	for _, evt := range history {
+		if data, err := json.Marshal(evt); err == nil {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		}
+	}
+	flusher.Flush()
+
+	// 2. Subscribe to live stream
+	ch, unsub := broadcaster.Subscribe()
+	defer unsub()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			if data, err := json.Marshal(evt); err == nil {
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -280,6 +334,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	pass := r.FormValue("password")
 	if pass != s.cfg.MasterPassword {
+		logger.Warn("auth", "", "Failed login attempt: invalid master password", "ip", r.RemoteAddr)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = s.templates.ExecuteTemplate(w, "login.html", map[string]string{
@@ -290,9 +345,11 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	token := generateToken(32)
 	if err := s.store.CreateSession(token); err != nil {
+		logger.Error("auth", "", "Failed to create operator session", "error", err.Error())
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
+	logger.Info("auth", "", "Operator login successful", "ip", r.RemoteAddr)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "orkes_session",
