@@ -165,6 +165,23 @@ _Avoid_: Container import, hijack, take over
 The alignment of a Node's runtime state to a Desired State using `docker compose up -d --no-recreate`, preserving running containers that already match configuration and protecting existing Node Volumes.
 _Avoid_: Soft sync, non-destructive deploy, graceful reload
 
+**Activity Console**:
+A collapsible, in-app telemetry drawer within the Control Plane dashboard providing real-time visibility into internal daemon operations, SSH executions, and system events.
+_Avoid_: Log viewer, debug console, terminal drawer
+
+**Telemetry Stream**:
+A unidirectional, real-time event streaming channel served over HTTP Server-Sent Events (SSE) that broadcasts diagnostic occurrences from the Control Plane to connected operator sessions.
+_Avoid_: WebSocket logs, polling feed, log socket
+
+**Telemetry Event**:
+An individual structured diagnostic record emitted during Control Plane execution, encapsulating an event timestamp, severity level, source subsystem or module, descriptive message, and operational metadata.
+_Avoid_: Log line, log entry, syslog message
+
+**Telemetry Ring Buffer**:
+A bounded, fixed-capacity in-memory FIFO buffer retained within the Control Plane daemon that stores recent Telemetry Events to instantly hydrate newly opened Activity Console sessions.
+_Avoid_: Log queue, event cache, memory backlog
+
+
 
 
 

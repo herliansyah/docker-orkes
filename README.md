@@ -48,6 +48,7 @@ Everything is performed over secure, agentless **SSH**:
 - 📊 **Host Observability & Container Logs**: Real-time disk usage telemetry (`df -h`), Docker engine vitals, container port mappings, and live container logs viewer.
 - 🔄 **Automated Git Mirror Backup**: Maintain an external Git repository (GitHub, GitLab, Gitea) as a versioned audit log of all stack templates, deployment variables, and inventory.
 - ⚡ **Auto-Inject SSH Key**: Bootstrap new nodes automatically using temporary SSH passwords—the password is used once to append the Control Plane's public key to `~/.ssh/authorized_keys` and is never saved.
+- 📡 **In-App Activity Console & Live Telemetry Stream**: Real-time zero-polling diagnostic feed served via Server-Sent Events (SSE) with a 6-column running drawer (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`), smart auto-scroll, pause/resume, level filters, unread error counters, global hotkey (`Ctrl+```), and client-side `.log` and `.json` export.
 - 🌐 **Bilingual Interface**: Seamlessly switch between English and Bahasa Indonesia with instant client-side localization.
 - 📋 **Shared Operator Runbook**: Built-in operational checklist and infrastructure notes synchronized directly to your Git repository as `RUNBOOK.md`.
 
@@ -87,12 +88,12 @@ Everything is performed over secure, agentless **SSH**:
 ```bash
 git clone https://github.com/herliansyah/docker-orkes.git
 cd docker-orkes
-go build -o docker-orkes ./cmd/docker-orkes
+go build -o bin/docker-orkes ./cmd/docker-orkes
 ```
 
 ### 2. Launch Control Plane
 ```bash
-./docker-orkes -addr :8080 -pass your-secure-password
+./bin/docker-orkes -addr :8080 -pass your-secure-password
 ```
 
 Open your browser and navigate to `http://localhost:8080`. Log in with your password.
@@ -104,6 +105,8 @@ Open your browser and navigate to `http://localhost:8080`. Log in with your pass
 | `-addr` | `ADDR` | `:8080` | Web server listening address and port |
 | `-pass` | `MASTER_PASSWORD` | `admin` | Master login password for the control plane |
 | `-db` | `DB_PATH` | `docker-orkes.db` | SQLite database file path |
+| `-log-file` | `LOG_FILE` | `docker-orkes.log` | Persistent rotating server log file path (empty to disable) |
+| `-log-level` | `LOG_LEVEL` | `info` | Diagnostic logging level (`debug`, `info`, `warn`, `error`) |
 
 ---
 
@@ -170,6 +173,7 @@ Comprehensive guides and technical documentation are available:
   - [ADR 0014: Deployment Preflight Checks and Execution Feedback](docs/adr/0014-deployment-preflight-checks-and-execution-feedback.md)
   - [ADR 0015: Agentless Transport Security and Filesystem Isolation](docs/adr/0015-agentless-transport-security-and-filesystem-isolation.md)
   - [ADR 0016: Stack Directory Isolation and Data Purge Guardrails](docs/adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)
+  - [ADR 0017: In-App Activity Console and Live Telemetry Stream](docs/adr/0017-in-app-activity-console-and-live-telemetry-stream.md)
 
 ---
 

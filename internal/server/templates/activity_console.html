@@ -1,0 +1,75 @@
+{{define "activity_console"}}
+<!-- In-App Activity Console Drawer (ADR 0017) -->
+<div id="activity-console-drawer" class="hidden fixed bottom-0 left-0 right-0 flex flex-col bg-zinc-950/95 border-t border-zinc-700/80 backdrop-blur-md transition-all duration-200 z-40 shadow-2xl" style="height: 280px; max-height: 50vh;">
+  <!-- Drawer Header / Toolbar -->
+  <div class="h-9 bg-zinc-900/90 border-b border-zinc-800 px-3 flex items-center justify-between text-xs text-zinc-300 shrink-0 select-none">
+    <div class="flex items-center space-x-3 overflow-x-auto">
+      <div class="flex items-center space-x-2 font-semibold">
+        <span class="text-amber-400">⚡</span>
+        <span class="text-zinc-200 font-medium">Activity Console</span>
+        <span id="activity-live-status" class="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-700/50">● LIVE</span>
+      </div>
+      <!-- Severity Filter Pills -->
+      <div class="flex items-center space-x-1 bg-zinc-950 p-0.5 rounded border border-zinc-800 text-[11px]">
+        <button type="button" onclick="setActivityLevelFilter('ALL')" id="activity-filter-all" class="px-2 py-0.5 rounded font-mono transition bg-indigo-600 text-white font-medium">ALL</button>
+        <button type="button" onclick="setActivityLevelFilter('ERROR')" id="activity-filter-error" class="px-2 py-0.5 rounded font-mono transition text-zinc-400 hover:text-white">ERROR</button>
+        <button type="button" onclick="setActivityLevelFilter('WARN')" id="activity-filter-warn" class="px-2 py-0.5 rounded font-mono transition text-zinc-400 hover:text-white">WARN</button>
+        <button type="button" onclick="setActivityLevelFilter('INFO')" id="activity-filter-info" class="px-2 py-0.5 rounded font-mono transition text-zinc-400 hover:text-white">INFO</button>
+        <button type="button" onclick="setActivityLevelFilter('DEBUG')" id="activity-filter-debug" class="px-2 py-0.5 rounded font-mono transition text-zinc-400 hover:text-white">DEBUG</button>
+      </div>
+      <!-- Search Input -->
+      <div class="relative">
+        <input type="text" id="activity-search-input" oninput="onActivitySearchInput(this.value)" placeholder="Filter logs (node, module, msg)..." class="w-48 bg-zinc-950 border border-zinc-800 focus:border-indigo-500 text-white text-[11px] px-2 py-0.5 rounded outline-none font-mono placeholder-zinc-500 transition">
+      </div>
+    </div>
+    <!-- Right Actions -->
+    <div class="flex items-center space-x-2 shrink-0">
+      <!-- Pause / Resume Toggle -->
+      <button type="button" id="activity-pause-btn" onclick="toggleActivityPause()" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-mono flex items-center space-x-1 transition cursor-pointer" title="Pause or resume live incoming feed">
+        <span id="activity-pause-icon">⏸</span>
+        <span id="activity-pause-label">Pause</span>
+      </button>
+      <!-- Clear Logs -->
+      <button type="button" onclick="clearActivityLogs()" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-mono flex items-center space-x-1 transition cursor-pointer" title="Clear current logs from table">
+        <span>🗑️</span>
+        <span>Clear</span>
+      </button>
+      <!-- Export Menu -->
+      <div class="relative inline-block">
+        <button type="button" onclick="toggleActivityExportMenu()" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-[11px] font-mono flex items-center space-x-1 transition cursor-pointer" title="Export logs as file">
+          <span>💾</span>
+          <span>Export</span>
+          <span class="text-[9px]">▼</span>
+        </button>
+        <div id="activity-export-menu" class="hidden absolute right-0 mt-1 w-32 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl py-1 z-50 text-[11px] font-mono">
+          <button type="button" onclick="exportActivityLogs('log')" class="w-full text-left px-3 py-1 text-zinc-300 hover:bg-indigo-600 hover:text-white transition">As .log (text)</button>
+          <button type="button" onclick="exportActivityLogs('json')" class="w-full text-left px-3 py-1 text-zinc-300 hover:bg-indigo-600 hover:text-white transition">As .json</button>
+        </div>
+      </div>
+      <!-- Close Drawer -->
+      <button type="button" onclick="toggleActivityConsole(false)" class="text-zinc-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-zinc-800 transition cursor-pointer" title="Close Activity Console (Ctrl+`)">✕</button>
+    </div>
+  </div>
+
+  <!-- Table Body / Scroll Container -->
+  <div id="activity-table-container" onscroll="handleActivityScroll()" class="flex-1 overflow-y-auto overflow-x-auto font-mono text-[11px] bg-zinc-950/80 select-text">
+    <table class="w-full text-left border-collapse">
+      <thead class="sticky top-0 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 text-zinc-400 text-[10px] uppercase font-semibold select-none z-10">
+        <tr>
+          <th class="py-1 px-3 w-24">Time</th>
+          <th class="py-1 px-2 w-16">Level</th>
+          <th class="py-1 px-2 w-20">Module</th>
+          <th class="py-1 px-2 w-28">Target / Node</th>
+          <th class="py-1 px-3">Activity / Message</th>
+          <th class="py-1 px-3 w-32 text-right">Details</th>
+        </tr>
+      </thead>
+      <tbody id="activity-table-body" class="divide-y divide-zinc-800/40 text-zinc-300">
+      </tbody>
+    </table>
+    <div id="activity-empty-state" class="p-8 text-center text-zinc-500 italic hidden">
+      No activity logs recorded yet.
+    </div>
+  </div>
+</div>
+{{end}}

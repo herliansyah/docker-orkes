@@ -1858,6 +1858,12 @@
           <span class="w-1.5 h-1.5 rounded-full {{if .NotificationsEnabled}}bg-emerald-400{{else}}bg-zinc-500{{end}}"></span>
           <span>Alerts: {{if .NotificationsEnabled}}Enabled{{else}}Disabled{{end}}</span>
         </button>
+
+        <button id="activity-console-toggle-btn" type="button" onclick="toggleActivityConsole()" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/80 border border-zinc-700/50 text-[11px] font-mono text-zinc-300 hover:border-amber-500/50 hover:bg-zinc-800 transition cursor-pointer" title="Toggle Activity Console (Ctrl+`)">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" id="activity-live-pulse"></span>
+          <span>⚡ Activity</span>
+          <span id="activity-error-badge" class="hidden px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-400 text-[10px] font-semibold border border-rose-500/30">0</span>
+        </button>
       </div>
 
       <!-- Center: Docker Orkes Motto -->
@@ -5724,5 +5730,8 @@
     </div>
     <button type="button" onclick="hideGlobalToast()" class="text-zinc-500 hover:text-zinc-300 transition text-xs p-1 focus:outline-none">✕</button>
   </div>
+
+  {{template "activity_console" .}}
+  <script src="/static/activity-console.js"></script>
 </body>
 </html>

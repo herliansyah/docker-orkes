@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"docker-orkes/internal/controlplane"
+	"docker-orkes/internal/logger"
 	"docker-orkes/internal/nodeclient"
 	"docker-orkes/internal/notifier"
 )
@@ -125,6 +126,8 @@ func (p *poller) PollOnce(ctx context.Context) error {
 			p.nodeState[n.ID] = currState
 			p.mu.Unlock()
 
+			logger.Warn("poller", n.Name, "Node is unreachable", "error", testErr.Error(), "host", n.Host)
+
 			if prevState == "online" {
 				// Edge: online -> offline
 				_ = p.notifier.SendAlert(ctx,
@@ -139,8 +142,11 @@ func (p *poller) PollOnce(ctx context.Context) error {
 			p.nodeState[n.ID] = currState
 			p.mu.Unlock()
 
+			logger.Debug("poller", n.Name, "Node audit healthy", "docker", dockerVer)
+
 			if prevState == "offline" {
 				// Edge: offline -> online (recovery)
+				logger.Info("poller", n.Name, "Node recovered online", "docker", dockerVer)
 				_ = p.notifier.SendAlert(ctx,
 					fmt.Sprintf("Node %s Recovered", n.Name),
 					fmt.Sprintf("Node %s (%s:%d) is back online (Docker %s).", n.Name, n.Host, n.Port, dockerVer),
@@ -204,6 +210,8 @@ func (p *poller) PollOnce(ctx context.Context) error {
 			p.depState[dep.ID] = currState
 			p.mu.Unlock()
 
+			logger.Warn("poller", dep.NodeName, fmt.Sprintf("Deployment %s containers degraded or exited", dep.StackName), "stack", dep.StackName, "deployment_id", dep.ID)
+
 			if prevState != "degraded" {
 				_ = st.UpdateDeploymentStatus(dep.ID, "failed", "Container exited unexpectedly")
 				_ = p.notifier.SendAlert(ctx,
@@ -218,7 +226,10 @@ func (p *poller) PollOnce(ctx context.Context) error {
 			p.depState[dep.ID] = currState
 			p.mu.Unlock()
 
+			logger.Debug("poller", dep.NodeName, fmt.Sprintf("Deployment %s containers healthy", dep.StackName), "containers", len(stackContainers))
+
 			if prevState == "degraded" || prevState == "failed" {
+				logger.Info("poller", dep.NodeName, fmt.Sprintf("Deployment %s recovered", dep.StackName), "stack", dep.StackName)
 				_ = st.UpdateDeploymentStatus(dep.ID, "running", "All containers running normally")
 				_ = p.notifier.SendAlert(ctx,
 					fmt.Sprintf("Deployment %s/%s Recovered", dep.NodeName, dep.StackName),

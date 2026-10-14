@@ -21,12 +21,12 @@ Before starting, ensure you have:
 ```bash
 git clone https://github.com/herliansyah/docker-orkes.git
 cd docker-orkes
-go build -o docker-orkes ./cmd/docker-orkes
+go build -o bin/docker-orkes ./cmd/docker-orkes
 ```
 
 ### Starting the Control Plane
 ```bash
-./docker-orkes -addr :8080 -pass your-secure-password
+./bin/docker-orkes -addr :8080 -pass your-secure-password
 ```
 
 Or via environment variables:
@@ -34,7 +34,9 @@ Or via environment variables:
 export ADDR=":8080"
 export MASTER_PASSWORD="your-secure-password"
 export DB_PATH="docker-orkes.db"
-./docker-orkes
+export LOG_FILE="docker-orkes.log"
+export LOG_LEVEL="info"
+./bin/docker-orkes
 ```
 
 Open `http://localhost:8080` in your web browser and sign in with the password you specified.
@@ -157,3 +159,18 @@ Docker Orkes will:
    - **Discord**: Provide Discord Webhook URL.
    - **Custom Webhook**: Provide generic JSON HTTP URL.
 4. Click **Send Test Alert** to verify connectivity, then save settings.
+
+---
+
+## 11. Monitoring In-App Activity Console & Live Telemetry Stream
+
+To inspect real-time daemon operations, SSH executions, and system health directly from the web interface without accessing terminal logs:
+1. Click the **⚡ Activity** button in the bottom status bar footer (or press `Ctrl+``` anywhere in the interface).
+2. The collapsible 6-column Activity Console drawer opens:
+   - **Real-Time Stream**: Observe live events across 7 modules (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`).
+   - **Pause & Resume**: Click **⏸ Pause** to freeze the incoming feed during active investigations without severing the server stream.
+   - **Smart Auto-Scroll**: The viewport automatically sticks to the bottom on new events, and automatically freezes when you scroll up to inspect history.
+   - **Filters & Search**: Filter by severity pills (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`) or type in the instant search box to filter by node, module, or message.
+   - **Inspect Metadata**: Click on any row with details to expand structured JSON attributes.
+   - **Export**: Click **💾 Export** to download client logs instantly as plain text `.log` or structured `.json`.
+

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"docker-orkes/internal/logger"
 	"docker-orkes/internal/server"
 )
 
@@ -47,12 +48,23 @@ func runServer() {
 		pass   = flag.String("pass", getEnv("MASTER_PASSWORD", "admin"), "Master password for dashboard access")
 		pidFile = flag.String("pid", defaultPidFile, "Path to PID file")
 		daemon  = flag.Bool("d", false, "Run in background (daemon mode)")
+		logFile = flag.String("log-file", getEnv("LOG_FILE", "docker-orkes.log"), "Path to rotating log file (empty to disable)")
+		logLevel = flag.String("log-level", getEnv("LOG_LEVEL", "info"), "Log level (debug, info, warn, error)")
 	)
 	flag.Parse()
 
 	if *daemon {
 		runDaemon()
 		return
+	}
+
+	// Initialize Diagnostic Logger and Telemetry Broadcaster (ADR 0017)
+	logRes, logErr := logger.Setup(logger.Config{
+		Level:    *logLevel,
+		FilePath: *logFile,
+	})
+	if logErr == nil && logRes.Closer != nil {
+		defer logRes.Closer.Close()
 	}
 
 	// Write PID file

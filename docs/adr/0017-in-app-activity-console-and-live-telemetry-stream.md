@@ -1,0 +1,15 @@
+# In-App Activity Console and Live Telemetry Stream
+
+We decided to equip Docker Orkes with real-time in-app operational visibility using a unidirectional Server-Sent Events (SSE) telemetry transport, standard library `log/slog` integration with legacy `log.Printf` adapter, and an interactive, collapsible Activity Console drawer within the web interface, preserving the single-binary zero-dependency Ponytail standard.
+
+## Context & Problem
+1. **Lack of In-App Operational Visibility**: Operators running the Control Plane had no real-time insight into internal daemon operations (background poller audits, remote SSH executions, pre-flight checks, drift checks, Git mirror syncing, or outbound alerts) without inspecting stdout/stderr in a server terminal or running `tail -f`.
+2. **Heavy Transport Overhead Avoidance**: Adding WebSocket dependencies or polling intervals for purely unidirectional telemetry broadcast introduces unnecessary protocol framing, CPU/network chatter, and third-party dependencies.
+3. **Ergonomic Operator Experience**: High-frequency background poller audits can flood the log stream, causing rapid auto-scrolling that makes reading error traces or SSH failures frustrating. Operators require pause/freeze controls, smart auto-scroll, severity level filters, multi-node target identification, and client-side log export capabilities.
+
+## Decision
+1. **Pure Go Stdlib SSE Transport**: Implement a unidirectional telemetry stream endpoint (`GET /api/telemetry/stream`) using Go standard library `http.Flusher` and native browser `EventSource`, avoiding third-party WebSocket or messaging broker dependencies.
+2. **In-Memory Telemetry Ring Buffer & Broadcaster**: Introduce `internal/logger` featuring a bounded FIFO ring buffer (100 events) and non-blocking channel fan-out broadcaster to hydrate newly connected browser sessions with immediate historical context upon opening.
+3. **Standard Library `log/slog` & Ponytail Bridge Adapter**: Multicast telemetry records to terminal stderr, a local persistent server log file (`docker-orkes.log` with simple 10MB size rotation), and the live broadcaster. Provide a bridge adapter on `log.Default()` so existing `log.Printf` statements automatically stream with appropriate severity without extensive code churn.
+4. **Interactive 6-Column Activity Console Drawer**: Provide a collapsible drawer in the web interface across dashboard and node detail views with 6 columns (`TIME`, `LEVEL`, `MODULE`, `TARGET/NODE`, `MESSAGE`, `DETAILS`). Include smart auto-scroll (auto-freezing when scrolled up), live pulse indicator, unread error badge on footer toggle, `Ctrl+`` keyboard shortcut, search filtering, level toggles, and client-side instant `.log` and `.json` export.
+5. **Background Noise Management**: Classify regular background poller audits under `DEBUG` severity (filtered out by default) and categorize events under 7 canonical modules (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`) to keep the primary view actionable during idle periods.

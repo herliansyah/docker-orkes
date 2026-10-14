@@ -48,6 +48,7 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 - 📊 **Observabilitas Host & Log Kontainer**: Pantau kapasitas penyimpanan disk (`df -h`), vital Docker engine, pemetaan port kontainer, dan peninjau live logs kontainer secara real-time.
 - 🔄 **Backup Otomatis ke Git Mirror**: Sinkronkan seluruh konfigurasi stack, env node, dan `inventory.json` ke repositori Git eksternal (GitHub, GitLab, Gitea) sebagai audit log berversi.
 - ⚡ **Auto-Inject SSH Key**: Pasang Control Plane SSH Public Key ke server target baru secara otomatis menggunakan password sementara sekali pakai (password tidak pernah disimpan ke database).
+- 📡 **In-App Activity Console & Live Telemetry Stream**: Saluran telemetry diagnostik real-time berbasis Server-Sent Events (SSE) dengan drawer 6 kolom (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`), smart auto-scroll, kontrol pause/resume, filter severity, counter error baru, shortcut global (`Ctrl+```), serta export instan `.log` dan `.json`.
 - 🌐 **Antarmuka Bilingual**: Beralih antara Bahasa Indonesia dan Bahasa Inggris secara instan langsung dari antarmuka dashboard.
 - 📋 **Operator Runbook Bersama**: Papan catatan checklist operasional dan jadwal maintenance yang tersinkronisasi otomatis ke Git sebagai file `RUNBOOK.md`.
 
@@ -87,12 +88,12 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 ```bash
 git clone https://github.com/herliansyah/docker-orkes.git
 cd docker-orkes
-go build -o docker-orkes ./cmd/docker-orkes
+go build -o bin/docker-orkes ./cmd/docker-orkes
 ```
 
 ### 2. Jalankan Control Plane
 ```bash
-./docker-orkes -addr :8080 -pass password-rahasia-anda
+./bin/docker-orkes -addr :8080 -pass password-rahasia-anda
 ```
 
 Buka peramban (browser) Anda dan akses `http://localhost:8080`. Masuk menggunakan password yang telah Anda tetapkan.
@@ -104,6 +105,8 @@ Buka peramban (browser) Anda dan akses `http://localhost:8080`. Masuk menggunaka
 | `-addr` | `ADDR` | `:8080` | Alamat listen dan port web server |
 | `-pass` | `MASTER_PASSWORD` | `admin` | Password login master untuk dasbor |
 | `-db` | `DB_PATH` | `docker-orkes.db` | Jalur file database SQLite |
+| `-log-file` | `LOG_FILE` | `docker-orkes.log` | Jalur file log persisten berotasi di server (kosongkan untuk menonaktifkan) |
+| `-log-level` | `LOG_LEVEL` | `info` | Level logging diagnostik (`debug`, `info`, `warn`, `error`) |
 
 ---
 
@@ -170,6 +173,7 @@ Panduan langkah demi langkah dan rincian teknis telah tersedia:
   - [ADR 0014: Deployment Preflight Checks and Execution Feedback](docs/adr/0014-deployment-preflight-checks-and-execution-feedback.md)
   - [ADR 0015: Agentless Transport Security and Filesystem Isolation](docs/adr/0015-agentless-transport-security-and-filesystem-isolation.md)
   - [ADR 0016: Stack Directory Isolation and Data Purge Guardrails](docs/adr/0016-stack-directory-isolation-and-data-purge-guardrails.md)
+  - [ADR 0017: In-App Activity Console and Live Telemetry Stream](docs/adr/0017-in-app-activity-console-and-live-telemetry-stream.md)
 
 ---
 
