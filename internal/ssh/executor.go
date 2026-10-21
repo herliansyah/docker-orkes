@@ -257,6 +257,13 @@ func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, 
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
+			ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range answers {
+					answers[i] = password
+				}
+				return answers, nil
+			}),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
@@ -283,7 +290,7 @@ func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, 
 	}
 	defer session.Close()
 
-	cleanKey := strings.TrimSpace(pubKey)
+	cleanKey := strings.Join(strings.Fields(pubKey), " ")
 	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qF '%s' ~/.ssh/authorized_keys || echo '%s' >> ~/.ssh/authorized_keys`, cleanKey, cleanKey)
 
 	out, err := session.CombinedOutput(cmd)

@@ -224,6 +224,11 @@ func (s *Store) EnsureSSHKeyPair() (publicKey string, privateKey string, err err
 	priv, errPriv := s.GetSetting("ssh_private_key")
 
 	if errPub == nil && errPriv == nil && pub != "" && priv != "" {
+		cleanPub := strings.Join(strings.Fields(pub), " ") + "\n"
+		if cleanPub != pub {
+			_ = s.SetSetting("ssh_public_key", cleanPub)
+			pub = cleanPub
+		}
 		return pub, priv, nil
 	}
 
