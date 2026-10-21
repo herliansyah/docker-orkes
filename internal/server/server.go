@@ -670,6 +670,10 @@ func validateComposeYAML(content string) error {
 	if len(parsed) == 0 {
 		return fmt.Errorf("compose YAML cannot be empty")
 	}
+	// ponytail: docker-compose v2/v3 requires 'services' key
+	if _, ok := parsed["services"]; !ok {
+		return fmt.Errorf("compose YAML must contain a 'services' definition")
+	}
 	return nil
 }
 var stackSlugRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)

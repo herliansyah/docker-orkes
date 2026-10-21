@@ -69,12 +69,12 @@ Anda dapat mendaftarkan dan mengotorisasi server node melalui salah satu dari 2 
 
 ---
 
-## 4. Membuat Template Stack
+## 4. Membuat dan Menyunting Template Stack
 
 1. Buka tab **Stack Templates**.
-2. Klik tombol **+ Add Stack**.
+2. Klik tombol **+ Add Stack** (atau klik baris stack yang ada untuk membuka **Stack Template Editor**).
 3. Masukkan nama slug template (misal `web-proxy` atau `redis-cache`).
-4. Masukkan definisi `docker-compose.yml`:
+4. Masukkan definisi `docker-compose.yml` langsung di editor kode terintegrasi ala VS Code:
    ```yaml
    services:
      web:
@@ -83,7 +83,13 @@ Anda dapat mendaftarkan dan mengotorisasi server node melalui salah satu dari 2 
          - "${PORT:-80}:80"
        restart: always
    ```
-5. Isi default environment variable (misal `PORT=8080`) dan catatan opsional.
+   > [!TIP]
+   > **Fitur Editor & Validasi**:
+   > - **Tema Gelap VS Code**: Penyorotan sintaks berwarna lengkap untuk YAML dan file `.env`.
+   > - **Ergonomi Pengetikan**: Nomor baris, indentasi otomatis 2 spasi saat menekan tombol `Tab`, dan pencocokan kurung siku/kurawal.
+   > - **Perbesar Ruang Kerja (*Maximize*)**: Klik tombol **Maximize** (`⛶`) pada header modal (atau tekan `Esc` untuk memulihkan) untuk memperbesar editor hingga memenuhi seluruh layar desktop.
+   > - **Proteksi Validasi Format**: Saat mengklik **Save Stack Template**, sistem memeriksa sintaks YAML dan kewajiban blok `services:`. Jika terdapat kesalahan format, baris error langsung diberi sorotan merah tanpa menghilangkan ketikan Anda.
+5. Isi default environment variable (misal `PORT=8080`) dan catatan opsional pada tab terkait.
 6. Klik **Save Stack Template**.
 
 ---

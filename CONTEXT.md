@@ -193,6 +193,15 @@ _Avoid_: CVE dump, scan log, security report
 The time-bounded freshness window following a successful Vulnerability Scan during which subsequent automated or bulk re-scans are suppressed to conserve Node host resources and network bandwidth.
 _Avoid_: Scan throttle, scan timer, re-scan delay
 
+**Stack Editor**:
+The self-contained, in-dashboard code editor with VS Code Dark styling, line numbers, automatic indentation ergonomics, and fullscreen workspace expansion for authoring and modifying Stacks and runtime configurations.
+_Avoid_: Textbox, raw text area, compose notepad
+
+**Compose Validation Guardrail**:
+The dual client-side and server-side verification check that prevents saving malformed YAML specifications or compose manifests lacking a mandatory `services:` declaration, targeting syntax errors to exact line coordinates before persistence.
+_Avoid_: Form checker, yaml check, input error handler
+
+
 
 
 

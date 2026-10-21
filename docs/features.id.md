@@ -31,7 +31,18 @@ Pada server node yang dikelola, Docker Orkes meletakkan aplikasi dalam jalur dir
 
 ---
 
-## 3. Deteksi dan Rekonsiliasi Configuration Drift
+## 3. Template Stack & Code Editor Ala VS Code
+
+Template stack adalah spesifikasi Docker Compose yang dapat digunakan kembali dan dikelola melalui editor kode mandiri terintegrasi ([ADR 0019](adr/0019-offline-vs-code-style-stack-editor-and-compose-guardrails.md)):
+- **Tampilan VS Code Dark**: Penyorotan sintaks (*syntax highlighting*) berwarna untuk direktif YAML (`services`, `image`, `ports`, `environment`, `volumes`), nilai boolean, angka, dan komentar, serta mode sintaks variabel `.env`.
+- **Ergonomi Pengetikan**: Nomor baris (*line numbers*), indentasi otomatis 2 spasi saat menekan tombol `Tab`, penyorotan pasangan kurung siku/kurawal (*bracket matching*), dan penutup kutip otomatis.
+- **Ekspansi Layar Penuh (*Maximize / Fullscreen*)**: Beralih dari tampilan modal standar ke kanvas editor layar penuh (`100vw` x `100vh`) dengan satu klik pada tombol toggle (`⛶`/`🗖`) atau tombol pintas `Esc` untuk menyunting file compose berskala besar dengan leluasa.
+- **Guardrail Validasi Compose Dua Lapis**: Validasi sintaks otomatis di browser (`js-yaml`) memeriksa keabsahan indentasi, ketiadaan karakter tab terlarang, serta kewajiban blok `services:` sebelum form terkirim. Jika salah, baris error langsung disorot merah dan kursor melompat ke posisi tersebut. Backend Control Plane juga memverifikasi ulang dengan penolakan HTTP 400 sebelum tersimpan di database.
+- **100% Offline & Air-Gapped**: Pustaka CodeMirror 5 di-*bundle* lokal dan di-*embed* langsung ke binary Go (`//go:embed`), tanpa ketergantungan CDN eksternal ([ADR 0011](adr/0011-self-contained-enterprise-ui.md)).
+
+---
+
+## 4. Deteksi dan Rekonsiliasi Configuration Drift
 
 ### Apa itu Drift?
 *Drift* terjadi jika file konfigurasi di server remote (*Actual State*) berbeda dari konfigurasi yang tercatat di Control Plane (*Desired State*). Misalnya, ketika operator melakukan SSH langsung ke server lalu menyunting file `docker-compose.yml` atau `.env` secara manual.
@@ -48,7 +59,7 @@ Pada server node yang dikelola, Docker Orkes meletakkan aplikasi dalam jalur dir
 
 ---
 
-## 4. Remote Stack Filesystem & Runtime Assets
+## 5. Remote Stack Filesystem & Runtime Assets
 
 Setiap deployment aktif menyediakan pengelola sistem berkas remote yang andal pada path `~/.docker-orkes/stacks/<stack-name>/`:
 - **Pohon Direktori & Breadcrumbs**: Navigasi subfolder secara visual dengan jalur remah roti (*breadcrumbs*) yang interaktif.
@@ -61,7 +72,7 @@ Setiap deployment aktif menyediakan pengelola sistem berkas remote yang andal pa
 
 ---
 
-## 5. Observabilitas Host, Telemetri & Log Kontainer
+## 6. Observabilitas Host, Telemetri & Log Kontainer
 
 Pada halaman detail node (`/nodes/<id>`), Docker Orkes mengambil data telemetri secara berkala tanpa membebani server:
 - **Kapasitas Penyimpanan Disk**: Memeriksa `df -h /` untuk menghitung kapasitas total, ruang terpakai, ruang bebas, dan persentase penggunaan secara visual.
@@ -70,7 +81,7 @@ Pada halaman detail node (`/nodes/<id>`), Docker Orkes mengambil data telemetri 
 
 ---
 
-## 6. Arsitektur Backup Git Mirror
+## 7. Arsitektur Backup Git Mirror
 
 Docker Orkes mengintegrasikan client Git murni (`go-git`):
 1. Mengelola repositori lokal di host Control Plane pada folder `data/git-mirror/`.
@@ -88,7 +99,7 @@ Docker Orkes mengintegrasikan client Git murni (`go-git`):
 
 ---
 
-## 7. Deployment Revisions & Instant Rollback
+## 8. Deployment Revisions & Instant Rollback
 
 Untuk mencegah kesalahan konfigurasi atau kegagalan versi rilis:
 - **Snapshot Immutable**: Setiap deployment baru otomatis menyimpan snapshot isi `docker-compose.yml`, variabel lingkungan `.env`, dan timestamp sebagai entri revisi berversi ([ADR 0005](adr/0005-forward-only-deployment-revisions-with-bounded-retention.md)).
@@ -97,7 +108,7 @@ Untuk mencegah kesalahan konfigurasi atau kegagalan versi rilis:
 
 ---
 
-## 8. Poller Latar Belakang Otomatis & Notifikasi Multi-Kanal
+## 9. Poller Latar Belakang Otomatis & Notifikasi Multi-Kanal
 
 Tanpa perlu operator terus memantau dashboard secara manual:
 - **Background Poller**: Poller ringan memeriksa keterjangkauan node, kesehatan kontainer, dan perubahan drift secara otomatis pada interval yang dapat dikonfigurasi (misal tiap 2 menit) tanpa membebani server ([ADR 0004](adr/0004-lightweight-poller-and-edge-triggered-alerting.md)).
@@ -106,7 +117,7 @@ Tanpa perlu operator terus memantau dashboard secara manual:
 
 ---
 
-## 9. Web Terminal Interaktif 100% Offline (PTY)
+## 10. Web Terminal Interaktif 100% Offline (PTY)
 
 Operator dapat membuka sesi terminal Linux berkecepatan tinggi langsung dari web browser tanpa ketergantungan internet maupun layanan SaaS pihak ketiga ([ADR 0009](adr/0009-offline-web-terminal-pty.md)):
 - **Dua Mode Target**:
@@ -117,7 +128,7 @@ Operator dapat membuka sesi terminal Linux berkecepatan tinggi langsung dari web
 
 ---
 
-## 10. Disaster Recovery & Replikasi Warm Standby
+## 11. Disaster Recovery & Replikasi Warm Standby
 
 Docker Orkes mendukung arsitektur pencadangan **Active-Passive (Warm Standby)** ([ADR 0006](adr/0006-active-passive-control-plane-replication.md)):
 - **Node Berjalan Mandiri**: Kontainer pada remote host beroperasi sepenuhnya independen dari Control Plane. Apabila server Control Plane utama mengalami kendala, seluruh kontainer aplikasi tetap berjalan normal.
@@ -126,7 +137,7 @@ Docker Orkes mendukung arsitektur pencadangan **Active-Passive (Warm Standby)** 
 
 ---
 
-## 11. Arsitektur Internal Hybrid Image Registry
+## 12. Arsitektur Internal Hybrid Image Registry
 
 Untuk lingkungan jaringan terisolasi (*air-gapped*) atau server dengan keterbatasan *bandwidth*, Docker Orkes menyediakan pola integrasi OCI Registry internal ([ADR 0007](adr/0007-internal-hybrid-image-registry.md)):
 - Dijalankan sebagai template Docker Compose standar di salah satu node yang ditunjuk.
@@ -135,7 +146,7 @@ Untuk lingkungan jaringan terisolasi (*air-gapped*) atau server dengan keterbata
 
 ---
 
-## 12. In-App Activity Console & Live Telemetry Stream
+## 13. In-App Activity Console & Live Telemetry Stream
 
 Untuk visibilitas operasional real-time tanpa perlu membuka terminal server atau memeriksa file log secara manual ([ADR 0017](adr/0017-in-app-activity-console-and-live-telemetry-stream.md)):
 - **Streaming SSE Zero-Dependency**: Control Plane menyiarkan kejadian diagnostik terstruktur melalui Server-Sent Events (`GET /api/telemetry/stream`) murni menggunakan pustaka standar Go `http.Flusher` dan browser native `EventSource`.
@@ -145,7 +156,7 @@ Untuk visibilitas operasional real-time tanpa perlu membuka terminal server atau
 
 ---
 
-## 13. Pemindaian Kerentanan Image & Protokol Cooldown
+## 14. Pemindaian Kerentanan Image & Protokol Cooldown
 
 Untuk audit keamanan otomatis maupun manual terhadap image kontainer lokal di seluruh server node ([ADR 0018](adr/0018-agentless-image-vulnerability-scanning.md)):
 - **Eksekusi Trivy Transient di Server Node**: Pemindaian dijalankan via SSH Executor dengan menjalankan kontainer scanner Trivy sementara (`aquasec/trivy:latest`) langsung di server target. Layer image diperiksa secara lokal dari storage daemon Docker tanpa perlu mentransfer file image bergiga-giga ke Control Plane.

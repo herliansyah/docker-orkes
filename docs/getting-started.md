@@ -69,12 +69,12 @@ You can authorize target nodes in one of two ways:
 
 ---
 
-## 4. Creating a Stack Template
+## 4. Creating and Editing Stack Templates
 
 1. Navigate to the **Stack Templates** tab.
-2. Click **+ Add Stack**.
+2. Click **+ Add Stack** (or click any existing stack row to open the **Stack Template Editor**).
 3. Enter a slug name (e.g. `nginx-proxy` or `redis-cache`).
-4. Paste your `docker-compose.yml` configuration:
+4. Author or paste your `docker-compose.yml` configuration directly in the integrated VS Code-style editor:
    ```yaml
    services:
      web:
@@ -83,7 +83,13 @@ You can authorize target nodes in one of two ways:
          - "${PORT:-80}:80"
        restart: always
    ```
-5. Specify default environment variables (e.g. `PORT=8080`) and optional notes.
+   > [!TIP]
+   > **Editor Features**:
+   > - **VS Code Dark Theme**: Full syntax highlighting for YAML and `.env` files.
+   > - **Ergonomics**: 2-space automatic indentation when pressing `Tab`, gutter line numbers, and matching brackets.
+   > - **Maximize Canvas**: Click the **Maximize** button (`⛶`) in the modal header (or press `Esc` to restore) to expand the editor into a full-screen workspace.
+   > - **Pre-Save Validation**: When clicking **Save Stack Template**, the editor verifies that the YAML syntax is valid and contains a required `services:` block. Any errors immediately highlight the offending line in red without losing your edits.
+5. Specify default environment variables (e.g. `PORT=8080`) and optional notes in the adjacent tabs.
 6. Click **Save Stack Template**.
 
 ---
