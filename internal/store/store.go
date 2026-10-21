@@ -89,6 +89,18 @@ type DeploymentRevision struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type NodeImageScan struct {
+	NodeID        string    `json:"node_id"`
+	ImageRef      string    `json:"image_ref"`
+	ScannedAt     time.Time `json:"scanned_at"`
+	Status        string    `json:"status"` // clean, vulnerable, error
+	CriticalCount int       `json:"critical_count"`
+	HighCount     int       `json:"high_count"`
+	MediumCount   int       `json:"medium_count"`
+	LowCount      int       `json:"low_count"`
+	ReportJSON    string    `json:"report_json"`
+}
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -165,6 +177,19 @@ func (s *Store) initSchema() error {
 		created_at DATETIME NOT NULL,
 		PRIMARY KEY (node_id, image_ref)
 	);
+
+	CREATE TABLE IF NOT EXISTS node_image_scans (
+		node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+		image_ref TEXT NOT NULL,
+		scanned_at DATETIME NOT NULL,
+		status TEXT NOT NULL,
+		critical_count INTEGER NOT NULL DEFAULT 0,
+		high_count INTEGER NOT NULL DEFAULT 0,
+		medium_count INTEGER NOT NULL DEFAULT 0,
+		low_count INTEGER NOT NULL DEFAULT 0,
+		report_json TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (node_id, image_ref)
+	);
 	`
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -224,6 +249,11 @@ func (s *Store) EnsureSSHKeyPair() (publicKey string, privateKey string, err err
 	priv, errPriv := s.GetSetting("ssh_private_key")
 
 	if errPub == nil && errPriv == nil && pub != "" && priv != "" {
+		cleanPub := strings.Join(strings.Fields(pub), " ") + "\n"
+		if cleanPub != pub {
+			_ = s.SetSetting("ssh_public_key", cleanPub)
+			pub = cleanPub
+		}
 		return pub, priv, nil
 	}
 
@@ -591,6 +621,72 @@ func (s *Store) ListNodePinnedImages(nodeID string) ([]string, error) {
 		}
 	}
 	return refs, rows.Err()
+}
+
+// SaveNodeImageScan inserts or updates a vulnerability scan record.
+// ponytail: Uses UPSERT for single-statement idempotent scan record writes.
+func (s *Store) SaveNodeImageScan(scan *NodeImageScan) error {
+	if scan.NodeID == "" || scan.ImageRef == "" {
+		return errors.New("node_id and image_ref are required")
+	}
+	if scan.ScannedAt.IsZero() {
+		scan.ScannedAt = time.Now().UTC()
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO node_image_scans (node_id, image_ref, scanned_at, status, critical_count, high_count, medium_count, low_count, report_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(node_id, image_ref) DO UPDATE SET
+			scanned_at = excluded.scanned_at,
+			status = excluded.status,
+			critical_count = excluded.critical_count,
+			high_count = excluded.high_count,
+			medium_count = excluded.medium_count,
+			low_count = excluded.low_count,
+			report_json = excluded.report_json
+	`, scan.NodeID, scan.ImageRef, scan.ScannedAt, scan.Status, scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount, scan.ReportJSON)
+	return err
+}
+
+// GetNodeImageScan returns the vulnerability scan record for a given node and image ref.
+func (s *Store) GetNodeImageScan(nodeID, imageRef string) (*NodeImageScan, error) {
+	var scan NodeImageScan
+	err := s.db.QueryRow(`
+		SELECT node_id, image_ref, scanned_at, status, critical_count, high_count, medium_count, low_count, report_json
+		FROM node_image_scans
+		WHERE node_id = ? AND image_ref = ?
+	`, nodeID, strings.TrimSpace(imageRef)).Scan(
+		&scan.NodeID, &scan.ImageRef, &scan.ScannedAt, &scan.Status,
+		&scan.CriticalCount, &scan.HighCount, &scan.MediumCount, &scan.LowCount, &scan.ReportJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &scan, nil
+}
+
+// ListNodeImageScans returns all vulnerability scans for a node mapped by image_ref.
+func (s *Store) ListNodeImageScans(nodeID string) (map[string]*NodeImageScan, error) {
+	rows, err := s.db.Query(`
+		SELECT node_id, image_ref, scanned_at, status, critical_count, high_count, medium_count, low_count, report_json
+		FROM node_image_scans
+		WHERE node_id = ?
+	`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	scans := make(map[string]*NodeImageScan)
+	for rows.Next() {
+		var scan NodeImageScan
+		if err := rows.Scan(
+			&scan.NodeID, &scan.ImageRef, &scan.ScannedAt, &scan.Status,
+			&scan.CriticalCount, &scan.HighCount, &scan.MediumCount, &scan.LowCount, &scan.ReportJSON,
+		); err == nil {
+			scans[scan.ImageRef] = &scan
+		}
+	}
+	return scans, rows.Err()
 }
 
 

@@ -137,6 +137,7 @@ func (e *engine) BootstrapNode(ctx context.Context, nodeID string, password stri
 
 	client := e.getNodeClient(node)
 	if err := client.BootstrapKey(ctx, password, pubKey); err != nil {
+		_ = e.cfg.Store.UpdateNodeStatus(node.ID, "offline", err.Error(), "")
 		return fmt.Errorf("failed to inject ssh key: %w", err)
 	}
 

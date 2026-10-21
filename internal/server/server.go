@@ -48,6 +48,17 @@ type Config struct {
 	GitMirrorDir   string
 }
 
+type BulkScanProgress struct {
+	Running      bool      `json:"running"`
+	Total        int       `json:"total"`
+	CurrentIndex int       `json:"current_index"`
+	CurrentImage string    `json:"current_image"`
+	Scanned      int       `json:"scanned"`
+	Skipped      int       `json:"skipped"`
+	Errors       int       `json:"errors"`
+	StartedAt    time.Time `json:"started_at"`
+}
+
 type Server struct {
 	cfg          Config
 	store        *store.Store
@@ -61,6 +72,8 @@ type Server struct {
 	notifier     notifier.Notifier
 	poller       poller.Poller
 	mu           sync.RWMutex
+	bulkScans    map[string]*BulkScanProgress
+	bulkScansMu  sync.Mutex
 }
 
 func New(cfg Config) (*Server, error) {
@@ -141,6 +154,7 @@ func New(cfg Config) (*Server, error) {
 		privKey:      privKey,
 		notifier:     notif,
 		poller:       plr,
+		bulkScans:    make(map[string]*BulkScanProgress),
 	}, nil
 }
 
@@ -188,6 +202,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes/{id}/images/pin", s.requireAuth(http.HandlerFunc(s.handlePinNodeImage)))
 	mux.Handle("POST /nodes/{id}/images/pull", s.requireAuth(http.HandlerFunc(s.handlePullNodeImage)))
 	mux.Handle("POST /nodes/{id}/images/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeImage)))
+	mux.Handle("POST /nodes/{id}/images/scan", s.requireAuth(http.HandlerFunc(s.handleScanNodeImage)))
+	mux.Handle("GET /nodes/{id}/images/scan/report", s.requireAuth(http.HandlerFunc(s.handleGetNodeImageScanReport)))
+	mux.Handle("POST /nodes/{id}/images/scan-all", s.requireAuth(http.HandlerFunc(s.handleBulkScanNodeImages)))
+	mux.Handle("GET /nodes/{id}/images/scan-all/status", s.requireAuth(http.HandlerFunc(s.handleGetBulkScanStatus)))
 	mux.Handle("GET /nodes/{id}/volumes", s.requireAuth(http.HandlerFunc(s.handleListNodeVolumes)))
 	mux.Handle("POST /nodes/{id}/volumes/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeVolume)))
 	mux.Handle("POST /nodes/{id}/volumes/prune", s.requireAuth(http.HandlerFunc(s.handlePruneNodeVolumes)))
@@ -651,6 +669,10 @@ func validateComposeYAML(content string) error {
 	}
 	if len(parsed) == 0 {
 		return fmt.Errorf("compose YAML cannot be empty")
+	}
+	// ponytail: docker-compose v2/v3 requires 'services' key
+	if _, ok := parsed["services"]; !ok {
+		return fmt.Errorf("compose YAML must contain a 'services' definition")
 	}
 	return nil
 }
@@ -1815,6 +1837,16 @@ type NodeImageInfo struct {
 	Containers   []string `json:"containers"`
 	IsManaged    bool     `json:"is_managed"`
 	UsageOrigin  string   `json:"usage_origin,omitempty"` // "managed", "unmanaged", or ""
+
+	// Vulnerability Scan observability (ADR 0018)
+	ScanStatus          string     `json:"scan_status"` // unscanned, clean, vulnerable, error
+	LastScannedAt       *time.Time `json:"last_scanned_at,omitempty"`
+	NextScanAvailableAt *time.Time `json:"next_scan_available_at,omitempty"`
+	CanScan             bool       `json:"can_scan"`
+	CriticalCount       int        `json:"critical_count"`
+	HighCount           int        `json:"high_count"`
+	MediumCount         int        `json:"medium_count"`
+	LowCount            int        `json:"low_count"`
 }
 
 func parseDockerImagesOutput(out string, containers []ContainerInfo, pinnedMap map[string]bool) []NodeImageInfo {
@@ -1957,6 +1989,31 @@ func (s *Server) handleListNodeImages(w http.ResponseWriter, r *http.Request) {
 	images := parseDockerImagesOutput(imgOut, containers, pinnedMap)
 	if images == nil {
 		images = []NodeImageInfo{}
+	}
+
+	scans, _ := s.store.ListNodeImageScans(node.ID)
+	now := time.Now().UTC()
+	for i := range images {
+		imgRef := fmt.Sprintf("%s:%s", images[i].Repository, images[i].Tag)
+		if images[i].Repository == "<none>" || images[i].Tag == "<none>" {
+			images[i].ScanStatus = "unscanned"
+			images[i].CanScan = false
+			continue
+		}
+		if scan, ok := scans[imgRef]; ok {
+			images[i].ScanStatus = scan.Status
+			images[i].LastScannedAt = &scan.ScannedAt
+			images[i].CriticalCount = scan.CriticalCount
+			images[i].HighCount = scan.HighCount
+			images[i].MediumCount = scan.MediumCount
+			images[i].LowCount = scan.LowCount
+			nextAvail := scan.ScannedAt.Add(24 * time.Hour)
+			images[i].NextScanAvailableAt = &nextAvail
+			images[i].CanScan = now.After(nextAvail)
+		} else {
+			images[i].ScanStatus = "unscanned"
+			images[i].CanScan = true
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -2207,6 +2264,326 @@ func (s *Server) handleDeleteNodeImage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Trivy JSON report structure (ADR 0018)
+type trivyOutput struct {
+	SchemaVersion int `json:"SchemaVersion"`
+	Results       []struct {
+		Target          string `json:"Target"`
+		Class           string `json:"Class"`
+		Type            string `json:"Type"`
+		Vulnerabilities []struct {
+			VulnerabilityID  string `json:"VulnerabilityID"`
+			PkgName          string `json:"PkgName"`
+			InstalledVersion string `json:"InstalledVersion"`
+			FixedVersion     string `json:"FixedVersion"`
+			Severity         string `json:"Severity"`
+			Title            string `json:"Title"`
+			Description      string `json:"Description"`
+			PrimaryURL       string `json:"PrimaryURL"`
+		} `json:"Vulnerabilities"`
+	} `json:"Results"`
+}
+
+// runTrivyScan executes a transient Trivy scanner container on the Node via SSH Executor
+func (s *Server) runTrivyScan(ctx context.Context, node *store.Node, imageRef string) (*store.NodeImageScan, error) {
+	// ponytail: Run transient trivy container mounting socket and named cache volume
+	// Known ceiling: requires internet access on node to download CVE vulnerability DB on first run
+	cmd := fmt.Sprintf("docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v orkes-trivy-cache:/root/.cache/ aquasec/trivy:latest image --format json --quiet %s", imageRef)
+	out, err := s.executor.RunCommand(ctx, node.Host, node.Port, node.User, s.privKey, cmd)
+	if err != nil {
+		scan := &store.NodeImageScan{
+			NodeID:     node.ID,
+			ImageRef:   imageRef,
+			ScannedAt:  time.Now().UTC(),
+			Status:     "error",
+			ReportJSON: fmt.Sprintf(`{"error": %q}`, err.Error()),
+		}
+		_ = s.store.SaveNodeImageScan(scan)
+		return nil, fmt.Errorf("trivy scan failed: %w", err)
+	}
+
+	// Extract JSON payload from stdout (find outermost { and })
+	startIdx := strings.Index(out, "{")
+	endIdx := strings.LastIndex(out, "}")
+	if startIdx == -1 || endIdx == -1 || endIdx <= startIdx {
+		scan := &store.NodeImageScan{
+			NodeID:     node.ID,
+			ImageRef:   imageRef,
+			ScannedAt:  time.Now().UTC(),
+			Status:     "error",
+			ReportJSON: `{"error": "invalid scanner json output"}`,
+		}
+		_ = s.store.SaveNodeImageScan(scan)
+		return nil, errors.New("invalid JSON output from trivy scanner")
+	}
+
+	jsonBlob := out[startIdx : endIdx+1]
+	var parsed trivyOutput
+	if err := json.Unmarshal([]byte(jsonBlob), &parsed); err != nil {
+		scan := &store.NodeImageScan{
+			NodeID:     node.ID,
+			ImageRef:   imageRef,
+			ScannedAt:  time.Now().UTC(),
+			Status:     "error",
+			ReportJSON: fmt.Sprintf(`{"error": %q}`, err.Error()),
+		}
+		_ = s.store.SaveNodeImageScan(scan)
+		return nil, fmt.Errorf("failed to parse trivy json: %w", err)
+	}
+
+	var crit, high, med, low int
+	for _, res := range parsed.Results {
+		for _, v := range res.Vulnerabilities {
+			switch strings.ToUpper(v.Severity) {
+			case "CRITICAL":
+				crit++
+			case "HIGH":
+				high++
+			case "MEDIUM":
+				med++
+			case "LOW":
+				low++
+			}
+		}
+	}
+
+	status := "clean"
+	if crit+high+med+low > 0 {
+		status = "vulnerable"
+	}
+
+	scan := &store.NodeImageScan{
+		NodeID:        node.ID,
+		ImageRef:      imageRef,
+		ScannedAt:     time.Now().UTC(),
+		Status:        status,
+		CriticalCount: crit,
+		HighCount:     high,
+		MediumCount:   med,
+		LowCount:      low,
+		ReportJSON:    jsonBlob,
+	}
+
+	if err := s.store.SaveNodeImageScan(scan); err != nil {
+		return nil, fmt.Errorf("failed to persist scan: %w", err)
+	}
+
+	return scan, nil
+}
+
+func (s *Server) handleScanNodeImage(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		ImageRef string `json:"image_ref"`
+		Force    bool   `json:"force"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	imageRef := strings.TrimSpace(req.ImageRef)
+	if imageRef == "" || imageRef == "<none>:<none>" {
+		http.Error(w, "Valid image reference required for scanning", http.StatusBadRequest)
+		return
+	}
+
+	// Validate target against command injection
+	for _, c := range imageRef {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || c == '_' || c == '-' || c == '@') {
+			http.Error(w, "Invalid characters in image target", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Check cooldown unless force is true
+	if !req.Force {
+		existingScan, err := s.store.GetNodeImageScan(node.ID, imageRef)
+		if err == nil && existingScan != nil {
+			nextAvail := existingScan.ScannedAt.Add(24 * time.Hour)
+			if time.Now().UTC().Before(nextAvail) {
+				http.Error(w, fmt.Sprintf("Scan cooldown active. Next scan available at %s (use force to bypass)", nextAvail.Format(time.RFC3339)), http.StatusTooManyRequests)
+				return
+			}
+		}
+	}
+
+	logger.Info("scanner", node.ID, fmt.Sprintf("Starting Trivy vulnerability scan for %s", imageRef))
+	scan, err := s.runTrivyScan(r.Context(), node, imageRef)
+	if err != nil {
+		logger.Error("scanner", node.ID, fmt.Sprintf("Scan failed for %s: %v", imageRef, err))
+		http.Error(w, "Scan failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("scanner", node.ID, fmt.Sprintf("Scan completed for %s: status=%s (Critical: %d, High: %d, Medium: %d, Low: %d)",
+		imageRef, scan.Status, scan.CriticalCount, scan.HighCount, scan.MediumCount, scan.LowCount))
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"scan":    scan,
+	})
+}
+
+func (s *Server) handleGetNodeImageScanReport(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	imageRef := r.URL.Query().Get("image_ref")
+	if imageRef == "" {
+		http.Error(w, "image_ref query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	scan, err := s.store.GetNodeImageScan(id, imageRef)
+	if err != nil {
+		http.Error(w, "Scan report not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(scan)
+}
+
+func (s *Server) handleBulkScanNodeImages(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	node, err := s.store.GetNode(id)
+	if err != nil {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Force bool `json:"force"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	s.bulkScansMu.Lock()
+	if prog, ok := s.bulkScans[node.ID]; ok && prog.Running {
+		s.bulkScansMu.Unlock()
+		http.Error(w, "Bulk scan already in progress for this node", http.StatusConflict)
+		return
+	}
+
+	progress := &BulkScanProgress{
+		Running:   true,
+		StartedAt: time.Now().UTC(),
+	}
+	s.bulkScans[node.ID] = progress
+	s.bulkScansMu.Unlock()
+
+	// Launch background sequential scan
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		logger.Info("scanner", node.ID, fmt.Sprintf("Bulk vulnerability scan initiated on node %s", node.Name))
+
+		// Query current images on node
+		imgOut, err := s.executor.RunCommand(ctx, node.Host, node.Port, node.User, s.privKey, "docker images -a --format '{{json .}}'")
+		if err != nil {
+			logger.Error("scanner", node.ID, fmt.Sprintf("Bulk scan failed to query images: %v", err))
+			s.bulkScansMu.Lock()
+			progress.Running = false
+			progress.Errors++
+			s.bulkScansMu.Unlock()
+			return
+		}
+
+		scans, _ := s.store.ListNodeImageScans(node.ID)
+		now := time.Now().UTC()
+
+		lines := strings.Split(strings.TrimSpace(imgOut), "\n")
+		var targets []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			var raw rawDockerImage
+			if err := json.Unmarshal([]byte(line), &raw); err != nil {
+				continue
+			}
+			repo := raw.getRepo()
+			tag := raw.getTag()
+			if repo == "" || repo == "<none>" || tag == "" || tag == "<none>" {
+				continue
+			}
+			ref := fmt.Sprintf("%s:%s", repo, tag)
+			targets = append(targets, ref)
+		}
+
+		s.bulkScansMu.Lock()
+		progress.Total = len(targets)
+		s.bulkScansMu.Unlock()
+
+		for i, ref := range targets {
+			s.bulkScansMu.Lock()
+			progress.CurrentIndex = i + 1
+			progress.CurrentImage = ref
+			s.bulkScansMu.Unlock()
+
+			// Check cooldown
+			if !req.Force {
+				if sc, exists := scans[ref]; exists {
+					nextAvail := sc.ScannedAt.Add(24 * time.Hour)
+					if now.Before(nextAvail) {
+						s.bulkScansMu.Lock()
+						progress.Skipped++
+						s.bulkScansMu.Unlock()
+						logger.Debug("scanner", node.ID, fmt.Sprintf("Skipping %s (cooldown active until %s)", ref, nextAvail.Format(time.Kitchen)))
+						continue
+					}
+				}
+			}
+
+			logger.Info("scanner", node.ID, fmt.Sprintf("Bulk scan [%d/%d]: Scanning %s...", i+1, len(targets), ref))
+			_, err := s.runTrivyScan(ctx, node, ref)
+			s.bulkScansMu.Lock()
+			if err != nil {
+				progress.Errors++
+				logger.Warn("scanner", node.ID, fmt.Sprintf("[%d/%d] Failed scan for %s: %v", i+1, len(targets), ref, err))
+			} else {
+				progress.Scanned++
+			}
+			s.bulkScansMu.Unlock()
+
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		s.bulkScansMu.Lock()
+		progress.Running = false
+		s.bulkScansMu.Unlock()
+
+		logger.Info("scanner", node.ID, fmt.Sprintf("Bulk vulnerability scan completed for node %s (%d scanned, %d skipped, %d errors)",
+			node.Name, progress.Scanned, progress.Skipped, progress.Errors))
+	}()
+
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Bulk scan started in background",
+	})
+}
+
+func (s *Server) handleGetBulkScanStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s.bulkScansMu.Lock()
+	progress := s.bulkScans[id]
+	if progress == nil {
+		progress = &BulkScanProgress{Running: false}
+	}
+	progCopy := *progress
+	s.bulkScansMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(progCopy)
+}
 
 func (s *Server) handleListRevisions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

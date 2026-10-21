@@ -69,12 +69,12 @@ You can authorize target nodes in one of two ways:
 
 ---
 
-## 4. Creating a Stack Template
+## 4. Creating and Editing Stack Templates
 
 1. Navigate to the **Stack Templates** tab.
-2. Click **+ Add Stack**.
+2. Click **+ Add Stack** (or click any existing stack row to open the **Stack Template Editor**).
 3. Enter a slug name (e.g. `nginx-proxy` or `redis-cache`).
-4. Paste your `docker-compose.yml` configuration:
+4. Author or paste your `docker-compose.yml` configuration directly in the integrated VS Code-style editor:
    ```yaml
    services:
      web:
@@ -83,7 +83,13 @@ You can authorize target nodes in one of two ways:
          - "${PORT:-80}:80"
        restart: always
    ```
-5. Specify default environment variables (e.g. `PORT=8080`) and optional notes.
+   > [!TIP]
+   > **Editor Features**:
+   > - **VS Code Dark Theme**: Full syntax highlighting for YAML and `.env` files.
+   > - **Ergonomics**: 2-space automatic indentation when pressing `Tab`, gutter line numbers, and matching brackets.
+   > - **Maximize Canvas**: Click the **Maximize** button (`⛶`) in the modal header (or press `Esc` to restore) to expand the editor into a full-screen workspace.
+   > - **Pre-Save Validation**: When clicking **Save Stack Template**, the editor verifies that the YAML syntax is valid and contains a required `services:` block. Any errors immediately highlight the offending line in red without losing your edits.
+5. Specify default environment variables (e.g. `PORT=8080`) and optional notes in the adjacent tabs.
 6. Click **Save Stack Template**.
 
 ---
@@ -173,4 +179,26 @@ To inspect real-time daemon operations, SSH executions, and system health direct
    - **Filters & Search**: Filter by severity pills (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`) or type in the instant search box to filter by node, module, or message.
    - **Inspect Metadata**: Click on any row with details to expand structured JSON attributes.
    - **Export**: Click **💾 Export** to download client logs instantly as plain text `.log` or structured `.json`.
+
+---
+
+## 12. Auditing Container Images & Vulnerability Scanning (CVE)
+
+To audit and remediate security vulnerabilities across your nodes:
+1. Navigate to the **Managed Nodes** tab and click on a node to open its detail page (`/nodes/<id>`).
+2. Switch to the **🖼️ Images** tab.
+3. **Single Image Scan**:
+   - Find the image you wish to inspect.
+   - Click **🛡️ Scan** in the Actions column.
+   - The Control Plane executes a transient Trivy scanner on the target node, storing results and timestamp in SQLite.
+4. **24-Hour Cooldown & Force Scan**:
+   - After a scan, the button changes to **🛡️ Force** and shows a countdown timer (e.g. `Next: ~22h`).
+   - Routine automated scans are suppressed during cooldown to save bandwidth and CPU. Click **Force** only when you have freshly rebuilt/updated the image and require immediate re-verification.
+5. **Bulk Scanning (Scan All CVEs)**:
+   - Click **🛡️ Scan All CVEs** on the image toolbar above the table.
+   - The Control Plane sequentially scans every named image on the node in the background, automatically skipping any images within their active 24-hour cooldown.
+   - Watch real-time progress via the top progress banner and live events inside the Activity Console.
+6. **Inspecting Vulnerability Details**:
+   - Click any vulnerability badge (e.g. `1 Crit 3 High` or `✓ Clean`).
+   - The **Vulnerability Report** modal displays the full list of detected CVE IDs, affected software packages, installed versions, and available fix versions, alongside a toggleable raw JSON viewer.
 

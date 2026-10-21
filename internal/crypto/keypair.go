@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -33,7 +34,7 @@ func GenerateEd25519KeyPair() (*KeyPair, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ssh public key: %w", err)
 	}
-	pubSSH := fmt.Sprintf("%s docker-orkes-control-plane\n", string(ssh.MarshalAuthorizedKey(sshPub)))
+	pubSSH := fmt.Sprintf("%s docker-orkes-control-plane\n", strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))))
 
 	return &KeyPair{
 		PrivateKeyPEM: string(privPEM),

@@ -124,6 +124,29 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 			}
 		}
 
+		// Check if remote branch already exists
+		cmdLsRemote := exec.CommandContext(ctx, "git", "ls-remote", "--heads", "origin", branch)
+		cmdLsRemote.Dir = mirrorDir
+		if len(env) > 0 {
+			cmdLsRemote.Env = env
+		}
+		lsOut, _ := cmdLsRemote.Output()
+
+		if len(strings.TrimSpace(string(lsOut))) > 0 {
+			// Remote branch exists; pull and rebase to reconcile any upstream commits
+			cmdPull := exec.CommandContext(ctx, "git", "pull", "--rebase", "-X", "theirs", "origin", branch, "--allow-unrelated-histories")
+			cmdPull.Dir = mirrorDir
+			if len(env) > 0 {
+				cmdPull.Env = env
+			}
+			if out, err := cmdPull.CombinedOutput(); err != nil {
+				cmdAbort := exec.CommandContext(ctx, "git", "rebase", "--abort")
+				cmdAbort.Dir = mirrorDir
+				_ = cmdAbort.Run()
+				return fmt.Errorf("git pull --rebase failed: %w (out: %s)", err, string(out))
+			}
+		}
+
 		cmdPush := exec.CommandContext(ctx, "git", "push", "-u", "origin", "--", branch)
 		cmdPush.Dir = mirrorDir
 		if len(env) > 0 {

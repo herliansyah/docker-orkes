@@ -181,6 +181,28 @@ _Avoid_: Log line, log entry, syslog message
 A bounded, fixed-capacity in-memory FIFO buffer retained within the Control Plane daemon that stores recent Telemetry Events to instantly hydrate newly opened Activity Console sessions.
 _Avoid_: Log queue, event cache, memory backlog
 
+**Node Image Vulnerability Scan**:
+The inspection of a Node Image's filesystem layers for known security vulnerabilities (CVEs), executed via a transient scanner container directly on the target Node over the SSH Executor.
+_Avoid_: Security check, image audit, container scan
+
+**Vulnerability Report**:
+The structured assessment record generated from a Node Image Vulnerability Scan, summarizing discovered CVE counts by severity and detailing affected package versions.
+_Avoid_: CVE dump, scan log, security report
+
+**Scan Cooldown**:
+The time-bounded freshness window following a successful Vulnerability Scan during which subsequent automated or bulk re-scans are suppressed to conserve Node host resources and network bandwidth.
+_Avoid_: Scan throttle, scan timer, re-scan delay
+
+**Stack Editor**:
+The self-contained, in-dashboard code editor with VS Code Dark styling, line numbers, automatic indentation ergonomics, and fullscreen workspace expansion for authoring and modifying Stacks and runtime configurations.
+_Avoid_: Textbox, raw text area, compose notepad
+
+**Compose Validation Guardrail**:
+The dual client-side and server-side verification check that prevents saving malformed YAML specifications or compose manifests lacking a mandatory `services:` declaration, targeting syntax errors to exact line coordinates before persistence.
+_Avoid_: Form checker, yaml check, input error handler
+
+
+
 
 
 

@@ -10,7 +10,7 @@ This document provides a comprehensive technical overview of Docker Orkes' desig
 - **Declarative Stacks**: Applications are defined as standard, reusable Docker Compose templates.
 - **Single-Binary Footprint**: Control Plane runs as a standalone Go binary with embedded assets (`embed.FS`) and an embedded SQLite database.
 - **Auditability via Git Mirror**: Every change, deployment configuration, and inventory change is committed to a versioned Git audit log.
-- **Pragmatic Security Boundaries**: Vulnerability scanning belongs in the CI/CD build pipeline or secure container registry, rather than bloating the deployment control plane with volatile CVE databases and flaky external network dependencies.
+- **Pragmatic Security & Agentless Auditing**: Rather than embedding multi-gigabyte CVE databases or heavy scanners into the Control Plane binary, vulnerability scanning is executed on-demand via transient containerized scanners (Trivy) directly on managed nodes over SSH ([ADR 0018](adr/0018-agentless-image-vulnerability-scanning.md)).
 
 ---
 
@@ -31,7 +31,18 @@ On remote nodes, Docker Orkes organizes deployed applications inside a clean, de
 
 ---
 
-## 3. Configuration Drift Detection and Reconciliation
+## 3. Stack Templates & VS Code-Style Code Editor
+
+Stack templates are reusable Docker Compose specifications managed through an integrated, self-contained code editor ([ADR 0019](adr/0019-offline-vs-code-style-stack-editor-and-compose-guardrails.md)):
+- **VS Code Dark Styling**: Syntax highlighting for YAML directives (`services`, `image`, `ports`, `environment`, `volumes`), boolean values, numbers, and comments, with a dedicated `.env` variable syntax mode.
+- **Editing Ergonomics**: Gutter line numbers, automatic 2-space tab indentation, matching bracket highlighting, and auto-closing quotes/brackets.
+- **Workspace Maximize / Fullscreen Expansion**: Toggle between the standard modal dialog and a full-screen workspace (`100vw` x `100vh`) with one click (`⛶`/`🗖`) or the `Esc` shortcut to edit large multi-service compose files comfortably.
+- **Dual-Layer Compose Validation Guardrail**: Client-side syntax validation (`js-yaml`) intercepts invalid indentation, tabs, or missing `services:` mappings before form submission, highlighting the error line in red and jumping cursor focus directly to it. The Control Plane backend enforces identical validation with HTTP 400 rejection before database commits.
+- **100% Offline & Air-Gapped**: Bundled CodeMirror 5 distribution embedded directly into the binary (`//go:embed`), eliminating external CDN dependencies ([ADR 0011](adr/0011-self-contained-enterprise-ui.md)).
+
+---
+
+## 4. Configuration Drift Detection and Reconciliation
 
 ### What is Drift?
 Drift occurs when the configuration on the remote host (*Actual State*) diverges from the configuration stored in the Control Plane (*Desired State*). This can happen if an operator SSHs directly into the server and manually modifies `docker-compose.yml` or `.env`.
@@ -48,7 +59,7 @@ Drift occurs when the configuration on the remote host (*Actual State*) diverges
 
 ---
 
-## 4. Remote Stack Filesystem & Runtime Assets
+## 5. Remote Stack Filesystem & Runtime Assets
 
 Active deployments offer a comprehensive remote filesystem manager for `~/.docker-orkes/stacks/<stack-name>/`:
 - **Directory Tree & Breadcrumbs**: Navigate subfolders with clickable breadcrumb paths.
@@ -61,7 +72,7 @@ Active deployments offer a comprehensive remote filesystem manager for `~/.docke
 
 ---
 
-## 5. Host Observability, Telemetry & Logs
+## 6. Host Observability, Telemetry & Logs
 
 When viewing a node's detail page (`/nodes/<id>`), Docker Orkes samples telemetry non-intrusively over SSH:
 - **Disk Utilization**: Queries `df -h /` to parse total capacity, consumed gigabytes, free space, and percentage utilization.
@@ -70,7 +81,7 @@ When viewing a node's detail page (`/nodes/<id>`), Docker Orkes samples telemetr
 
 ---
 
-## 6. Git Mirror Backup Architecture
+## 7. Git Mirror Backup Architecture
 
 Docker Orkes acts as a Git client using `go-git`:
 1. It maintains a local repository mirror on the Control Plane under `data/git-mirror/`.
@@ -88,7 +99,7 @@ Docker Orkes acts as a Git client using `go-git`:
 
 ---
 
-## 7. Deployment Revisions & Forward-Only Rollback
+## 8. Deployment Revisions & Forward-Only Rollback
 
 To guard against misconfigurations or bad updates:
 - **Immutable Snapshots**: Every deployment action automatically snapshots the `docker-compose.yml` content, `.env` key-values, and timestamp into a versioned revision entry ([ADR 0005](adr/0005-forward-only-deployment-revisions-with-bounded-retention.md)).
@@ -97,7 +108,7 @@ To guard against misconfigurations or bad updates:
 
 ---
 
-## 8. Proactive Liveness Poller & Multi-Channel Alerting
+## 9. Proactive Liveness Poller & Multi-Channel Alerting
 
 Rather than relying purely on manual operator observation:
 - **Background Poller**: A lightweight background poller audits node reachability, container states, and configuration drift at configurable intervals (e.g. every 2 minutes) without daemon overhead ([ADR 0004](adr/0004-lightweight-poller-and-edge-triggered-alerting.md)).
@@ -106,7 +117,7 @@ Rather than relying purely on manual operator observation:
 
 ---
 
-## 9. 100% Offline Interactive Web Terminal (PTY)
+## 10. 100% Offline Interactive Web Terminal (PTY)
 
 Operators can initiate low-latency terminal sessions directly inside the web browser without any third-party SaaS or internet dependencies ([ADR 0009](adr/0009-offline-web-terminal-pty.md)):
 - **Dual Target Modes**:
@@ -117,7 +128,7 @@ Operators can initiate low-latency terminal sessions directly inside the web bro
 
 ---
 
-## 10. Disaster Recovery & Standby Replication
+## 11. Disaster Recovery & Standby Replication
 
 Docker Orkes supports an **Active-Passive (Warm Standby)** replication topology ([ADR 0006](adr/0006-active-passive-control-plane-replication.md)):
 - **Autonomous Nodes**: Target hosts and running containers do not depend on continuous Control Plane connectivity. If the primary Control Plane goes down, workloads continue running uninterrupted.
@@ -126,7 +137,7 @@ Docker Orkes supports an **Active-Passive (Warm Standby)** replication topology 
 
 ---
 
-## 11. Internal Hybrid Image Registry Model
+## 12. Internal Hybrid Image Registry Model
 
 For air-gapped or bandwidth-constrained environments, Docker Orkes incorporates an architectural pattern for an internal OCI registry ([ADR 0007](adr/0007-internal-hybrid-image-registry.md)):
 - Deployed as a standard Docker Compose stack on an designated node.
@@ -135,12 +146,24 @@ For air-gapped or bandwidth-constrained environments, Docker Orkes incorporates 
 
 ---
 
-## 12. In-App Activity Console & Live Telemetry Stream
+## 13. In-App Activity Console & Live Telemetry Stream
 
 For real-time operational feedback without accessing server terminal logs ([ADR 0017](adr/0017-in-app-activity-console-and-live-telemetry-stream.md)):
 - **Zero-Dependency SSE Streaming**: Control Plane serves structured diagnostic events over Server-Sent Events (`GET /api/telemetry/stream`) using native Go standard library `http.Flusher` and browser native `EventSource`.
 - **Bounded In-Memory Ring Buffer**: Retains a fixed-capacity 100-event circular buffer in Go daemon memory for instant replay/hydration, with non-blocking fan-out drops on slow subscribers to protect system latency and prevent memory bloat.
 - **Client-Side Ergonomics & Auto-Scroll**: Interactive 6-column running drawer (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`) accessible via `Ctrl+`` or footer button, with smart auto-scroll freezing during review, level filtering (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`), quick search, unread error counters, and one-click `.log` and `.json` client exports.
 - **Background Noise Reduction**: High-frequency background poller audits run under `DEBUG` severity (filtered out by default) across 7 canonical modules (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`), keeping logs actionable during idle hours.
+
+---
+
+## 14. Node Image Vulnerability Scanning & Cooldown Protocol
+
+For automated and operator-driven security audits of local container images across managed nodes ([ADR 0018](adr/0018-agentless-image-vulnerability-scanning.md)):
+- **Transient Node-Side Trivy Execution**: Scans are initiated via the agentless SSH Executor by running an ephemeral Trivy scanner container (`aquasec/trivy:latest`) directly on the target node. Image layers are evaluated locally against Docker daemon storage without transferring multi-gigabyte layers across the network.
+- **Dedicated Host Cache Volume (`orkes-trivy-cache`)**: The vulnerability database is downloaded once and stored in a named Docker volume on each node. Subsequent scans on that node reuse this cache, keeping scan durations down to seconds and preserving server bandwidth.
+- **24-Hour Scan Cooldown Guard**: To protect nodes from high CPU/memory usage and avoid upstream rate limits, images enter a 24-hour cooldown following a successful scan. Bulk scans automatically skip images within this cooldown window, while operators retain an explicit **Force Re-scan** option for emergency validations following patches.
+- **Sequential Bulk Scanning & Progress Streaming**: Triggering **Scan All CVEs** launches a background worker that iterates through all named images sequentially with brief pauses. Real-time progress is displayed via an in-page progress banner and streamed to the [Activity Console](adr/0017-in-app-activity-console-and-live-telemetry-stream.md).
+- **Actionable Vulnerability Reporting**: Scan results are stored in SQLite (`node_image_scans`). Operators can click severity badges (`Critical`, `High`, `Clean`) to inspect an interactive report modal detailing affected packages, installed versions, fix versions, and CVE links to NVD/Aqua Security databases, with a toggleable raw JSON viewer.
+
 
 

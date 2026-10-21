@@ -46,6 +46,22 @@ func TestServer_StackTemplatesAndValidation(t *testing.T) {
 		t.Errorf("expected 400 Bad Request for invalid YAML, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 
+	// 2b. Attempt to create a Stack without 'services' key -> Should fail
+	missingServicesForm := url.Values{
+		"name":         {"no-services-stack"},
+		"compose_yaml": {"version: '3.8'\nnetworks:\n  frontend:\n"},
+		"default_env":  {"FOO=bar"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/stacks", strings.NewReader(missingServicesForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for missing services key, got %d", rec.Code)
+	}
+
 	// 3. Create a Stack with valid YAML
 	validCompose := `services:
   web:

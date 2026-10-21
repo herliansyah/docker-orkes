@@ -9,6 +9,9 @@
   <link rel="stylesheet" href="/static/xterm.css">
   <script src="/static/xterm.js"></script>
   <script src="/static/addon-fit.js"></script>
+  <!-- Local Offline Code Editor (CodeMirror + YAML + VS Code Dark Theme) -->
+  <link rel="stylesheet" href="/static/editor.css">
+  <script src="/static/editor.js"></script>
   <style>
     /* Custom scrollbar for editors & mindmap */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1258,7 +1261,7 @@
               <h2 class="text-base font-semibold text-zinc-100" data-i18n="stacks_title">Stack Templates</h2>
               <p class="text-xs text-zinc-400 mt-0.5" data-i18n="stacks_desc">Reusable docker-compose definitions ready to deploy to nodes.</p>
             </div>
-            <button onclick="document.getElementById('add-stack-modal').classList.toggle('hidden')"
+            <button onclick="toggleAddStackModal()"
               class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2 rounded-lg transition shadow-sm self-start sm:self-auto">
               <span data-i18n="btn_add_stack">+ Add Stack</span>
             </button>
@@ -1287,7 +1290,15 @@
           <!-- Add Stack Form (collapsible) -->
           <div id="add-stack-modal" class="hidden bg-zinc-950/80 border border-zinc-800 rounded-lg p-5">
             <h3 class="text-sm font-semibold text-zinc-200 mb-4" data-i18n="form_stack_title">Create New Stack Template</h3>
-            <form method="POST" action="/stacks" class="space-y-4">
+            <div id="add-stack-error-banner" class="hidden mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 flex items-start gap-2.5">
+              <span class="text-rose-400 text-base leading-none">⚠️</span>
+              <div class="flex-1">
+                <span class="font-semibold block" id="add-stack-error-title">YAML Format Error</span>
+                <span class="text-rose-300/90 text-[11px] block mt-0.5" id="add-stack-error-msg"></span>
+              </div>
+              <button type="button" onclick="document.getElementById('add-stack-error-banner').classList.add('hidden')" class="text-rose-400/60 hover:text-rose-300">✕</button>
+            </div>
+            <form id="add-stack-form" method="POST" action="/stacks" class="space-y-4">
               <div>
                 <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_stack_name">Stack Name / Slug</label>
                 <input type="text" name="name" required placeholder="e.g. redis-cache or web-app"
@@ -1295,12 +1306,12 @@
               </div>
               <div>
                 <label class="block text-xs font-medium text-zinc-300 mb-1">docker-compose.yml</label>
-                <textarea name="compose_yaml" rows="8" required placeholder="services:&#10;  app:&#10;    image: nginx:alpine&#10;    ports:&#10;      - '80:80'"
+                <textarea id="add-stack-compose" name="compose_yaml" rows="8" required placeholder="services:&#10;  app:&#10;    image: nginx:alpine&#10;    ports:&#10;      - '80:80'"
                   class="w-full font-mono bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-emerald-400 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
               </div>
               <div>
                 <label class="block text-xs font-medium text-zinc-300 mb-1" data-i18n="label_default_env">Default Environment Variables (optional, KEY=val per line)</label>
-                <textarea name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
+                <textarea id="add-stack-env" name="default_env" rows="3" placeholder="APP_ENV=production&#10;PORT=80"
                   class="w-full font-mono bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"></textarea>
               </div>
               <div>
@@ -1309,7 +1320,7 @@
                   class="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
               </div>
               <div class="flex gap-2 justify-end">
-                <button type="button" onclick="document.getElementById('add-stack-modal').classList.add('hidden')"
+                <button type="button" onclick="toggleAddStackModal()"
                   class="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 font-medium py-2 px-3 rounded-lg text-xs transition" data-i18n="btn_cancel">
                   Cancel
                 </button>
@@ -1885,7 +1896,7 @@
 
   <!-- Stack Template Detail & Code Editor Modal -->
   <div id="stack-detail-modal" class="hidden fixed inset-0 bg-zinc-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div id="stack-modal-container" class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-150">
       <!-- Header -->
       <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-zinc-950/60 shrink-0">
         <div class="flex items-center gap-3">
@@ -1897,7 +1908,18 @@
             <p id="stack-modal-subtitle" class="text-xs text-zinc-400">View and edit docker-compose manifest and default variables</p>
           </div>
         </div>
-        <button type="button" onclick="closeStackDetailModal()" class="text-zinc-400 hover:text-zinc-200 text-lg p-1.5 rounded-lg hover:bg-zinc-800 transition">✕</button>
+        <div class="flex items-center gap-1.5">
+          <button type="button" id="stack-modal-maximize-btn" onclick="toggleStackModalMaximize()" title="Toggle Maximize / Fullscreen (Esc to exit)"
+            class="text-zinc-400 hover:text-zinc-200 text-sm p-1.5 rounded-lg hover:bg-zinc-800 transition flex items-center justify-center">
+            <svg id="stack-modal-maximize-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+            </svg>
+            <svg id="stack-modal-restore-icon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9L4 4m0 0h4m-4 0v4m11 7l5 5m0 0h-4m4 0v-4M9 15l-5 5m0 0h4m-4 0v-4m16-7l-5-5m5 0h-4m4 0v4"/>
+            </svg>
+          </button>
+          <button type="button" onclick="closeStackDetailModal()" class="text-zinc-400 hover:text-zinc-200 text-lg p-1.5 rounded-lg hover:bg-zinc-800 transition">✕</button>
+        </div>
       </div>
 
       <!-- Form -->
@@ -1930,26 +1952,43 @@
         </div>
 
         <!-- Tab Bodies -->
-        <div class="p-6 flex-1 min-h-0 overflow-y-auto">
+        <div class="p-6 flex-1 min-h-0 overflow-y-auto flex flex-col">
+          <!-- Realtime YAML Validation Error Banner -->
+          <div id="stack-modal-error-banner" class="hidden mb-4 p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 flex items-start gap-2.5 shrink-0">
+            <span class="text-rose-400 text-base leading-none">⚠️</span>
+            <div class="flex-1">
+              <span class="font-semibold block" id="stack-modal-error-title">YAML Format Error</span>
+              <span class="text-rose-300/90 text-[11px] block mt-0.5" id="stack-modal-error-msg"></span>
+            </div>
+            <button type="button" onclick="document.getElementById('stack-modal-error-banner').classList.add('hidden')" class="text-rose-400/60 hover:text-rose-300">✕</button>
+          </div>
+
           <!-- Pane 1: Compose Editor -->
-          <div id="stack-pane-compose" class="h-full flex flex-col min-h-[300px]">
-            <div class="flex items-center justify-between mb-2 text-xs text-zinc-400">
-              <span>Compose specification YAML</span>
+          <div id="stack-pane-compose" class="h-full flex-1 flex flex-col min-h-[300px]">
+            <div class="flex items-center justify-between mb-2 text-xs text-zinc-400 shrink-0">
+              <span class="flex items-center gap-1.5">
+                <span>Compose specification YAML</span>
+                <span class="text-[10px] bg-zinc-800 text-indigo-400 px-1.5 py-0.5 rounded font-mono">VS Code Dark Mode</span>
+              </span>
               <span class="font-mono text-[11px] text-zinc-500">Syntax: Docker Compose v2/v3</span>
             </div>
-            <textarea id="stack-modal-compose" name="compose_yaml" required rows="14"
-              class="w-full flex-1 font-mono bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-emerald-400/90 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed resize-none"></textarea>
+            <div class="flex-1 min-h-[300px] flex flex-col">
+              <textarea id="stack-modal-compose" name="compose_yaml" required rows="14"
+                class="w-full flex-1 font-mono bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-emerald-400/90 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed resize-none"></textarea>
+            </div>
           </div>
 
           <!-- Pane 2: Env Editor -->
-          <div id="stack-pane-env" class="hidden h-full flex flex-col min-h-[300px]">
-            <div class="flex items-center justify-between mb-2 text-xs text-zinc-400">
+          <div id="stack-pane-env" class="hidden h-full flex-1 flex flex-col min-h-[300px]">
+            <div class="flex items-center justify-between mb-2 text-xs text-zinc-400 shrink-0">
               <span>Default environment variables (KEY=value pairs)</span>
               <span class="font-mono text-[11px] text-zinc-500">Injected on stack deployment</span>
             </div>
-            <textarea id="stack-modal-env" name="default_env" rows="14"
-              class="w-full flex-1 font-mono bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed resize-none"
-              placeholder="PORT=80&#10;APP_ENV=production"></textarea>
+            <div class="flex-1 min-h-[300px] flex flex-col">
+              <textarea id="stack-modal-env" name="default_env" rows="14"
+                class="w-full flex-1 font-mono bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed resize-none"
+                placeholder="PORT=80&#10;APP_ENV=production"></textarea>
+            </div>
           </div>
 
           <!-- Pane 3: Notes & Metadata -->
@@ -3896,7 +3935,95 @@
       filterStacks();
     }
 
-    // --- Stack Detail & Code Editor Modal ---
+    // --- Stack Detail & Code Editor (CodeMirror + VS Code Dark Theme) ---
+    let stackComposeCM = null;
+    let stackEnvCM = null;
+    let addStackComposeCM = null;
+    let addStackEnvCM = null;
+    let isStackModalMaximized = false;
+
+    function initStackEditors() {
+      if (!window.CodeMirror) return;
+
+      if (!stackComposeCM) {
+        const compEl = document.getElementById('stack-modal-compose');
+        if (compEl) {
+          stackComposeCM = CodeMirror.fromTextArea(compEl, {
+            mode: 'yaml',
+            theme: 'vscode-dark',
+            lineNumbers: true,
+            indentUnit: 2,
+            tabSize: 2,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            lineWrapping: false,
+            extraKeys: {
+              'Tab': function(cm) {
+                if (cm.somethingSelected()) {
+                  cm.indentSelection('add');
+                } else {
+                  cm.replaceSelection('  ', 'end');
+                }
+              }
+            }
+          });
+          stackComposeCM.on('change', () => {
+            const errBanner = document.getElementById('stack-modal-error-banner');
+            if (errBanner && !errBanner.classList.contains('hidden')) {
+              errBanner.classList.add('hidden');
+              for (let i = 0; i < stackComposeCM.lineCount(); i++) {
+                stackComposeCM.removeLineClass(i, 'background', 'cm-error-line');
+              }
+            }
+          });
+        }
+      }
+
+      if (!stackEnvCM) {
+        const envEl = document.getElementById('stack-modal-env');
+        if (envEl) {
+          stackEnvCM = CodeMirror.fromTextArea(envEl, {
+            mode: 'properties',
+            theme: 'vscode-dark',
+            lineNumbers: true,
+            indentUnit: 2,
+            tabSize: 2,
+            autoCloseBrackets: true,
+            matchBrackets: true,
+            lineWrapping: false
+          });
+        }
+      }
+    }
+
+    function toggleStackModalMaximize() {
+      const modal = document.getElementById('stack-detail-modal');
+      const container = document.getElementById('stack-modal-container');
+      const maxIcon = document.getElementById('stack-modal-maximize-icon');
+      const resIcon = document.getElementById('stack-modal-restore-icon');
+      if (!modal || !container) return;
+
+      isStackModalMaximized = !isStackModalMaximized;
+      if (isStackModalMaximized) {
+        modal.classList.remove('p-4');
+        container.classList.remove('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl');
+        container.classList.add('w-screen', 'h-screen', 'max-w-none', 'max-h-none', 'rounded-none');
+        if (maxIcon) maxIcon.classList.add('hidden');
+        if (resIcon) resIcon.classList.remove('hidden');
+      } else {
+        modal.classList.add('p-4');
+        container.classList.add('max-w-4xl', 'max-h-[90vh]', 'rounded-2xl');
+        container.classList.remove('w-screen', 'h-screen', 'max-w-none', 'max-h-none', 'rounded-none');
+        if (maxIcon) maxIcon.classList.remove('hidden');
+        if (resIcon) resIcon.classList.add('hidden');
+      }
+
+      setTimeout(() => {
+        if (stackComposeCM) stackComposeCM.refresh();
+        if (stackEnvCM) stackEnvCM.refresh();
+      }, 50);
+    }
+
     function openStackDetailModal(stackId, initialTab) {
       if (!initialTab) initialTab = 'compose';
       const row = document.querySelector(`.stack-row[data-id="${stackId}"]`);
@@ -3927,11 +4054,37 @@
       if (footerId) footerId.innerText = 'Stack ID: ' + stackId;
       if (form) form.action = `/stacks/${stackId}/update`;
 
+      initStackEditors();
+      if (stackComposeCM) {
+        stackComposeCM.setValue(compose);
+        stackComposeCM.clearHistory();
+        for (let i = 0; i < stackComposeCM.lineCount(); i++) {
+          stackComposeCM.removeLineClass(i, 'background', 'cm-error-line');
+        }
+      }
+      if (stackEnvCM) {
+        stackEnvCM.setValue(env);
+        stackEnvCM.clearHistory();
+      }
+
+      const errBanner = document.getElementById('stack-modal-error-banner');
+      if (errBanner) errBanner.classList.add('hidden');
+
       switchStackModalTab(initialTab);
       document.getElementById('stack-detail-modal')?.classList.remove('hidden');
+
+      setTimeout(() => {
+        if (initialTab === 'compose' && stackComposeCM) stackComposeCM.refresh();
+        if (initialTab === 'env' && stackEnvCM) stackEnvCM.refresh();
+      }, 50);
     }
 
     function closeStackDetailModal() {
+      if (isStackModalMaximized) {
+        toggleStackModalMaximize();
+      }
+      const errBanner = document.getElementById('stack-modal-error-banner');
+      if (errBanner) errBanner.classList.add('hidden');
       document.getElementById('stack-detail-modal')?.classList.add('hidden');
     }
 
@@ -3948,7 +4101,163 @@
           btn.className = 'py-2.5 px-3 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition';
         }
       });
+
+      if (tabKey === 'compose' && stackComposeCM) {
+        setTimeout(() => stackComposeCM.refresh(), 20);
+      } else if (tabKey === 'env' && stackEnvCM) {
+        setTimeout(() => stackEnvCM.refresh(), 20);
+      }
     }
+
+    function toggleAddStackModal() {
+      const modal = document.getElementById('add-stack-modal');
+      if (!modal) return;
+      const isHidden = modal.classList.toggle('hidden');
+      if (!isHidden) {
+        if (!addStackComposeCM && window.CodeMirror) {
+          const compEl = document.getElementById('add-stack-compose');
+          if (compEl) {
+            addStackComposeCM = CodeMirror.fromTextArea(compEl, {
+              mode: 'yaml',
+              theme: 'vscode-dark',
+              lineNumbers: true,
+              indentUnit: 2,
+              tabSize: 2,
+              autoCloseBrackets: true,
+              matchBrackets: true,
+              lineWrapping: false,
+              extraKeys: {
+                'Tab': function(cm) {
+                  if (cm.somethingSelected()) {
+                    cm.indentSelection('add');
+                  } else {
+                    cm.replaceSelection('  ', 'end');
+                  }
+                }
+              }
+            });
+            addStackComposeCM.on('change', () => {
+              const errBanner = document.getElementById('add-stack-error-banner');
+              if (errBanner && !errBanner.classList.contains('hidden')) {
+                errBanner.classList.add('hidden');
+                for (let i = 0; i < addStackComposeCM.lineCount(); i++) {
+                  addStackComposeCM.removeLineClass(i, 'background', 'cm-error-line');
+                }
+              }
+            });
+          }
+        }
+        if (!addStackEnvCM && window.CodeMirror) {
+          const envEl = document.getElementById('add-stack-env');
+          if (envEl) {
+            addStackEnvCM = CodeMirror.fromTextArea(envEl, {
+              mode: 'properties',
+              theme: 'vscode-dark',
+              lineNumbers: true,
+              indentUnit: 2,
+              tabSize: 2,
+              autoCloseBrackets: true,
+              matchBrackets: true,
+              lineWrapping: false
+            });
+          }
+        }
+        setTimeout(() => {
+          if (addStackComposeCM) addStackComposeCM.refresh();
+          if (addStackEnvCM) addStackEnvCM.refresh();
+        }, 30);
+      }
+    }
+
+    function validateAndSubmitStackForm(e, isNewStack) {
+      const cm = isNewStack ? addStackComposeCM : stackComposeCM;
+      const envCm = isNewStack ? addStackEnvCM : stackEnvCM;
+      if (cm) cm.save();
+      if (envCm) envCm.save();
+
+      const rawContent = cm ? cm.getValue() : (document.getElementById(isNewStack ? 'add-stack-compose' : 'stack-modal-compose')?.value || '');
+      const banner = document.getElementById(isNewStack ? 'add-stack-error-banner' : 'stack-modal-error-banner');
+      const title = document.getElementById(isNewStack ? 'add-stack-error-title' : 'stack-modal-error-title');
+      const msg = document.getElementById(isNewStack ? 'add-stack-error-msg' : 'stack-modal-error-msg');
+
+      if (cm) {
+        for (let i = 0; i < cm.lineCount(); i++) {
+          cm.removeLineClass(i, 'background', 'cm-error-line');
+        }
+      }
+
+      try {
+        const trimmed = rawContent.trim();
+        if (!trimmed) {
+          throw new Error("docker-compose.yml tidak boleh kosong.");
+        }
+
+        if (window.jsyaml) {
+          const parsed = jsyaml.load(trimmed);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error("Format root Docker Compose harus berupa YAML mapping/object.");
+          }
+          if (!parsed.services || typeof parsed.services !== 'object') {
+            throw new Error("Docker Compose wajib memiliki definisi 'services:'");
+          }
+        }
+        if (banner) banner.classList.add('hidden');
+        return true;
+      } catch (err) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!isNewStack) switchStackModalTab('compose');
+
+        let errorText = err.message || String(err);
+        let errorLine = -1;
+
+        if (err.mark && typeof err.mark.line === 'number') {
+          errorLine = err.mark.line;
+          errorText = `Baris ${errorLine + 1}, Kolom ${err.mark.column || 1}: ${err.reason || err.message}`;
+        }
+
+        if (banner && msg) {
+          if (title) title.innerText = "Format YAML / Compose Salah (Gagal Disimpan)";
+          msg.innerText = errorText;
+          banner.classList.remove('hidden');
+        }
+
+        if (cm && errorLine >= 0) {
+          cm.addLineClass(errorLine, 'background', 'cm-error-line');
+          cm.scrollIntoView({ line: errorLine, ch: 0 }, 60);
+          cm.setCursor({ line: errorLine, ch: (err.mark && err.mark.column) || 0 });
+          cm.focus();
+        }
+        return false;
+      }
+    }
+
+    // Attach form submit validation listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      const editForm = document.getElementById('stack-detail-form');
+      if (editForm) {
+        editForm.addEventListener('submit', (e) => validateAndSubmitStackForm(e, false));
+      }
+      const addForm = document.getElementById('add-stack-form');
+      if (addForm) {
+        addForm.addEventListener('submit', (e) => validateAndSubmitStackForm(e, true));
+      }
+    });
+
+    // Esc key handler for modal maximize / close
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('stack-detail-modal');
+        if (modal && !modal.classList.contains('hidden')) {
+          if (isStackModalMaximized) {
+            toggleStackModalMaximize();
+          } else {
+            closeStackDetailModal();
+          }
+        }
+      }
+    });
 
     // --- Remote File Browser ---
     let currentDepId = '';
