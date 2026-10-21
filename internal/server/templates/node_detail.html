@@ -118,6 +118,10 @@
           class="text-xs bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-800/50 text-indigo-300 px-2.5 py-1 rounded transition flex items-center gap-1 font-medium" title="Check all images against registry for newer versions">
           🔍 <span>Check All Updates</span>
         </button>
+        <button id="btn-scan-all-images" onclick="triggerBulkScan()"
+          class="text-xs bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 px-2.5 py-1 rounded transition flex items-center gap-1 font-medium" title="Scan all images for CVE vulnerabilities with Trivy">
+          🛡️ <span>Scan All CVEs</span>
+        </button>
         <button onclick="fetchImages()"
           class="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-2.5 py-1 rounded transition flex items-center gap-1">
           🔄 <span>Refresh Images</span>
@@ -228,9 +232,25 @@
             <option value="on_demand">⭐ On-Demand</option>
             <option value="unused">Unused</option>
             <option value="dangling">⚠ Dangling</option>
+            <option value="vulnerable">🛡️ Vulnerable (CVEs)</option>
+            <option value="clean">✓ Clean</option>
           </select>
         </div>
         <div id="images-filtered-count" class="text-[11px] text-zinc-400 font-mono"></div>
+      </div>
+
+      <!-- Bulk Scan Progress Banner -->
+      <div id="bulk-scan-banner" class="hidden bg-rose-950/30 border border-rose-800/60 rounded-lg p-3 text-xs text-rose-200 flex flex-col gap-2">
+        <div class="flex items-center justify-between font-mono">
+          <span class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-rose-400 animate-ping"></span>
+            <span id="bulk-scan-msg">Scanning images for vulnerabilities...</span>
+          </span>
+          <span id="bulk-scan-pct" class="font-bold text-rose-300">0%</span>
+        </div>
+        <div class="w-full bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+          <div id="bulk-scan-bar" class="bg-rose-500 h-1.5 transition-all duration-300" style="width: 0%"></div>
+        </div>
       </div>
 
       <div class="overflow-x-auto">
@@ -240,14 +260,15 @@
               <th class="py-3 px-4">Repository / Tag</th>
               <th class="py-3 px-4">Image ID</th>
               <th class="py-3 px-4">Size</th>
-              <th class="py-3 px-4">Created</th>
               <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4">Vulnerabilities</th>
+              <th class="py-3 px-4">Last Scanned</th>
               <th class="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody id="images-body" class="divide-y divide-zinc-800/60 text-xs">
             <tr>
-              <td colspan="6" class="py-8 text-center text-zinc-500">Loading images...</td>
+              <td colspan="7" class="py-8 text-center text-zinc-500">Loading images...</td>
             </tr>
           </tbody>
         </table>
@@ -405,6 +426,62 @@
     </div>
   </div>
 
+  <!-- Vulnerability Report Modal (ADR 0018) -->
+  <div id="cve-modal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-xl max-w-4xl w-full flex flex-col shadow-2xl overflow-hidden max-h-[85vh]">
+      <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-base">🛡️</span>
+          <div>
+            <h3 id="cve-modal-title" class="text-sm font-semibold text-zinc-100">Vulnerability Report</h3>
+            <p id="cve-modal-subtitle" class="text-xs text-zinc-400 font-mono"></p>
+          </div>
+        </div>
+        <button onclick="closeCveModal()" class="text-zinc-400 hover:text-zinc-200 text-lg transition">✕</button>
+      </div>
+
+      <!-- Severity Badges Summary -->
+      <div id="cve-modal-summary" class="px-6 py-3 bg-zinc-950/60 border-b border-zinc-800/80 flex flex-wrap items-center gap-3 text-xs">
+      </div>
+
+      <!-- Modal Body (Table or Raw JSON) -->
+      <div class="p-6 overflow-y-auto flex-1 space-y-4">
+        <div id="cve-modal-loading" class="text-center py-12 text-zinc-400 text-xs">
+          <span class="animate-spin inline-block mr-2">🔄</span> Loading vulnerability report...
+        </div>
+        <div id="cve-modal-content" class="hidden">
+          <div class="overflow-x-auto border border-zinc-800 rounded-lg">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="border-b border-zinc-800 bg-zinc-950/80 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  <th class="py-2.5 px-3">Severity</th>
+                  <th class="py-2.5 px-3">CVE ID</th>
+                  <th class="py-2.5 px-3">Package</th>
+                  <th class="py-2.5 px-3">Installed</th>
+                  <th class="py-2.5 px-3">Fixed Version</th>
+                </tr>
+              </thead>
+              <tbody id="cve-modal-tbody" class="divide-y divide-zinc-800/60 font-mono text-[11px]">
+              </tbody>
+            </table>
+          </div>
+          <div id="cve-modal-empty" class="hidden text-center py-10 text-emerald-400 text-xs font-medium">
+            ✓ No known vulnerabilities detected by Trivy scanner.
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-3 border-t border-zinc-800 bg-zinc-950/60 flex items-center justify-between text-xs">
+        <button id="cve-toggle-json-btn" onclick="toggleCveRawJson()" class="text-zinc-400 hover:text-zinc-200 underline">View Raw JSON</button>
+        <button onclick="closeCveModal()" class="px-4 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium transition">Close</button>
+      </div>
+
+      <!-- Raw JSON Container -->
+      <pre id="cve-raw-json" class="hidden max-h-60 overflow-y-auto p-4 bg-zinc-950 text-zinc-300 font-mono text-[11px] border-t border-zinc-800 select-all whitespace-pre-wrap"></pre>
+    </div>
+  </div>
+
   <!-- Logs Modal -->
   <div id="logs-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-zinc-900 border border-zinc-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl">
@@ -463,6 +540,21 @@
     let rawContainers = [];
     let rawImages = [];
     let imageUpdateStatus = {};
+    let scanningImages = {};
+    let bulkScanInterval = null;
+    let currentCveReport = null;
+
+    function formatTimeAgo(date) {
+      if (!date) return '-';
+      const sec = Math.floor((new Date() - date) / 1000);
+      if (sec < 60) return 'Just now';
+      const min = Math.floor(sec / 60);
+      if (min < 60) return `${min}m ago`;
+      const hr = Math.floor(min / 60);
+      if (hr < 24) return `${hr}h ago`;
+      const days = Math.floor(hr / 24);
+      return `${days}d ago`;
+    }
 
     function applyContainersFilter() {
       const q = (document.getElementById('containers-search')?.value || '').toLowerCase().trim();
@@ -640,6 +732,10 @@
           if (img.status !== 'unused') return false;
         } else if (statusFilter === 'dangling') {
           if (!isDangling && img.status !== 'dangling') return false;
+        } else if (statusFilter === 'vulnerable') {
+          if (img.scan_status !== 'vulnerable') return false;
+        } else if (statusFilter === 'clean') {
+          if (img.scan_status !== 'clean') return false;
         }
 
         if (q) {
@@ -666,9 +762,9 @@
 
       if (!images || images.length === 0) {
         if (rawImages.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No images found in node daemon storage.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-zinc-500">No images found in node daemon storage.</td></tr>';
         } else {
-          tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-zinc-500">No images matching current filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="py-8 text-center text-zinc-500">No images matching current filter.</td></tr>';
         }
         return;
       }
@@ -698,11 +794,67 @@
           containerList = `<div class="text-[10px] text-zinc-400 mt-1 font-mono">Containers: ${img.containers.join(', ')}</div>`;
         }
 
+        // Vulnerability Scan badge
+        let vulnBadge = '';
+        if (isDangling) {
+          vulnBadge = `<span class="text-zinc-600 text-[11px]">-</span>`;
+        } else if (scanningImages[ref]) {
+          vulnBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-950/50 text-indigo-300 border border-indigo-800/50 animate-pulse">
+            <span class="animate-spin text-[10px]">🔄</span> Scanning...
+          </span>`;
+        } else if (img.scan_status === 'vulnerable') {
+          const critText = img.critical_count > 0 ? `<span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 rounded font-bold">${img.critical_count} Crit</span>` : '';
+          const highText = img.high_count > 0 ? `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-bold">${img.high_count} High</span>` : '';
+          const otherText = (img.critical_count === 0 && img.high_count === 0) ? `<span class="bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 px-1.5 py-0.5 rounded">${(img.medium_count || 0) + (img.low_count || 0)} CVEs</span>` : '';
+          vulnBadge = `<button onclick="viewVulnerabilityReport('${ref}')" class="inline-flex items-center gap-1 text-[10px] hover:opacity-80 transition cursor-pointer" title="Click to view detailed CVE report">
+            ${critText} ${highText} ${otherText}
+          </button>`;
+        } else if (img.scan_status === 'clean') {
+          vulnBadge = `<button onclick="viewVulnerabilityReport('${ref}')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition cursor-pointer" title="Zero CVEs found. Click for report">
+            ✓ Clean
+          </button>`;
+        } else if (img.scan_status === 'error') {
+          vulnBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/40 text-rose-400 border border-rose-800/40" title="Scan failed">
+            ❌ Error
+          </span>`;
+        } else {
+          vulnBadge = `<span class="text-zinc-500 italic text-[11px]">Unscanned</span>`;
+        }
+
+        // Last Scanned info & Cooldown
+        let lastScannedCell = '';
+        if (isDangling) {
+          lastScannedCell = `<span class="text-zinc-600 text-[11px]">-</span>`;
+        } else if (img.last_scanned_at) {
+          const scanTime = new Date(img.last_scanned_at);
+          const timeAgo = formatTimeAgo(scanTime);
+          let cooldownInfo = '';
+          if (!img.can_scan && img.next_scan_available_at) {
+            const nextTime = new Date(img.next_scan_available_at);
+            const remainingHours = Math.max(1, Math.round((nextTime - new Date()) / (1000 * 60 * 60)));
+            cooldownInfo = `<div class="text-[9px] text-zinc-500 font-mono">Next: ~${remainingHours}h</div>`;
+          } else {
+            cooldownInfo = `<div class="text-[9px] text-emerald-400 font-mono">Ready to re-scan</div>`;
+          }
+          lastScannedCell = `<div><div class="text-zinc-300 text-xs">${timeAgo}</div>${cooldownInfo}</div>`;
+        } else {
+          lastScannedCell = `<span class="text-zinc-500 italic text-[11px]">Never</span>`;
+        }
+
         const canDelete = img.status === 'unused' || img.status === 'dangling';
 
+        let scanButton = '';
         let updateControl = '';
         let pinButton = '';
         if (!isDangling) {
+          if (scanningImages[ref]) {
+            scanButton = `<span class="bg-zinc-800 text-indigo-300 border border-zinc-700 px-2 py-1 rounded text-xs flex items-center gap-1"><span class="animate-spin text-xs">🔄</span> Scanning</span>`;
+          } else if (img.can_scan) {
+            scanButton = `<button onclick="scanSingleImage('${ref}', false)" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium flex items-center gap-1" title="Scan image for CVE vulnerabilities">🛡️ Scan</button>`;
+          } else {
+            scanButton = `<button onclick="scanSingleImage('${ref}', true)" class="bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 px-2 py-1 rounded text-xs transition flex items-center gap-1" title="Scan cooldown active. Click to Force Re-scan">🛡️ Force</button>`;
+          }
+
           const st = imageUpdateStatus[ref];
           if (st && st.state === 'checking') {
             updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-950/50 text-indigo-300 border border-indigo-800/50"><span class="animate-spin text-xs">🔄</span> Checking...</span>`;
@@ -713,7 +865,7 @@
           } else if (st && st.state === 'error') {
             updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${st.error || 'Failed'}"><span>❌ Error</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Retry">↻</button></span>`;
           } else {
-            updateControl = `<button onclick="checkImageUpdate('${ref}')" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check Update</span></button>`;
+            updateControl = `<button onclick="checkImageUpdate('${ref}')" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check</span></button>`;
           }
 
           if (img.is_pinned) {
@@ -739,10 +891,12 @@
             </td>
             <td class="py-3 px-4 font-mono text-xs text-zinc-400">${shortID}</td>
             <td class="py-3 px-4 font-mono text-xs text-zinc-300">${img.size || '-'}</td>
-            <td class="py-3 px-4 text-xs text-zinc-400">${img.created_since || '-'}</td>
             <td class="py-3 px-4">${statusBadge}</td>
+            <td class="py-3 px-4">${vulnBadge}</td>
+            <td class="py-3 px-4">${lastScannedCell}</td>
             <td class="py-3 px-4 text-right">
               <div class="inline-flex items-center gap-1.5 justify-end">
+                ${scanButton}
                 ${updateControl}
                 ${pinButton}
                 ${deleteButton}
@@ -953,6 +1107,235 @@
       } catch (err) {
         alert('Error deleting image: ' + err.message);
       }
+    }
+
+    // Vulnerability Scanning (ADR 0018)
+    async function scanSingleImage(imageRef, force = false) {
+      if (scanningImages[imageRef]) return;
+      scanningImages[imageRef] = true;
+      applyImagesFilter();
+
+      try {
+        const res = await fetch(`/nodes/${nodeID}/images/scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_ref: imageRef, force: force })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert('Scan failed: ' + (data.error || res.statusText));
+          return;
+        }
+        await fetchImages(true);
+      } catch (err) {
+        alert('Scan error: ' + err.message);
+      } finally {
+        delete scanningImages[imageRef];
+        applyImagesFilter();
+      }
+    }
+
+    async function viewVulnerabilityReport(imageRef) {
+      const modal = document.getElementById('cve-modal');
+      const title = document.getElementById('cve-modal-title');
+      const subtitle = document.getElementById('cve-modal-subtitle');
+      const summary = document.getElementById('cve-modal-summary');
+      const loading = document.getElementById('cve-modal-loading');
+      const content = document.getElementById('cve-modal-content');
+      const tbody = document.getElementById('cve-modal-tbody');
+      const emptyMsg = document.getElementById('cve-modal-empty');
+      const rawJson = document.getElementById('cve-raw-json');
+
+      modal.classList.remove('hidden');
+      loading.classList.remove('hidden');
+      content.classList.add('hidden');
+      rawJson.classList.add('hidden');
+      title.innerText = `Vulnerability Report: ${imageRef}`;
+      subtitle.innerText = 'Fetching report...';
+      summary.innerHTML = '';
+      tbody.innerHTML = '';
+
+      try {
+        const res = await fetch(`/nodes/${nodeID}/images/scan/report?image_ref=${encodeURIComponent(imageRef)}`);
+        if (!res.ok) {
+          loading.innerText = 'Failed to load report: ' + (await res.text());
+          return;
+        }
+        const scan = await res.json();
+        currentCveReport = scan;
+        subtitle.innerText = `Scanned at ${new Date(scan.scanned_at).toLocaleString()}`;
+
+        // Summary badges
+        summary.innerHTML = `
+          <span class="px-2.5 py-1 rounded-md font-bold ${scan.critical_count > 0 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-zinc-800 text-zinc-500'}">
+            CRITICAL: ${scan.critical_count}
+          </span>
+          <span class="px-2.5 py-1 rounded-md font-bold ${scan.high_count > 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' : 'bg-zinc-800 text-zinc-500'}">
+            HIGH: ${scan.high_count}
+          </span>
+          <span class="px-2.5 py-1 rounded-md font-medium ${scan.medium_count > 0 ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40' : 'bg-zinc-800 text-zinc-500'}">
+            MEDIUM: ${scan.medium_count}
+          </span>
+          <span class="px-2.5 py-1 rounded-md font-medium ${scan.low_count > 0 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' : 'bg-zinc-800 text-zinc-500'}">
+            LOW: ${scan.low_count}
+          </span>
+        `;
+
+        rawJson.innerText = scan.report_json || '{}';
+
+        // Parse Trivy JSON
+        let reportData = null;
+        try {
+          reportData = JSON.parse(scan.report_json || '{}');
+        } catch (e) {
+          console.error("Failed to parse report json:", e);
+        }
+
+        const vulns = [];
+        if (reportData && reportData.Results) {
+          for (const target of reportData.Results) {
+            if (target.Vulnerabilities) {
+              for (const v of target.Vulnerabilities) {
+                vulns.push(v);
+              }
+            }
+          }
+        }
+
+        loading.classList.add('hidden');
+        content.classList.remove('hidden');
+
+        if (vulns.length === 0) {
+          tbody.innerHTML = '';
+          emptyMsg.classList.remove('hidden');
+        } else {
+          emptyMsg.classList.add('hidden');
+          tbody.innerHTML = vulns.map(v => {
+            const sev = (v.Severity || 'UNKNOWN').toUpperCase();
+            let sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-400">${sev}</span>`;
+            if (sev === 'CRITICAL') {
+              sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40">CRITICAL</span>`;
+            } else if (sev === 'HIGH') {
+              sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">HIGH</span>`;
+            } else if (sev === 'MEDIUM') {
+              sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">MED</span>`;
+            } else if (sev === 'LOW') {
+              sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300 border border-blue-500/40">LOW</span>`;
+            }
+
+            const cveId = v.VulnerabilityID || '-';
+            const link = v.PrimaryURL || (cveId.startsWith('CVE-') ? `https://nvd.nist.gov/vuln/detail/${cveId}` : '');
+            const cveHtml = link ? `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline flex items-center gap-1">${cveId} ↗</a>` : cveId;
+
+            return `
+              <tr class="hover:bg-zinc-800/40 transition">
+                <td class="py-2.5 px-3">${sevBadge}</td>
+                <td class="py-2.5 px-3">${cveHtml}</td>
+                <td class="py-2.5 px-3 font-semibold text-zinc-200">${v.PkgName || '-'}</td>
+                <td class="py-2.5 px-3 text-rose-300">${v.InstalledVersion || '-'}</td>
+                <td class="py-2.5 px-3 text-emerald-400 font-semibold">${v.FixedVersion || '<span class="text-zinc-500 italic">None</span>'}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        loading.innerText = 'Error loading report: ' + err.message;
+      }
+    }
+
+    function toggleCveRawJson() {
+      const el = document.getElementById('cve-raw-json');
+      const btn = document.getElementById('cve-toggle-json-btn');
+      if (el.classList.contains('hidden')) {
+        el.classList.remove('hidden');
+        btn.innerText = 'Hide Raw JSON';
+      } else {
+        el.classList.add('hidden');
+        btn.innerText = 'View Raw JSON';
+      }
+    }
+
+    function closeCveModal() {
+      document.getElementById('cve-modal')?.classList.add('hidden');
+      currentCveReport = null;
+    }
+
+    async function triggerBulkScan() {
+      if (!confirm('Start scanning all images on this node for CVE vulnerabilities? Images scanned in the last 24h will be skipped to conserve host resources.')) {
+        return;
+      }
+      const btn = document.getElementById('btn-scan-all-images');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="animate-spin">🔄</span> Starting...`;
+      }
+      try {
+        const res = await fetch(`/nodes/${nodeID}/images/scan-all`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force: false })
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          alert('Failed to start bulk scan: ' + err);
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `🛡️ <span>Scan All CVEs</span>`;
+          }
+          return;
+        }
+        startBulkScanPolling();
+      } catch (err) {
+        alert('Error initiating bulk scan: ' + err.message);
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = `🛡️ <span>Scan All CVEs</span>`;
+        }
+      }
+    }
+
+    function startBulkScanPolling() {
+      const banner = document.getElementById('bulk-scan-banner');
+      const msg = document.getElementById('bulk-scan-msg');
+      const pct = document.getElementById('bulk-scan-pct');
+      const bar = document.getElementById('bulk-scan-bar');
+      const btn = document.getElementById('btn-scan-all-images');
+
+      banner?.classList.remove('hidden');
+
+      if (bulkScanInterval) clearInterval(bulkScanInterval);
+
+      bulkScanInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/nodes/${nodeID}/images/scan-all/status`);
+          if (!res.ok) return;
+          const status = await res.json();
+
+          if (!status.running) {
+            clearInterval(bulkScanInterval);
+            bulkScanInterval = null;
+            banner?.classList.add('hidden');
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = `🛡️ <span>Scan All CVEs</span>`;
+            }
+            await fetchImages(true);
+            return;
+          }
+
+          const total = status.total || 1;
+          const current = status.current_index || 0;
+          const percent = Math.min(100, Math.round((current / total) * 100));
+
+          if (msg) msg.innerText = `Scanning [${current}/${total}] • Current: ${status.current_image || 'Preparing...'} (${status.scanned} scanned, ${status.skipped} skipped)`;
+          if (pct) pct.innerText = `${percent}%`;
+          if (bar) bar.style.width = `${percent}%`;
+
+          fetchImages(true);
+        } catch (e) {
+          console.error("Bulk scan status error:", e);
+        }
+      }, 2500);
     }
 
     // Volumes Management

@@ -31,7 +31,7 @@ Everything is performed over secure, agentless **SSH**:
 
 - **Agentless over Daemons**: No agents or cluster daemons (Swarm/Kubernetes) consuming RAM or requiring maintenance on target nodes. Plain SSH and Docker are all you need.
 - **Declarative over Imperative**: Manage applications as reproducible Compose templates and deployments with automatic drift detection, rather than ad-hoc container clicking.
-- **Security in CI/CD, Not Runtime Bloat**: Docker Orkes deliberately does not bundle heavy container vulnerability scanners (like Trivy or external CVE feeds). Vulnerability scanning belongs in your CI/CD build pipeline or secure container registry, keeping your production deployment control plane lean, fast, and 100% offline-capable.
+- **Agentless Vulnerability Scanning without Runtime Bloat**: Docker Orkes audits container image security by executing ephemeral Trivy scanner containers directly on managed nodes via the SSH Executor, persisting CVE metrics in SQLite without embedding multi-gigabyte vulnerability databases into the Control Plane binary.
 - **100% Self-Contained**: Single static Go binary with zero external CDN dependencies, embedded SQLite, and embedded web terminal.
 
 ---
@@ -41,6 +41,7 @@ Everything is performed over secure, agentless **SSH**:
 - 🚀 **Agentless SSH Architecture**: Zero software footprint on target nodes. If the target server can run Docker and accept SSH connections, it can be managed by Docker Orkes.
 - 📦 **Declarative Stack Templates**: Define reusable `docker-compose.yml` templates and deploy them across any target node with customized environment variables.
 - 🔍 **Real-Time Configuration Drift Detection**: Verify SHA-256 checksums and review line-by-line diffs between the Control Plane's Desired State and the Actual State on remote nodes. Choose to either **Reconcile** (overwrite remote) or **Adopt** (pull remote changes into Git).
+- 🛡️ **Agentless Image Vulnerability Scanning & Cooldown Protocol**: Audit Node container images for CVEs using transient Trivy containers with dedicated host caching (`orkes-trivy-cache`), 24-hour scan cooldown guards to prevent rate-limiting and host exhaustion, real-time background progress tracking, and interactive vulnerability report modals detailing package versions and CVE identifiers.
 - 💻 **100% Offline Interactive Web Terminal**: Launch low-latency browser PTY terminal sessions over WebSocket directly into node host shells or running container environments (`docker exec`) with bundled offline xterm.js assets.
 - 📜 **Deployment Revisions & 1-Click Rollback**: Maintain forward-only, immutable snapshot histories of compose configurations and environment variables with bounded retention for instant rollbacks.
 - 📂 **Remote Stack Filesystem & Runtime Assets**: Full remote directory browser, file creation, drag-and-drop & recursive folder upload (`webkitdirectory`), remote archive extraction (`.tar.gz`, `.zip`), secret masking, and live code editing with instant redeployment.

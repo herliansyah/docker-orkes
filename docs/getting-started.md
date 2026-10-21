@@ -174,3 +174,25 @@ To inspect real-time daemon operations, SSH executions, and system health direct
    - **Inspect Metadata**: Click on any row with details to expand structured JSON attributes.
    - **Export**: Click **💾 Export** to download client logs instantly as plain text `.log` or structured `.json`.
 
+---
+
+## 12. Auditing Container Images & Vulnerability Scanning (CVE)
+
+To audit and remediate security vulnerabilities across your nodes:
+1. Navigate to the **Managed Nodes** tab and click on a node to open its detail page (`/nodes/<id>`).
+2. Switch to the **🖼️ Images** tab.
+3. **Single Image Scan**:
+   - Find the image you wish to inspect.
+   - Click **🛡️ Scan** in the Actions column.
+   - The Control Plane executes a transient Trivy scanner on the target node, storing results and timestamp in SQLite.
+4. **24-Hour Cooldown & Force Scan**:
+   - After a scan, the button changes to **🛡️ Force** and shows a countdown timer (e.g. `Next: ~22h`).
+   - Routine automated scans are suppressed during cooldown to save bandwidth and CPU. Click **Force** only when you have freshly rebuilt/updated the image and require immediate re-verification.
+5. **Bulk Scanning (Scan All CVEs)**:
+   - Click **🛡️ Scan All CVEs** on the image toolbar above the table.
+   - The Control Plane sequentially scans every named image on the node in the background, automatically skipping any images within their active 24-hour cooldown.
+   - Watch real-time progress via the top progress banner and live events inside the Activity Console.
+6. **Inspecting Vulnerability Details**:
+   - Click any vulnerability badge (e.g. `1 Crit 3 High` or `✓ Clean`).
+   - The **Vulnerability Report** modal displays the full list of detected CVE IDs, affected software packages, installed versions, and available fix versions, alongside a toggleable raw JSON viewer.
+

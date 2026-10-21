@@ -10,7 +10,7 @@ This document provides a comprehensive technical overview of Docker Orkes' desig
 - **Declarative Stacks**: Applications are defined as standard, reusable Docker Compose templates.
 - **Single-Binary Footprint**: Control Plane runs as a standalone Go binary with embedded assets (`embed.FS`) and an embedded SQLite database.
 - **Auditability via Git Mirror**: Every change, deployment configuration, and inventory change is committed to a versioned Git audit log.
-- **Pragmatic Security Boundaries**: Vulnerability scanning belongs in the CI/CD build pipeline or secure container registry, rather than bloating the deployment control plane with volatile CVE databases and flaky external network dependencies.
+- **Pragmatic Security & Agentless Auditing**: Rather than embedding multi-gigabyte CVE databases or heavy scanners into the Control Plane binary, vulnerability scanning is executed on-demand via transient containerized scanners (Trivy) directly on managed nodes over SSH ([ADR 0018](adr/0018-agentless-image-vulnerability-scanning.md)).
 
 ---
 
@@ -142,5 +142,17 @@ For real-time operational feedback without accessing server terminal logs ([ADR 
 - **Bounded In-Memory Ring Buffer**: Retains a fixed-capacity 100-event circular buffer in Go daemon memory for instant replay/hydration, with non-blocking fan-out drops on slow subscribers to protect system latency and prevent memory bloat.
 - **Client-Side Ergonomics & Auto-Scroll**: Interactive 6-column running drawer (`TIME | LEVEL | MODULE | TARGET/NODE | MESSAGE | DETAILS`) accessible via `Ctrl+`` or footer button, with smart auto-scroll freezing during review, level filtering (`ALL`, `ERROR`, `WARN`, `INFO`, `DEBUG`), quick search, unread error counters, and one-click `.log` and `.json` client exports.
 - **Background Noise Reduction**: High-frequency background poller audits run under `DEBUG` severity (filtered out by default) across 7 canonical modules (`poller`, `ssh`, `deploy`, `gitsync`, `notifier`, `auth`, `server`), keeping logs actionable during idle hours.
+
+---
+
+## 13. Node Image Vulnerability Scanning & Cooldown Protocol
+
+For automated and operator-driven security audits of local container images across managed nodes ([ADR 0018](adr/0018-agentless-image-vulnerability-scanning.md)):
+- **Transient Node-Side Trivy Execution**: Scans are initiated via the agentless SSH Executor by running an ephemeral Trivy scanner container (`aquasec/trivy:latest`) directly on the target node. Image layers are evaluated locally against Docker daemon storage without transferring multi-gigabyte layers across the network.
+- **Dedicated Host Cache Volume (`orkes-trivy-cache`)**: The vulnerability database is downloaded once and stored in a named Docker volume on each node. Subsequent scans on that node reuse this cache, keeping scan durations down to seconds and preserving server bandwidth.
+- **24-Hour Scan Cooldown Guard**: To protect nodes from high CPU/memory usage and avoid upstream rate limits, images enter a 24-hour cooldown following a successful scan. Bulk scans automatically skip images within this cooldown window, while operators retain an explicit **Force Re-scan** option for emergency validations following patches.
+- **Sequential Bulk Scanning & Progress Streaming**: Triggering **Scan All CVEs** launches a background worker that iterates through all named images sequentially with brief pauses. Real-time progress is displayed via an in-page progress banner and streamed to the [Activity Console](adr/0017-in-app-activity-console-and-live-telemetry-stream.md).
+- **Actionable Vulnerability Reporting**: Scan results are stored in SQLite (`node_image_scans`). Operators can click severity badges (`Critical`, `High`, `Clean`) to inspect an interactive report modal detailing affected packages, installed versions, fix versions, and CVE links to NVD/Aqua Security databases, with a toggleable raw JSON viewer.
+
 
 

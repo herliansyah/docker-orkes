@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"docker-orkes/internal/server"
 	"docker-orkes/internal/store"
@@ -36,6 +37,12 @@ func (m *mockObsExecutor) RunCommand(ctx context.Context, host string, port int,
 	}
 	if strings.Contains(cmd, "docker images") {
 		return m.dockerImagesOutput, nil
+	}
+	if strings.Contains(cmd, "aquasec/trivy") {
+		if strings.Contains(cmd, "nginx:alpine") {
+			return `{"SchemaVersion":2,"Results":[{"Target":"nginx:alpine","Vulnerabilities":[{"VulnerabilityID":"CVE-2024-0001","PkgName":"libssl","InstalledVersion":"3.0.1","FixedVersion":"3.0.2","Severity":"CRITICAL"},{"VulnerabilityID":"CVE-2024-0002","PkgName":"curl","InstalledVersion":"7.8.0","FixedVersion":"7.8.1","Severity":"HIGH"}]}]}`, nil
+		}
+		return `{"SchemaVersion":2,"Results":[{"Target":"clean-image","Vulnerabilities":[]}]}`, nil
 	}
 	if strings.HasPrefix(cmd, "docker rmi") {
 		m.lastRmiCmd = cmd
@@ -702,6 +709,189 @@ func TestServer_GetDeploymentContainers(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404 Not Found, got %d", rec.Code)
+	}
+}
+
+func TestServer_NodeImageVulnerabilityScanning(t *testing.T) {
+	mockExec := &mockObsExecutor{
+		dockerImagesOutput: `{"Repository":"nginx","Tag":"alpine","ID":"sha256:1111","Size":"23.5MB","CreatedSince":"2 days ago"}
+{"Repository":"redis","Tag":"7","ID":"sha256:2222","Size":"110MB","CreatedSince":"1 week ago"}
+`,
+	}
+
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// Authenticate
+	loginForm := url.Values{"password": {"secret-password"}}
+	loginReq := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	cookie := loginRec.Result().Cookies()[0]
+
+	// Create test node
+	node := store.Node{
+		ID:        "node-cve-test",
+		Name:      "CVE Test Node",
+		Host:      "192.168.1.100",
+		Port:      22,
+		User:      "root",
+		Status:    "online",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := srv.Store().CreateNode(node); err != nil {
+		t.Fatalf("failed to create node: %v", err)
+	}
+
+	// 1. Initial list images: verify scan_status is unscanned and can_scan is true
+	req := httptest.NewRequest(http.MethodGet, "/nodes/node-cve-test/images", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	var images []server.NodeImageInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &images); err != nil {
+		t.Fatalf("failed to unmarshal images: %v", err)
+	}
+	if len(images) != 2 {
+		t.Fatalf("expected 2 images, got %d", len(images))
+	}
+	for _, img := range images {
+		if img.ScanStatus != "unscanned" || !img.CanScan {
+			t.Errorf("expected unscanned & can_scan=true, got status=%s, can_scan=%v", img.ScanStatus, img.CanScan)
+		}
+	}
+
+	// 2. Scan single image (nginx:alpine)
+	scanBody := `{"image_ref":"nginx:alpine"}`
+	req = httptest.NewRequest(http.MethodPost, "/nodes/node-cve-test/images/scan", strings.NewReader(scanBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for scan, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var scanResp struct {
+		Success bool                `json:"success"`
+		Scan    store.NodeImageScan `json:"scan"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &scanResp); err != nil {
+		t.Fatalf("failed to parse scan response: %v", err)
+	}
+	if !scanResp.Success || scanResp.Scan.Status != "vulnerable" || scanResp.Scan.CriticalCount != 1 || scanResp.Scan.HighCount != 1 {
+		t.Fatalf("unexpected scan result: %+v", scanResp.Scan)
+	}
+
+	// 3. Cooldown test: scanning again without force should return 429 Too Many Requests
+	req = httptest.NewRequest(http.MethodPost, "/nodes/node-cve-test/images/scan", strings.NewReader(scanBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 Too Many Requests for cooldown, got %d", rec.Code)
+	}
+
+	// 4. Force scan bypasses cooldown
+	forceBody := `{"image_ref":"nginx:alpine","force":true}`
+	req = httptest.NewRequest(http.MethodPost, "/nodes/node-cve-test/images/scan", strings.NewReader(forceBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for force scan, got %d", rec.Code)
+	}
+
+	// 5. Get report
+	req = httptest.NewRequest(http.MethodGet, "/nodes/node-cve-test/images/scan/report?image_ref=nginx:alpine", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for report query, got %d", rec.Code)
+	}
+	var report store.NodeImageScan
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("failed to parse report: %v", err)
+	}
+	if !strings.Contains(report.ReportJSON, "CVE-2024-0001") {
+		t.Fatalf("report json missing CVE: %s", report.ReportJSON)
+	}
+
+	// 6. Bulk scan initiation
+	req = httptest.NewRequest(http.MethodPost, "/nodes/node-cve-test/images/scan-all", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted for bulk scan, got %d", rec.Code)
+	}
+
+	// 7. Check bulk scan status endpoint
+	req = httptest.NewRequest(http.MethodGet, "/nodes/node-cve-test/images/scan-all/status", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for status, got %d", rec.Code)
+	}
+	var prog server.BulkScanProgress
+	if err := json.Unmarshal(rec.Body.Bytes(), &prog); err != nil {
+		t.Fatalf("failed to parse progress: %v", err)
+	}
+
+	// Wait briefly for background sequential worker to finish
+	time.Sleep(1200 * time.Millisecond)
+
+	// 8. Re-query images: check that nginx:alpine has can_scan=false (cooldown) and scan_status=vulnerable
+	req = httptest.NewRequest(http.MethodGet, "/nodes/node-cve-test/images", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &images)
+	var foundNginx bool
+	for _, img := range images {
+		if img.Repository == "nginx" {
+			foundNginx = true
+			if img.ScanStatus != "vulnerable" {
+				t.Errorf("expected vulnerable status for nginx, got %s", img.ScanStatus)
+			}
+			if img.CanScan {
+				t.Errorf("expected can_scan=false during cooldown, got %v", img.CanScan)
+			}
+			if img.CriticalCount != 1 || img.HighCount != 1 {
+				t.Errorf("unexpected counts: critical=%d, high=%d", img.CriticalCount, img.HighCount)
+			}
+		}
+	}
+	if !foundNginx {
+		t.Errorf("nginx image not found in list")
 	}
 }
 

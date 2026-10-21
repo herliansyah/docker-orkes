@@ -174,3 +174,25 @@ Untuk melihat seluruh operasi internal Control Plane, eksekusi SSH, dan audit ke
    - **Inspeksi Detail**: Klik baris log yang memiliki metadata untuk membuka rincian atribut JSON terstruktur.
    - **Ekspor Log**: Klik **💾 Export** untuk mengunduh rekaman log browser saat itu juga ke dalam format teks `.log` atau data `.json`.
 
+---
+
+## 12. Mengaudit Image Kontainer & Pemindaian Kerentanan (CVE)
+
+Untuk mengaudit dan menambal celah keamanan kontainer di seluruh server node:
+1. Masuk ke tab **Managed Nodes** dan klik pada server node untuk membuka halaman rincian (`/nodes/<id>`).
+2. Buka tab **🖼️ Images**.
+3. **Pemindaian Satu Image (Single Scan)**:
+   - Cari image yang ingin diaudit pada tabel.
+   - Klik tombol **🛡️ Scan** pada kolom Actions.
+   - Control Plane akan menjalankan scanner Trivy sementara di server target, lalu menyimpan metrik CVE dan timestamp ke database SQLite.
+4. **Proteksi Cooldown 24 Jam & Force Scan**:
+   - Setelah scan berhasil, tombol berubah menjadi **🛡️ Force** disertai countdown waktu tunggu (contoh: `Next: ~22h`).
+   - Scan berkala otomatis ditiadakan selama masa cooldown untuk menjaga CPU dan kuota bandwidth. Gunakan tombol **Force** hanya jika Anda baru saja mem-build/meng-update image baru dan butuh validasi langsung saat itu juga.
+5. **Bulk Scanning (Scan All CVEs)**:
+   - Klik tombol **🛡️ Scan All CVEs** pada toolbar atas tabel image.
+   - Control Plane secara berurutan (*sequential*) memindai setiap image di background dengan jeda aman, dan secara otomatis melewati (*skip*) image yang masih dalam cooldown 24 jam.
+   - Anda dapat memantau progres persentase melalui banner di atas tabel dan event log langsung di Activity Console.
+6. **Melihat Rincian Laporan Kerentanan**:
+   - Klik pada badge kerentanan baris image (contoh: `1 Crit 3 High` atau `✓ Clean`).
+   - Modal **Vulnerability Report** akan menampilkan seluruh daftar CVE ID, nama paket software yang terdampak, versi yang sedang terpasang, serta versi perbaikan (*fixed version*), lengkap dengan opsi tab *View Raw JSON*.
+

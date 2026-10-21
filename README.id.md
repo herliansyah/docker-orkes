@@ -31,7 +31,7 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 
 - **Agentless Tanpa Daemon**: Tanpa agen atau daemon kluster (Swarm/Kubernetes) yang memakan RAM atau butuh perawatan berkala di server remote. Cukup SSH standar dan Docker Engine.
 - **Deklaratif Bukan Imperatif**: Kelola aplikasi sebagai template Compose dan deployment yang dapat direproduksi dengan deteksi drift otomatis, bukan manipulasi kontainer ad-hoc.
-- **Keamanan di CI/CD, Bukan Bloat di Runtime**: Docker Orkes sengaja tidak mem-bundle scanner kerentanan image (seperti Trivy atau database CVE berat). Pemindaian kerentanan adalah tanggung jawab pipeline CI/CD saat build atau container registry aman, sehingga control plane deployment Anda tetap ringan, gesit, dan 100% beroperasi offline.
+- **Pemindaian Kerentanan Agentless Tanpa Bloat di Runtime**: Docker Orkes mengaudit keamanan image kontainer dengan menjalankan kontainer scanner Trivy secara ephemeral di server node target via SSH Executor, mencatat metrik CVE ke SQLite tanpa membebani binary Control Plane dengan database CVE yang besar.
 - **100% Mandiri (Self-Contained)**: Single static binary Go tanpa dependensi CDN eksternal, SQLite tertanam, dan web terminal offline.
 
 ---
@@ -41,6 +41,7 @@ Semua operasi dijalankan melalui protokol aman **SSH (Agentless)**:
 - 🚀 **Arsitektur Agentless SSH**: Tanpa jejak software di server remote. Selama server tujuan dapat menjalankan Docker dan menerima koneksi SSH, server tersebut siap dikelola oleh Docker Orkes.
 - 📦 **Template Stack Deklaratif**: Definisikan template aplikasi `docker-compose.yml` yang dapat digunakan ulang ke berbagai server node dengan variabel lingkungan yang dapat disesuaikan.
 - 🔍 **Deteksi Configuration Drift Real-Time**: Verifikasi checksum SHA-256 dan tinjau diff baris-demi-baris antara *Desired State* di Control Plane dan *Actual State* di server remote. Anda dapat memilih untuk **Reconcile** (menimpa server remote) atau **Adopt** (mengadopsi perubahan remote ke Git/Control Plane).
+- 🛡️ **Pemindaian Kerentanan Image Agentless & Protokol Cooldown**: Audit CVE image kontainer pada Node menggunakan kontainer transient Trivy dengan cache host terdedikasi (`orkes-trivy-cache`), proteksi scan cooldown 24 jam untuk mencegah kehabisan resource/rate-limiting, pemantauan progress bulk scan di background secara real-time, dan modal interaktif laporan kerentanan berisikan versi paket terdampak serta ID CVE.
 - 💻 **100% Offline Interactive Web Terminal**: Buka sesi terminal PTY langsung melalui browser via WebSocket ke host server maupun ke dalam container (`docker exec`) menggunakan aset xterm.js offline mandiri tanpa dependensi internet.
 - 📜 **Deployment Revisions & 1-Click Rollback**: Riwayat snapshot konfigurasi dan environment variables *forward-only* yang *immutable* dengan retensi terkelola untuk rollback instan dalam satu klik.
 - 📂 **Remote Stack Filesystem & Runtime Assets**: Navigasi struktur folder remote, pembuatan file/folder baru, upload berkas secara drag-and-drop dan folder rekursif (`webkitdirectory`), ekstraksi arsip remote (`.tar.gz`, `.zip`), proteksi masking rahasia, serta live editor dengan redeploy instan.
