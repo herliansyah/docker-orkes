@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"docker-orkes/internal/server"
+	"docker-orkes/internal/store"
 )
 
 func TestServer_StackTemplatesAndValidation(t *testing.T) {
@@ -137,6 +138,21 @@ func TestServer_StackTemplatesAndValidation(t *testing.T) {
 	if !strings.Contains(updatedStack.ComposeYAML, "nginx:latest") {
 		t.Errorf("expected updated compose to contain 'nginx:latest', got %s", updatedStack.ComposeYAML)
 	}
+
+	// 6.b Block stack deletion when active deployment exists
+	_ = srv.Store().CreateNode(store.Node{ID: "n-stack-guard", Name: "node-guard", Host: "10.0.0.5", Port: 22, User: "root", Status: "online"})
+	_ = srv.Store().CreateDeployment(store.Deployment{ID: "d-stack-guard", StackID: stackID, NodeID: "n-stack-guard", Status: "running"})
+
+	req = httptest.NewRequest(http.MethodPost, "/stacks/"+stackID+"/delete", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when deleting stack with active deployment, got %d", rec.Code)
+	}
+
+	_ = srv.Store().DeleteDeployment("d-stack-guard")
 
 	// 7. Delete Stack
 	req = httptest.NewRequest(http.MethodPost, "/stacks/"+stackID+"/delete", nil)

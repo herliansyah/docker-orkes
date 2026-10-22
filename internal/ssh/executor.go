@@ -3,15 +3,21 @@ package ssh
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type RemoteFileEntry struct {
@@ -33,13 +39,51 @@ type Executor interface {
 	RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKeyPEM string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error
 }
 
+type RealExecutor struct {
+	KnownHostsPath string
+}
 
+func NewExecutor(knownHostsPath ...string) Executor {
+	kh := ""
+	if len(knownHostsPath) > 0 {
+		kh = knownHostsPath[0]
+	}
+	return &RealExecutor{KnownHostsPath: kh}
+}
 
-
-type RealExecutor struct{}
-
-func NewExecutor() Executor {
-	return &RealExecutor{}
+func (e *RealExecutor) getHostKeyCallback() (ssh.HostKeyCallback, error) {
+	if e.KnownHostsPath == "" {
+		// ponytail: Insecure fallback when no known_hosts path is configured for agentless convenience
+		return ssh.InsecureIgnoreHostKey(), nil
+	}
+	if _, err := os.Stat(e.KnownHostsPath); os.IsNotExist(err) {
+		if dir := filepath.Dir(e.KnownHostsPath); dir != "" && dir != "." {
+			_ = os.MkdirAll(dir, 0755)
+		}
+		_ = os.WriteFile(e.KnownHostsPath, []byte{}, 0600)
+	}
+	kh, err := knownhosts.New(e.KnownHostsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse known_hosts: %w", err)
+	}
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := kh(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		var keyErr *knownhosts.KeyError
+		if errors.As(err, &keyErr) && len(keyErr.Want) == 0 {
+			// Host is unknown: record fingerprint on first use (true TOFU)
+			f, openErr := os.OpenFile(e.KnownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
+			if openErr == nil {
+				defer f.Close()
+				line := knownhosts.Line([]string{hostname}, key)
+				_, _ = f.WriteString(line + "\n")
+			}
+			return nil
+		}
+		return err // Key mismatch or verification error (blocks MITM attack)
+	}, nil
 }
 
 func (e *RealExecutor) getSSHClient(ctx context.Context, host string, port int, user string, privKeyPEM string) (*ssh.Client, error) {
@@ -48,16 +92,21 @@ func (e *RealExecutor) getSSHClient(ctx context.Context, host string, port int, 
 		return nil, fmt.Errorf("invalid ssh private key: %w", err)
 	}
 
+	hostKeyCb, err := e.getHostKeyCallback()
+	if err != nil {
+		return nil, err
+	}
+
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ponytail: TOFU / agentless convenience, ceiling: strict host key checking with known_hosts
+		HostKeyCallback: hostKeyCb,
 		Timeout:         10 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -92,7 +141,10 @@ func (e *RealExecutor) TestConnection(ctx context.Context, host string, port int
 
 	// Test docker version to confirm both SSH login AND docker socket permissions
 	cmd := "docker version --format 'Docker version {{.Server.Version}} (API {{.Server.APIVersion}})'"
-	if err := session.Run(cmd); err != nil {
+	if err := runSessionWithContext(ctx, session, cmd); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		errMsg := strings.TrimSpace(stderr.String())
 		if errMsg == "" {
 			errMsg = err.Error()
@@ -123,7 +175,10 @@ func (e *RealExecutor) RunCommand(ctx context.Context, host string, port int, us
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
-	if err := session.Run(cmd); err != nil {
+	if err := runSessionWithContext(ctx, session, cmd); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return stdout.String(), fmt.Errorf("command failed: %s (stderr: %s)", err, stderr.String())
 	}
 
@@ -146,7 +201,10 @@ func (e *RealExecutor) RunCommandStream(ctx context.Context, host string, port i
 	session.Stdout = out
 	session.Stderr = out
 
-	if err := session.Run(cmd); err != nil {
+	if err := runSessionWithContext(ctx, session, cmd); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("command execution failed: %w", err)
 	}
 
@@ -212,7 +270,8 @@ func (e *RealExecutor) ReadRemoteFile(ctx context.Context, host string, port int
 	}
 	defer file.Close()
 
-	content, err := io.ReadAll(file)
+	// Bound file read to max 10MB to prevent memory exhaustion on unexpectedly large files
+	content, err := io.ReadAll(io.LimitReader(file, 10<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read remote file %s: %w", remoteFilePath, err)
 	}
@@ -251,8 +310,14 @@ func (e *RealExecutor) ListRemoteFiles(ctx context.Context, host string, port in
 	return files, nil
 }
 
-
 func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, user string, password string, pubKey string) error {
+	// Validate public key cryptographically before any remote interaction
+	parsedKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKey))
+	if err != nil {
+		return fmt.Errorf("invalid ssh public key: %w", err)
+	}
+	cleanKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(parsedKey)))
+
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
@@ -269,7 +334,7 @@ func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, 
 		Timeout:         10 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -290,12 +355,18 @@ func (e *RealExecutor) BootstrapKey(ctx context.Context, host string, port int, 
 	}
 	defer session.Close()
 
-	cleanKey := strings.Join(strings.Fields(pubKey), " ")
-	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && grep -qF '%s' ~/.ssh/authorized_keys || echo '%s' >> ~/.ssh/authorized_keys`, cleanKey, cleanKey)
+	// Use base64 encoding to eliminate any possible shell injection vector
+	b64Key := base64.StdEncoding.EncodeToString([]byte(cleanKey + "\n"))
+	cmd := fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && (echo %s | base64 -d | grep -qFf - ~/.ssh/authorized_keys || echo %s | base64 -d >> ~/.ssh/authorized_keys)`, b64Key, b64Key)
 
-	out, err := session.CombinedOutput(cmd)
-	if err != nil {
-		return fmt.Errorf("failed to install ssh key on remote server: %w (output: %s)", err, string(out))
+	var out bytes.Buffer
+	session.Stdout = &out
+	session.Stderr = &out
+	if err := runSessionWithContext(ctx, session, cmd); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("failed to install ssh key on remote server: %w (output: %s)", err, strings.TrimSpace(out.String()))
 	}
 
 	return nil
@@ -375,5 +446,23 @@ func (e *RealExecutor) RunInteractiveTerminal(ctx context.Context, host string, 
 	}
 }
 
-
+// runSessionWithContext executes a command in an SSH session while observing context cancellation.
+// If the context is canceled or times out, SIGTERM is signaled and the session is closed immediately.
+func runSessionWithContext(ctx context.Context, session *ssh.Session, cmd string) error {
+	if err := session.Start(cmd); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Wait()
+	}()
+	select {
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGTERM)
+		_ = session.Close()
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
+}
 

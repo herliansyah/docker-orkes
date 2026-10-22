@@ -109,3 +109,62 @@ func TestNativeGitSyncer_EmptyRemote(t *testing.T) {
 		t.Fatalf("Sync failed to empty remote: %v", err)
 	}
 }
+
+func TestNativeGitSyncer_DeletesPrunedFiles(t *testing.T) {
+	localDir := t.TempDir()
+	syncer := gitsync.NewSyncer()
+
+	files := map[string][]byte{
+		"stacks/web/docker-compose.yml": []byte("services: web: image: nginx"),
+		"deployments/node1/web.env":     []byte("PORT=80"),
+	}
+
+	if err := syncer.Sync(context.Background(), localDir, "", "main", "", files); err != nil {
+		t.Fatalf("initial sync failed: %v", err)
+	}
+
+	// Verify both files exist
+	if _, err := os.Stat(filepath.Join(localDir, "stacks/web/docker-compose.yml")); err != nil {
+		t.Fatalf("expected web compose to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(localDir, "deployments/node1/web.env")); err != nil {
+		t.Fatalf("expected web env to exist: %v", err)
+	}
+
+	// Now delete "deployments/node1/web.env" from map
+	delete(files, "deployments/node1/web.env")
+
+	if err := syncer.Sync(context.Background(), localDir, "", "main", "", files); err != nil {
+		t.Fatalf("sync after deletion failed: %v", err)
+	}
+
+	// Deleted file must no longer exist on disk
+	if _, err := os.Stat(filepath.Join(localDir, "deployments/node1/web.env")); !os.IsNotExist(err) {
+		t.Errorf("expected deployments/node1/web.env to be pruned from local mirror")
+	}
+
+	// Stacks web must still exist
+	if _, err := os.Stat(filepath.Join(localDir, "stacks/web/docker-compose.yml")); err != nil {
+		t.Errorf("expected stacks/web/docker-compose.yml to still exist")
+	}
+}
+
+func TestNativeGitSyncer_PathTraversalIgnored(t *testing.T) {
+	localDir := t.TempDir()
+	syncer := gitsync.NewSyncer()
+
+	parentFile := filepath.Join(filepath.Dir(localDir), "escape.txt")
+	defer os.Remove(parentFile)
+
+	files := map[string][]byte{
+		"../escape.txt": []byte("should-not-exist"),
+	}
+
+	if err := syncer.Sync(context.Background(), localDir, "", "main", "", files); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	if _, err := os.Stat(parentFile); !os.IsNotExist(err) {
+		t.Errorf("traversal file was written outside mirror dir!")
+	}
+}

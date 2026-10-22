@@ -17,9 +17,6 @@ import (
 	"docker-orkes/internal/store"
 )
 
-
-
-
 type mockExecutor struct {
 	testConnFunc func(ctx context.Context, host string, port int, user string, privKey string) (string, error)
 }
@@ -58,9 +55,6 @@ func (m *mockExecutor) ListRemoteFiles(ctx context.Context, host string, port in
 func (m *mockExecutor) RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKey string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error {
 	return nil
 }
-
-
-
 
 func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 	mockExec := &mockExecutor{}
@@ -212,6 +206,21 @@ func TestServer_NodeInventoryAndTestConnection(t *testing.T) {
 		t.Errorf("expected error message in JSON failure response, got %v", failJSONResp["error"])
 	}
 
+	// 5.b Block node deletion when active deployment exists
+	_ = srv.Store().CreateStack(store.Stack{ID: "s-guard", Name: "guard-stack", ComposeYAML: "services:\n  a:\n    image: nginx\n"})
+	_ = srv.Store().CreateDeployment(store.Deployment{ID: "d-guard", StackID: "s-guard", NodeID: nodeID, Status: "running"})
+
+	req = httptest.NewRequest(http.MethodPost, "/nodes/"+nodeID+"/delete", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when deleting node with active deployment, got %d", rec.Code)
+	}
+
+	_ = srv.Store().DeleteDeployment("d-guard")
+
 	// 6. Delete Node via POST /nodes/{id}/delete
 	req = httptest.NewRequest(http.MethodPost, "/nodes/"+nodeID+"/delete", nil)
 	req.AddCookie(cookie)
@@ -287,4 +296,3 @@ func TestServer_NodeUpdate(t *testing.T) {
 		t.Errorf("node fields not updated correctly: %+v", updated)
 	}
 }
-

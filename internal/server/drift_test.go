@@ -12,7 +12,6 @@ import (
 	"docker-orkes/internal/store"
 )
 
-
 func TestServer_DriftDetectionReconcileAndAdopt(t *testing.T) {
 	mockExec := &mockDeployExecutor{}
 

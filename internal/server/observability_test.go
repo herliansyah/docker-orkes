@@ -894,6 +894,3 @@ func TestServer_NodeImageVulnerabilityScanning(t *testing.T) {
 		t.Errorf("nginx image not found in list")
 	}
 }
-
-
-

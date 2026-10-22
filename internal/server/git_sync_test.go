@@ -16,12 +16,12 @@ import (
 )
 
 type mockGitSyncer struct {
-	mu           sync.Mutex
-	syncedFiles  map[string][]byte
-	syncCount    int
-	lastError    error
-	repoURL      string
-	branch       string
+	mu          sync.Mutex
+	syncedFiles map[string][]byte
+	syncCount   int
+	lastError   error
+	repoURL     string
+	branch      string
 }
 
 func (m *mockGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL string, branch string, privKey string, files map[string][]byte) error {
@@ -101,11 +101,11 @@ func TestServer_GitMirrorBackupSync(t *testing.T) {
 		DefaultEnv:  "POSTGRES_PASSWORD=secret",
 	})
 	_ = srv.Store().CreateDeployment(store.Deployment{
-		ID:        "dep-db",
-		StackID:   "stack-db",
-		NodeID:    "node-git",
-		EnvVars:   "POSTGRES_PASSWORD=custom-secret\nPORT=5432",
-		Status:    "running",
+		ID:      "dep-db",
+		StackID: "stack-db",
+		NodeID:  "node-git",
+		EnvVars: "POSTGRES_PASSWORD=custom-secret\nPORT=5432",
+		Status:  "running",
 	})
 
 	// 4. Trigger "Sync Now" via POST /settings/git/sync
@@ -259,4 +259,3 @@ func TestServer_NotesAndRunbookSync(t *testing.T) {
 		t.Errorf("expected inventory.json to contain notes, got: %s", inventoryFile)
 	}
 }
-

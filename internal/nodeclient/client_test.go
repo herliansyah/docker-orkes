@@ -162,6 +162,34 @@ func TestClient_DeployStack(t *testing.T) {
 	}
 }
 
+func TestClient_DeployStackWithoutPull(t *testing.T) {
+	mock := &mockExecutor{}
+	cli := New(Config{
+		Host:     "192.168.1.100",
+		Port:     22,
+		User:     "ubuntu",
+		Executor: mock,
+	})
+
+	files := map[string][]byte{
+		"docker-compose.yml": []byte("services:\n  app:\n    image: my-local-app:latest\n"),
+	}
+
+	_, err := cli.DeployStack(context.Background(), "local-stack", files, false)
+	if err != nil {
+		t.Fatalf("DeployStack failed: %v", err)
+	}
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+
+	for _, cmd := range mock.commands {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "pull") {
+			t.Errorf("unexpected docker compose pull command executed when pull=false: %s", cmd)
+		}
+	}
+}
+
 func TestClient_RestartAndDownStack(t *testing.T) {
 	mock := &mockExecutor{}
 	cli := New(Config{
@@ -197,6 +225,54 @@ func TestClient_RestartAndDownStack(t *testing.T) {
 	}
 	if !hasDown {
 		t.Errorf("missing down command in %v", mock.commands)
+	}
+}
+
+func TestClient_ContainerLifecycleActions(t *testing.T) {
+	mock := &mockExecutor{}
+	cli := New(Config{
+		Host:     "192.168.1.100",
+		Port:     22,
+		User:     "ubuntu",
+		Executor: mock,
+	})
+
+	ctx := context.Background()
+
+	// 1. Valid commands
+	if err := cli.StartContainer(ctx, "c101_web"); err != nil {
+		t.Fatalf("StartContainer failed: %v", err)
+	}
+	if err := cli.StopContainer(ctx, "c101_web"); err != nil {
+		t.Fatalf("StopContainer failed: %v", err)
+	}
+	if err := cli.RestartContainer(ctx, "c101_web"); err != nil {
+		t.Fatalf("RestartContainer failed: %v", err)
+	}
+
+	expectedCmds := []string{
+		"docker start -- c101_web",
+		"docker stop -- c101_web",
+		"docker restart -- c101_web",
+	}
+	for i, exp := range expectedCmds {
+		if mock.commands[i] != exp {
+			t.Errorf("cmd %d: expected %q, got %q", i, exp, mock.commands[i])
+		}
+	}
+
+	// 2. Reject injection attempts
+	invalidIDs := []string{
+		"-c101",
+		"c101;rm -rf /",
+		"c101$(whoami)",
+		"c101`id`",
+		"",
+	}
+	for _, badID := range invalidIDs {
+		if err := cli.StartContainer(ctx, badID); err == nil {
+			t.Errorf("expected error for bad container ID %q, got nil", badID)
+		}
 	}
 }
 
@@ -372,6 +448,9 @@ func TestClient_FileOpsAndDelegations(t *testing.T) {
 	if _, err := cli.GetContainerLogs(ctx, "c123; rm -rf /"); err == nil {
 		t.Errorf("expected error for invalid container ID injection")
 	}
+	if _, err := cli.GetContainerLogs(ctx, "-f"); err == nil {
+		t.Errorf("expected error for container ID starting with hyphen")
+	}
 	logs, err := cli.GetContainerLogs(ctx, "c123")
 	if err != nil {
 		t.Fatalf("GetContainerLogs failed: %v", err)
@@ -471,3 +550,58 @@ func TestClient_FileManagementFeatures(t *testing.T) {
 	}
 }
 
+func TestContainerInfo_MatchesStack(t *testing.T) {
+	// 1. With explicit StackName from Compose project label (primary mechanism)
+	c1 := ContainerInfo{Names: "my-web-1", StackName: "web"}
+	if !c1.MatchesStack("web") {
+		t.Errorf("expected c1 to match 'web'")
+	}
+	if c1.MatchesStack("web-proxy") {
+		t.Errorf("expected c1 not to match 'web-proxy'")
+	}
+
+	c3 := ContainerInfo{Names: "web-proxy-gateway-1", StackName: "web-proxy"}
+	if c3.MatchesStack("web") {
+		t.Errorf("c3 is web-proxy, should NOT match 'web'")
+	}
+	if !c3.MatchesStack("web-proxy") {
+		t.Errorf("c3 should match 'web-proxy'")
+	}
+
+	// 2. Fallback when label is absent (pure naming prefix matching)
+	c2 := ContainerInfo{Names: "web-app-1"}
+	if !c2.MatchesStack("web") {
+		t.Errorf("expected c2 to match 'web'")
+	}
+	if c2.MatchesStack("app") {
+		t.Errorf("expected c2 not to match 'app'")
+	}
+
+	c4 := ContainerInfo{Names: "other-web-1"}
+	if c4.MatchesStack("web") {
+		t.Errorf("c4 should not match 'web'")
+	}
+}
+
+func TestUpStackCommand(t *testing.T) {
+	mock := &mockExecutor{}
+	c := New(Config{
+		Host:     "127.0.0.1",
+		Port:     22,
+		User:     "root",
+		Executor: mock,
+	})
+
+	_, err := c.UpStack(context.Background(), "my-stack")
+	if err != nil {
+		t.Fatalf("UpStack failed: %v", err)
+	}
+
+	if len(mock.commands) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(mock.commands))
+	}
+	cmd := mock.commands[0]
+	if !strings.Contains(cmd, "if [ -f") || !strings.Contains(cmd, "--env-file") || !strings.Contains(cmd, "docker compose") {
+		t.Errorf("UpStack did not include safe env-file check: %s", cmd)
+	}
+}

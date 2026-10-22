@@ -17,7 +17,6 @@ import (
 	"docker-orkes/internal/store"
 )
 
-
 type mockDeployExecutor struct {
 	mu           sync.Mutex
 	uploaded     map[string][]byte
@@ -87,9 +86,6 @@ func (m *mockDeployExecutor) ListRemoteFiles(ctx context.Context, host string, p
 func (m *mockDeployExecutor) RunInteractiveTerminal(ctx context.Context, host string, port int, user string, privKey string, cmd string, rows int, cols int, rw io.ReadWriter, resizeChan <-chan [2]int) error {
 	return nil
 }
-
-
-
 
 func TestServer_DeploymentLifecycle(t *testing.T) {
 	mockExec := &mockDeployExecutor{}
@@ -607,11 +603,11 @@ func TestServer_DeploymentPreflightAndUp(t *testing.T) {
 	_ = srv.Store().CreateNode(store.Node{ID: "n1", Name: "node-1", Host: "10.0.0.1", Port: 22, User: "root", Status: "online"})
 	_ = srv.Store().CreateStack(store.Stack{ID: "s1", Name: "app", ComposeYAML: "services:\n  web:\n    image: nginx\n"})
 	_ = srv.Store().CreateDeployment(store.Deployment{
-		ID:       "d1",
-		StackID:  "s1",
-		NodeID:   "n1",
-		EnvVars:  "PORT=8080\nSECRET_KEY=supersecret123",
-		Status:   "running",
+		ID:      "d1",
+		StackID: "s1",
+		NodeID:  "n1",
+		EnvVars: "PORT=8080\nSECRET_KEY=supersecret123",
+		Status:  "running",
 	})
 
 	// 1. Preflight check endpoint (GET /deployments/{id}/preflight)
@@ -761,3 +757,98 @@ func TestServer_OfflineNodeDeploymentSafety(t *testing.T) {
 	}
 }
 
+func TestServer_DuplicateDeploymentAndFlagInjectionGuards(t *testing.T) {
+	mockExec := &mockDeployExecutor{}
+	srv, err := server.New(server.Config{
+		DBPath:         ":memory:",
+		MasterPassword: "secret-password",
+		Executor:       mockExec,
+	})
+	if err != nil {
+		t.Fatalf("failed to create server: %v", err)
+	}
+	defer srv.Close()
+
+	handler := srv.Handler()
+
+	// Login
+	loginForm := url.Values{"password": {"secret-password"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(loginForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	cookie := rec.Result().Cookies()[0]
+
+	// Create Node & Stack
+	_ = srv.Store().CreateNode(store.Node{ID: "n-guard", Name: "Guard Node", Host: "10.0.0.1", Port: 22, User: "root", Status: "online"})
+	_ = srv.Store().CreateStack(store.Stack{ID: "s-guard", Name: "guard-stack", ComposeYAML: "services:\n  web:\n    image: nginx\n"})
+
+	// 1. First deployment should succeed
+	deployForm := url.Values{
+		"stack_id": {"s-guard"},
+		"node_id":  {"n-guard"},
+		"env_vars": {"A=1"},
+	}
+	req1 := httptest.NewRequest(http.MethodPost, "/deployments", strings.NewReader(deployForm.Encode()))
+	req1.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req1.AddCookie(cookie)
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusSeeOther && rec1.Code != http.StatusFound {
+		t.Fatalf("expected redirect for first deployment, got %d", rec1.Code)
+	}
+
+	// 2. Second deployment on same node with same stack must be rejected with 400
+	req2 := httptest.NewRequest(http.MethodPost, "/deployments", strings.NewReader(deployForm.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req2.AddCookie(cookie)
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for duplicate deployment, got %d", rec2.Code)
+	}
+	if !strings.Contains(rec2.Body.String(), "already exists") {
+		t.Errorf("expected duplicate error message, got: %s", rec2.Body.String())
+	}
+
+	// 3. Test leading hyphen rejection on Docker commands
+	// 3a. Pull image starting with hyphen
+	reqPull := httptest.NewRequest(http.MethodPost, "/nodes/n-guard/images/pull", strings.NewReader(`{"image_ref":"--help"}`))
+	reqPull.Header.Set("Content-Type", "application/json")
+	reqPull.AddCookie(cookie)
+	recPull := httptest.NewRecorder()
+	handler.ServeHTTP(recPull, reqPull)
+	if recPull.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for image_ref with leading hyphen, got %d", recPull.Code)
+	}
+
+	// 3b. Delete image starting with hyphen
+	reqDelImg := httptest.NewRequest(http.MethodPost, "/nodes/n-guard/images/delete", strings.NewReader(`{"image_ref":"-f"}`))
+	reqDelImg.Header.Set("Content-Type", "application/json")
+	reqDelImg.AddCookie(cookie)
+	recDelImg := httptest.NewRecorder()
+	handler.ServeHTTP(recDelImg, reqDelImg)
+	if recDelImg.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for image delete with leading hyphen, got %d", recDelImg.Code)
+	}
+
+	// 3c. Delete volume starting with hyphen
+	reqDelVol := httptest.NewRequest(http.MethodPost, "/nodes/n-guard/volumes/delete", strings.NewReader(`{"name":"--all"}`))
+	reqDelVol.Header.Set("Content-Type", "application/json")
+	reqDelVol.AddCookie(cookie)
+	recDelVol := httptest.NewRecorder()
+	handler.ServeHTTP(recDelVol, reqDelVol)
+	if recDelVol.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for volume delete with leading hyphen, got %d", recDelVol.Code)
+	}
+
+	// 3d. Delete network starting with hyphen
+	reqDelNet := httptest.NewRequest(http.MethodPost, "/nodes/n-guard/networks/delete", strings.NewReader(`{"name":"-f"}`))
+	reqDelNet.Header.Set("Content-Type", "application/json")
+	reqDelNet.AddCookie(cookie)
+	recDelNet := httptest.NewRecorder()
+	handler.ServeHTTP(recDelNet, reqDelNet)
+	if recDelNet.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for network delete with leading hyphen, got %d", recDelNet.Code)
+	}
+}

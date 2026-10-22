@@ -43,13 +43,17 @@ func main() {
 
 func runServer() {
 	var (
-		addr   = flag.String("addr", getEnv("ADDR", ":8080"), "HTTP server address")
-		dbPath = flag.String("db", getEnv("DB_PATH", "docker-orkes.db"), "SQLite database file path")
-		pass   = flag.String("pass", getEnv("MASTER_PASSWORD", "admin"), "Master password for dashboard access")
-		pidFile = flag.String("pid", defaultPidFile, "Path to PID file")
-		daemon  = flag.Bool("d", false, "Run in background (daemon mode)")
-		logFile = flag.String("log-file", getEnv("LOG_FILE", "docker-orkes.log"), "Path to rotating log file (empty to disable)")
+		addr     = flag.String("addr", getEnv("ADDR", ":8080"), "HTTP server address")
+		dbPath   = flag.String("db", getEnv("DB_PATH", "docker-orkes.db"), "SQLite database file path")
+		pass     = flag.String("pass", getEnv("MASTER_PASSWORD", "admin"), "Master password for dashboard access")
+		pidFile  = flag.String("pid", defaultPidFile, "Path to PID file")
+		daemon   = flag.Bool("d", false, "Run in background (daemon mode)")
+		logFile  = flag.String("log-file", getEnv("LOG_FILE", "docker-orkes.log"), "Path to rotating log file (empty to disable)")
 		logLevel = flag.String("log-level", getEnv("LOG_LEVEL", "info"), "Log level (debug, info, warn, error)")
+		tlsCert      = flag.String("tls-cert", getEnv("TLS_CERT", ""), "Path to TLS certificate file (enables HTTPS)")
+		tlsKey       = flag.String("tls-key", getEnv("TLS_KEY", ""), "Path to TLS private key file")
+		gitMirrorDir = flag.String("git-mirror-dir", getEnv("GIT_MIRROR_DIR", "data/git-mirror"), "Path to Git mirror directory")
+		apiToken     = flag.String("api-token", getEnv("API_TOKEN", ""), "API token for automated CI/CD deployment calls")
 	)
 	flag.Parse()
 
@@ -67,6 +71,11 @@ func runServer() {
 		defer logRes.Closer.Close()
 	}
 
+	// Check if already running with this PID file
+	if existingPid, err := readPidFile(*pidFile); err == nil && isProcessAlive(existingPid) && existingPid != os.Getpid() {
+		log.Fatalf("Error: Docker Orkes is already running (PID: %d). Stop it first or specify a different -pid file.", existingPid)
+	}
+
 	// Write PID file
 	if err := writePidFile(*pidFile, os.Getpid()); err != nil {
 		log.Printf("Warning: failed to write PID file: %v", err)
@@ -77,6 +86,8 @@ func runServer() {
 		Addr:           *addr,
 		DBPath:         *dbPath,
 		MasterPassword: *pass,
+		GitMirrorDir:   *gitMirrorDir,
+		APIToken:       *apiToken,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize server: %v", err)
@@ -90,8 +101,12 @@ func runServer() {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	proto := "http"
+	if *tlsCert != "" && *tlsKey != "" {
+		proto = "https"
+	}
 	fmt.Println("==================================================")
-	fmt.Printf("🐳 Docker Orkes Control Plane started on %s (PID: %d)\n", *addr, os.Getpid())
+	fmt.Printf("🐳 Docker Orkes Control Plane started on %s://%s (PID: %d)\n", proto, *addr, os.Getpid())
 	fmt.Printf("💾 Database: %s\n", *dbPath)
 	fmt.Println("🔑 Control Plane SSH Public Key:")
 	fmt.Print(srv.PublicKeySSH())
@@ -101,7 +116,14 @@ func runServer() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if *tlsCert != "" && *tlsKey != "" {
+			err = httpServer.ListenAndServeTLS(*tlsCert, *tlsKey)
+		} else {
+			err = httpServer.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
+			_ = removePidFile(*pidFile)
 			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
@@ -161,10 +183,22 @@ func handleRestart(args []string) {
 	if err == nil && isProcessAlive(pid) {
 		fmt.Printf("🛑 Stopping existing instance (PID: %d)...\n", pid)
 		_ = killProcess(pid, syscall.SIGTERM)
+		stopped := false
 		for i := 0; i < 30; i++ {
 			time.Sleep(200 * time.Millisecond)
 			if !isProcessAlive(pid) {
+				stopped = true
 				break
+			}
+		}
+		if !stopped {
+			fmt.Printf("⚠️ Graceful stop timed out. Force killing PID %d...\n", pid)
+			_ = killProcess(pid, syscall.SIGKILL)
+			for i := 0; i < 10; i++ {
+				time.Sleep(100 * time.Millisecond)
+				if !isProcessAlive(pid) {
+					break
+				}
 			}
 		}
 		_ = removePidFile(pidFile)

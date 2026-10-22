@@ -3,6 +3,7 @@ package poller_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,10 +37,10 @@ func (m *mockNotifier) SendAlert(ctx context.Context, title string, message stri
 }
 
 type fakeEngine struct {
-	st               *store.Store
-	nodeOnline       map[string]bool
-	nodeContainers   map[string][]nodeclient.ContainerInfo
-	testNodeCalls    int
+	st             *store.Store
+	nodeOnline     map[string]bool
+	nodeContainers map[string][]nodeclient.ContainerInfo
+	testNodeCalls  int
 }
 
 func (f *fakeEngine) Store() *store.Store {
@@ -66,7 +67,23 @@ func (f *fakeEngine) GetContainerLogs(ctx context.Context, nodeID string, contai
 	return "", nil
 }
 
+func (f *fakeEngine) StartContainer(ctx context.Context, nodeID string, containerID string) error {
+	return nil
+}
+
+func (f *fakeEngine) StopContainer(ctx context.Context, nodeID string, containerID string) error {
+	return nil
+}
+
+func (f *fakeEngine) RestartContainer(ctx context.Context, nodeID string, containerID string) error {
+	return nil
+}
+
 func (f *fakeEngine) Deploy(ctx context.Context, deploymentID string) error {
+	return nil
+}
+
+func (f *fakeEngine) Rollout(ctx context.Context, deploymentID string) error {
 	return nil
 }
 
@@ -88,7 +105,6 @@ func (f *fakeEngine) Down(ctx context.Context, deploymentID string) error {
 func (f *fakeEngine) DeleteDeployment(ctx context.Context, deploymentID string, teardown bool, purgeVolumes bool, force bool) error {
 	return nil
 }
-
 
 func (f *fakeEngine) CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error) {
 	return nil, nil
@@ -116,7 +132,6 @@ func (f *fakeEngine) SaveDeploymentFile(ctx context.Context, deploymentID string
 func (f *fakeEngine) GetDeploymentPreflight(ctx context.Context, deploymentID string) (*controlplane.DeploymentPreflightResult, error) {
 	return nil, nil
 }
-
 
 func (f *fakeEngine) CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error {
 	return nil
@@ -269,6 +284,58 @@ func TestPoller_ContainerDegradedAndRecovery(t *testing.T) {
 	}
 }
 
+func TestPoller_ContainersVanished(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.CreateNode(store.Node{ID: "n1", Name: "alpha", Host: "1.2.3.4", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{ID: "s1", Name: "api"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d1", NodeID: "n1", StackID: "s1", Status: "running"})
+
+	mockNotif := &mockNotifier{}
+	fakeEng := &fakeEngine{
+		st:         st,
+		nodeOnline: map[string]bool{"n1": true},
+		nodeContainers: map[string][]nodeclient.ContainerInfo{
+			"n1": {
+				{ID: "c1", Names: "api_server_1", State: "running"},
+			},
+		},
+	}
+
+	p := poller.New(poller.Config{
+		Engine:   fakeEng,
+		Notifier: mockNotif,
+	})
+
+	ctx := context.Background()
+
+	// 1. Initial poll: healthy
+	_ = p.PollOnce(ctx)
+	if len(mockNotif.alerts) != 0 {
+		t.Fatalf("expected 0 alerts, got %d", len(mockNotif.alerts))
+	}
+
+	// 2. All containers vanished (e.g. pruned/killed without trace)
+	fakeEng.nodeContainers["n1"] = []nodeclient.ContainerInfo{}
+	_ = p.PollOnce(ctx)
+
+	if len(mockNotif.alerts) != 1 {
+		t.Fatalf("expected 1 degraded alert when all containers vanish, got %d", len(mockNotif.alerts))
+	}
+	if mockNotif.alerts[0].IsRecovery != false || mockNotif.alerts[0].Title != "Deployment alpha/api Degraded" {
+		t.Errorf("unexpected alert: %+v", mockNotif.alerts[0])
+	}
+
+	dep, err := st.GetDeployment("d1")
+	if err != nil || dep.Status != "failed" {
+		t.Errorf("expected deployment status 'failed', got '%s'", dep.Status)
+	}
+}
+
 func TestPoller_DisabledSetting(t *testing.T) {
 	st, err := store.New(":memory:")
 	if err != nil {
@@ -319,3 +386,98 @@ func TestPoller_StartStop(t *testing.T) {
 	p.Stop()
 }
 
+func TestPoller_PrunesDeletedNodesAndDeployments(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.CreateNode(store.Node{ID: "n-temp", Name: "temp-node", Host: "1.2.3.4", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{ID: "s-temp", Name: "temp-stack"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d-temp", NodeID: "n-temp", StackID: "s-temp", Status: "running"})
+
+	mockNotif := &mockNotifier{}
+	fakeEng := &fakeEngine{
+		st:         st,
+		nodeOnline: map[string]bool{"n-temp": true},
+		nodeContainers: map[string][]nodeclient.ContainerInfo{
+			"n-temp": {
+				{ID: "c1", Names: "temp-stack_web_1", State: "running"},
+			},
+		},
+	}
+
+	p := poller.New(poller.Config{
+		Engine:   fakeEng,
+		Notifier: mockNotif,
+	})
+
+	ctx := context.Background()
+
+	// 1. Initial poll tracks n-temp and d-temp in poller state
+	if err := p.PollOnce(ctx); err != nil {
+		t.Fatalf("initial poll failed: %v", err)
+	}
+
+	// 2. Delete deployment and node
+	if err := st.DeleteDeployment("d-temp"); err != nil {
+		t.Fatalf("delete deployment failed: %v", err)
+	}
+	if err := st.DeleteNode("n-temp"); err != nil {
+		t.Fatalf("delete node failed: %v", err)
+	}
+
+	// 3. Second poll should prune deleted IDs from poller state without error
+	if err := p.PollOnce(ctx); err != nil {
+		t.Fatalf("second poll failed: %v", err)
+	}
+}
+
+func TestPoller_ContainerUnhealthy(t *testing.T) {
+	st, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer st.Close()
+
+	_ = st.CreateNode(store.Node{ID: "n1", Name: "alpha", Host: "1.2.3.4", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{ID: "s1", Name: "api"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d1", NodeID: "n1", StackID: "s1", Status: "running"})
+
+	mockNotif := &mockNotifier{}
+	fakeEng := &fakeEngine{
+		st:         st,
+		nodeOnline: map[string]bool{"n1": true},
+		nodeContainers: map[string][]nodeclient.ContainerInfo{
+			"n1": {
+				{ID: "c1", Names: "api_web_1", State: "running", Status: "Up 2 hours (unhealthy)"},
+			},
+		},
+	}
+
+	p := poller.New(poller.Config{
+		Engine:   fakeEng,
+		Notifier: mockNotif,
+	})
+
+	ctx := context.Background()
+	if err := p.PollOnce(ctx); err != nil {
+		t.Fatalf("poll failed: %v", err)
+	}
+
+	if len(mockNotif.alerts) != 1 {
+		t.Fatalf("expected 1 alert for unhealthy container, got %d", len(mockNotif.alerts))
+	}
+	if !strings.Contains(mockNotif.alerts[0].Title, "Degraded") {
+		t.Errorf("expected alert title to contain 'Degraded', got: %s", mockNotif.alerts[0].Title)
+	}
+	if !strings.Contains(mockNotif.alerts[0].Message, "unhealthy") {
+		t.Errorf("expected alert message to mention 'unhealthy', got: %s", mockNotif.alerts[0].Message)
+	}
+
+	dep, _ := st.GetDeployment("d1")
+	if dep.Status != "failed" {
+		t.Errorf("expected deployment status 'failed' after healthcheck failure, got %s", dep.Status)
+	}
+}

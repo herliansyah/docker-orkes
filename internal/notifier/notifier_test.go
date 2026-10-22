@@ -107,7 +107,7 @@ func TestNotifier_Telegram(t *testing.T) {
 		HTTPClient:       client,
 	})
 
-	err := n.SendAlert(context.Background(), "Drift Detected", "Stack web drifted", false)
+	err := n.SendAlert(context.Background(), "Drift <Detected> & Broken", "Stack <web> & <db> drifted", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,8 +115,11 @@ func TestNotifier_Telegram(t *testing.T) {
 		t.Errorf("expected chat_id 12345, got %v", receivedBody["chat_id"])
 	}
 	text, _ := receivedBody["text"].(string)
-	if !strings.Contains(text, "🔴 [ALERT] Drift Detected") {
-		t.Errorf("expected text to contain alert title, got %v", text)
+	if !strings.Contains(text, "🔴 [ALERT] Drift &lt;Detected&gt; &amp; Broken") {
+		t.Errorf("expected text to contain escaped title, got %v", text)
+	}
+	if !strings.Contains(text, "Stack &lt;web&gt; &amp; &lt;db&gt; drifted") {
+		t.Errorf("expected text to contain escaped message, got %v", text)
 	}
 }
 
