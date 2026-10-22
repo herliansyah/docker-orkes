@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,7 +15,9 @@ type Syncer interface {
 	Sync(ctx context.Context, mirrorDir string, repoURL string, branch string, privKey string, files map[string][]byte) error
 }
 
-type NativeGitSyncer struct{}
+type NativeGitSyncer struct {
+	mu sync.Mutex
+}
 
 func NewSyncer() Syncer {
 	return &NativeGitSyncer{}
@@ -22,6 +25,9 @@ func NewSyncer() Syncer {
 
 // ponytail: native os/exec git client avoids heavy CGO/pure-Go Git deps while fully utilizing host SSH agent and native Git capabilities.
 func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL string, branch string, privKey string, files map[string][]byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if branch == "" {
 		branch = "main"
 	}
@@ -33,9 +39,44 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 		return fmt.Errorf("failed to create git mirror dir: %w", err)
 	}
 
-	// Write all files
+	// Clean stale lock files if a previous git process was abruptly terminated
+	indexLock := filepath.Join(mirrorDir, ".git", "index.lock")
+	if fi, err := os.Stat(indexLock); err == nil {
+		if time.Since(fi.ModTime()) > 30*time.Second {
+			_ = os.Remove(indexLock)
+		}
+	}
+
+	// Clean stale files from mirrorDir that are no longer in desired state (preserving .git)
+	_ = filepath.Walk(mirrorDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(mirrorDir, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if strings.HasPrefix(rel, ".git/") || rel == ".git" {
+			return nil
+		}
+		if _, exists := files[rel]; !exists {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
+
+	// Write all current files
+	cleanMirrorDir := filepath.Clean(mirrorDir)
 	for relPath, content := range files {
-		fullPath := filepath.Join(mirrorDir, relPath)
+		cleanRel := filepath.Clean(relPath)
+		if strings.HasPrefix(cleanRel, "..") || filepath.IsAbs(relPath) {
+			continue // skip paths attempting traversal outside mirror directory
+		}
+		fullPath := filepath.Join(cleanMirrorDir, cleanRel)
+		if !strings.HasPrefix(fullPath, cleanMirrorDir+string(filepath.Separator)) && fullPath != cleanMirrorDir {
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
 			return fmt.Errorf("failed to create dir for %s: %w", relPath, err)
 		}
@@ -119,7 +160,8 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 				_ = keyFile.Close()
 				defer os.Remove(keyFile.Name())
 
-				sshCmd := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no", keyFile.Name())
+				keyPath := filepath.ToSlash(keyFile.Name())
+				sshCmd := fmt.Sprintf("ssh -i %q -o StrictHostKeyChecking=no -o BatchMode=yes", keyPath)
 				env = append(os.Environ(), "GIT_SSH_COMMAND="+sshCmd)
 			}
 		}
@@ -140,9 +182,12 @@ func (s *NativeGitSyncer) Sync(ctx context.Context, mirrorDir string, repoURL st
 				cmdPull.Env = env
 			}
 			if out, err := cmdPull.CombinedOutput(); err != nil {
-				cmdAbort := exec.CommandContext(ctx, "git", "rebase", "--abort")
+				// ponytail: Run rebase abort with a clean detached context so cleanup completes even if parent ctx was canceled
+				abortCtx, abortCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				cmdAbort := exec.CommandContext(abortCtx, "git", "rebase", "--abort")
 				cmdAbort.Dir = mirrorDir
 				_ = cmdAbort.Run()
+				abortCancel()
 				return fmt.Errorf("git pull --rebase failed: %w (out: %s)", err, string(out))
 			}
 		}

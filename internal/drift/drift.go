@@ -81,6 +81,12 @@ func UnifiedDiff(nameA, textA, nameB, textB string) string {
 	m := len(linesA)
 	n := len(linesB)
 
+	// ponytail: memory guardrail - avoid allocating enormous O(N*M) matrices on unexpectedly giant files
+	const maxDiffLines = 3000
+	if m > maxDiffLines || n > maxDiffLines {
+		return fmt.Sprintf("--- %s\n+++ %s\n@@ File diff too large to display (%d vs %d lines, limit %d lines) @@", nameA, nameB, m, n, maxDiffLines)
+	}
+
 	// Build LCS matrix
 	dp := make([][]int, m+1)
 	for i := range dp {

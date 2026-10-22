@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"path/filepath"
 	"testing"
 	"time"
@@ -89,5 +90,14 @@ func TestNodeImageScans(t *testing.T) {
 	}
 	if len(all) != 1 || all["nginx:alpine"] == nil {
 		t.Fatalf("expected 1 scan for nginx:alpine, got %+v", all)
+	}
+
+	// 6. Test Backup
+	var buf bytes.Buffer
+	if err := st.Backup(&buf); err != nil {
+		t.Fatalf("failed to backup store: %v", err)
+	}
+	if buf.Len() == 0 {
+		t.Fatalf("expected non-empty backup data")
 	}
 }

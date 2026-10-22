@@ -13,23 +13,25 @@ import (
 
 // ContainerInfo models summary container state returned by Docker daemon queries.
 type ContainerInfo struct {
-	ID     string `json:"id"`
-	Names  string `json:"names"`
-	Image  string `json:"image"`
-	Status string `json:"status"`
-	State  string `json:"state"`
+	ID        string `json:"id"`
+	Names     string `json:"names"`
+	Image     string `json:"image"`
+	Status    string `json:"status"`
+	State     string `json:"state"`
+	StackName string `json:"stack_name,omitempty"`
+	Labels    string `json:"labels,omitempty"`
 }
 
 // NodeVolumeInfo models Docker volume information on a node.
 type NodeVolumeInfo struct {
-	Name        string   `json:"name"`
-	Driver      string   `json:"driver"`
-	Scope       string   `json:"scope"`
-	Size        string   `json:"size,omitempty"`
-	IsManaged   bool     `json:"is_managed"`
-	StackName   string   `json:"stack_name,omitempty"`
-	InUse       bool     `json:"in_use"`
-	Containers  []string `json:"containers,omitempty"`
+	Name       string   `json:"name"`
+	Driver     string   `json:"driver"`
+	Scope      string   `json:"scope"`
+	Size       string   `json:"size,omitempty"`
+	IsManaged  bool     `json:"is_managed"`
+	StackName  string   `json:"stack_name,omitempty"`
+	InUse      bool     `json:"in_use"`
+	Containers []string `json:"containers,omitempty"`
 }
 
 // NodeNetworkInfo models Docker network information on a node.
@@ -56,7 +58,7 @@ type Config struct {
 
 // Client represents high-level operations executed on a remote node.
 type Client interface {
-	DeployStack(ctx context.Context, stackName string, files map[string][]byte) (output string, err error)
+	DeployStack(ctx context.Context, stackName string, files map[string][]byte, pull ...bool) (output string, err error)
 	UpStack(ctx context.Context, stackName string) (output string, err error)
 	RestartStack(ctx context.Context, stackName string) (output string, err error)
 	DownStack(ctx context.Context, stackName string) (output string, err error)
@@ -69,6 +71,9 @@ type Client interface {
 	UploadStackFiles(ctx context.Context, stackName string, files map[string][]byte) error
 	GetTelemetry(ctx context.Context) (diskUsage string, containers []ContainerInfo, err error)
 	GetContainerLogs(ctx context.Context, containerID string) (string, error)
+	StartContainer(ctx context.Context, containerID string) error
+	StopContainer(ctx context.Context, containerID string) error
+	RestartContainer(ctx context.Context, containerID string) error
 	TestConnection(ctx context.Context) (dockerVersion string, err error)
 	BootstrapKey(ctx context.Context, password string, pubKey string) error
 }
@@ -162,10 +167,14 @@ func validateSubpath(subpath string) (string, error) {
 	return clean, nil
 }
 
-
-func (c *nodeClient) DeployStack(ctx context.Context, stackName string, files map[string][]byte) (string, error) {
+func (c *nodeClient) DeployStack(ctx context.Context, stackName string, files map[string][]byte, pull ...bool) (string, error) {
 	if err := validateSegment(stackName); err != nil {
 		return "", fmt.Errorf("invalid stack name: %w", err)
+	}
+
+	shouldPull := true
+	if len(pull) > 0 {
+		shouldPull = pull[0]
 	}
 
 	stackDir := stackDirPath(stackName)
@@ -180,10 +189,14 @@ func (c *nodeClient) DeployStack(ctx context.Context, stackName string, files ma
 
 	composeFile := fmt.Sprintf("%s/docker-compose.yml", stackDir)
 
-	pullCmd := fmt.Sprintf("docker compose -f %s%s pull", composeFile, envArgs)
-	pullOut, err := c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, pullCmd)
-	if err != nil {
-		return pullOut, fmt.Errorf("docker compose pull failed: %w", err)
+	pullOut := ""
+	if shouldPull {
+		pullCmd := fmt.Sprintf("docker compose -f %s%s pull", composeFile, envArgs)
+		var err error
+		pullOut, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, pullCmd)
+		if err != nil {
+			return pullOut, fmt.Errorf("docker compose pull failed: %w", err)
+		}
 	}
 
 	upCmd := fmt.Sprintf("docker compose -f %s%s up -d", composeFile, envArgs)
@@ -203,7 +216,8 @@ func (c *nodeClient) UpStack(ctx context.Context, stackName string) (string, err
 		return "", fmt.Errorf("invalid stack name: %w", err)
 	}
 	stackDir := stackDirPath(stackName)
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml --env-file %s/.env up -d", stackDir, stackDir)
+	// ponytail: Check if .env exists before passing --env-file to prevent compose failures on stacks without .env
+	cmd := fmt.Sprintf("if [ -f %q/.env ]; then docker compose -f %q/docker-compose.yml --env-file %q/.env up -d; else docker compose -f %q/docker-compose.yml up -d; fi", stackDir, stackDir, stackDir, stackDir)
 	return c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
 }
 
@@ -211,7 +225,9 @@ func (c *nodeClient) RestartStack(ctx context.Context, stackName string) (string
 	if err := validateSegment(stackName); err != nil {
 		return "", fmt.Errorf("invalid stack name: %w", err)
 	}
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml restart", stackDirPath(stackName))
+	stackDir := stackDirPath(stackName)
+	// ponytail: Check if .env exists before passing --env-file to prevent compose failures on stacks without .env
+	cmd := fmt.Sprintf("if [ -f %s/.env ]; then docker compose -f %s/docker-compose.yml --env-file %s/.env restart; else docker compose -f %s/docker-compose.yml restart; fi", stackDir, stackDir, stackDir, stackDir)
 	return c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
 }
 
@@ -219,7 +235,9 @@ func (c *nodeClient) DownStack(ctx context.Context, stackName string) (string, e
 	if err := validateSegment(stackName); err != nil {
 		return "", fmt.Errorf("invalid stack name: %w", err)
 	}
-	cmd := fmt.Sprintf("docker compose -f %s/docker-compose.yml down", stackDirPath(stackName))
+	stackDir := stackDirPath(stackName)
+	// ponytail: Check if .env exists before passing --env-file to prevent compose failures on stacks without .env
+	cmd := fmt.Sprintf("if [ -f %s/.env ]; then docker compose -f %s/docker-compose.yml --env-file %s/.env down; else docker compose -f %s/docker-compose.yml down; fi", stackDir, stackDir, stackDir, stackDir)
 	return c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
 }
 
@@ -345,9 +363,8 @@ func (c *nodeClient) UploadStackFiles(ctx context.Context, stackName string, fil
 	return c.cfg.Executor.UploadFiles(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, stackDirPath(stackName), files)
 }
 
-
 func (c *nodeClient) GetTelemetry(ctx context.Context) (string, []ContainerInfo, error) {
-	dfOut, err := c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, "df -h /")
+	dfOut, err := c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, "df -h -P /")
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to get disk usage: %w", err)
 	}
@@ -377,6 +394,101 @@ func parseDiskUsage(out string) string {
 	return ""
 }
 
+type rawContainerJSON struct {
+	ID          string `json:"ID"`
+	IDLower     string `json:"id"`
+	Names       string `json:"Names"`
+	NamesLower  string `json:"names"`
+	Image       string `json:"Image"`
+	ImageLower  string `json:"image"`
+	Status      string `json:"Status"`
+	StatusLower string `json:"status"`
+	State       string `json:"State"`
+	StateLower  string `json:"state"`
+	Labels      string `json:"Labels"`
+	LabelsLower string `json:"labels"`
+}
+
+func (r rawContainerJSON) getID() string {
+	if r.ID != "" {
+		return r.ID
+	}
+	return r.IDLower
+}
+func (r rawContainerJSON) getNames() string {
+	if r.Names != "" {
+		return r.Names
+	}
+	return r.NamesLower
+}
+func (r rawContainerJSON) getImage() string {
+	if r.Image != "" {
+		return r.Image
+	}
+	return r.ImageLower
+}
+func (r rawContainerJSON) getStatus() string {
+	if r.Status != "" {
+		return r.Status
+	}
+	return r.StatusLower
+}
+func (r rawContainerJSON) getState() string {
+	if r.State != "" {
+		return r.State
+	}
+	if r.StateLower != "" {
+		return r.StateLower
+	}
+	if strings.HasPrefix(strings.ToLower(r.getStatus()), "up") {
+		return "running"
+	}
+	return ""
+}
+func (r rawContainerJSON) getLabels() string {
+	if r.Labels != "" {
+		return r.Labels
+	}
+	return r.LabelsLower
+}
+
+func isValidLabelKey(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func parseLabels(labelsStr string) map[string]string {
+	res := make(map[string]string)
+	if labelsStr == "" {
+		return res
+	}
+	parts := strings.Split(labelsStr, ",")
+	var currentKey, currentVal string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if kv := strings.SplitN(trimmed, "=", 2); len(kv) == 2 && isValidLabelKey(kv[0]) {
+			if currentKey != "" {
+				res[currentKey] = currentVal
+			}
+			currentKey = kv[0]
+			currentVal = kv[1]
+		} else if currentKey != "" {
+			currentVal += "," + trimmed
+		}
+	}
+	if currentKey != "" {
+		res[currentKey] = currentVal
+	}
+	return res
+}
+
 func parseContainers(out string) []ContainerInfo {
 	var list []ContainerInfo
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -385,21 +497,95 @@ func parseContainers(out string) []ContainerInfo {
 		if line == "" {
 			continue
 		}
-		var ci ContainerInfo
-		if err := json.Unmarshal([]byte(line), &ci); err == nil {
-			list = append(list, ci)
+		var raw rawContainerJSON
+		if err := json.Unmarshal([]byte(line), &raw); err == nil {
+			labels := parseLabels(raw.getLabels())
+			stackName := labels["com.docker.compose.project"]
+			if stackName == "" {
+				workingDir := labels["com.docker.compose.project.working_dir"]
+				if workingDir != "" && strings.Contains(workingDir, ".docker-orkes/stacks") {
+					stackName = path.Base(workingDir)
+				}
+			}
+
+			list = append(list, ContainerInfo{
+				ID:        raw.getID(),
+				Names:     raw.getNames(),
+				Image:     raw.getImage(),
+				Status:    raw.getStatus(),
+				State:     raw.getState(),
+				StackName: stackName,
+				Labels:    raw.getLabels(),
+			})
 		}
 	}
 	return list
 }
 
-func (c *nodeClient) GetContainerLogs(ctx context.Context, containerID string) (string, error) {
+// MatchesStack checks whether a container belongs to a specified stack name.
+func (c ContainerInfo) MatchesStack(stackName string) bool {
+	if c.StackName != "" {
+		return strings.EqualFold(c.StackName, stackName)
+	}
+	cName := strings.TrimPrefix(strings.ToLower(c.Names), "/")
+	sName := strings.ToLower(stackName)
+	if cName == sName {
+		return true
+	}
+	// Standard Docker Compose container name pattern: <stack>_<service>_<num> or <stack>-<service>-<num>
+	return strings.HasPrefix(cName, sName+"_") || strings.HasPrefix(cName, sName+"-")
+}
+
+func validateContainerID(containerID string) (string, error) {
 	cleanID := strings.TrimSpace(containerID)
-	if cleanID == "" || strings.ContainsAny(cleanID, " \t\n\r;|&`$><'\"\\") {
+	if cleanID == "" || strings.HasPrefix(cleanID, "-") || strings.ContainsAny(cleanID, " \t\n\r;|&`$><'\"\\") {
 		return "", fmt.Errorf("invalid container ID: %q", containerID)
 	}
-	cmd := fmt.Sprintf("docker logs --tail 100 %s", cleanID)
+	for _, c := range cleanID {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
+			return "", fmt.Errorf("invalid container ID: %q", containerID)
+		}
+	}
+	return cleanID, nil
+}
+
+func (c *nodeClient) GetContainerLogs(ctx context.Context, containerID string) (string, error) {
+	cleanID, err := validateContainerID(containerID)
+	if err != nil {
+		return "", err
+	}
+	cmd := fmt.Sprintf("docker logs --tail 100 -- %s", cleanID)
 	return c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+}
+
+func (c *nodeClient) StartContainer(ctx context.Context, containerID string) error {
+	cleanID, err := validateContainerID(containerID)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("docker start -- %s", cleanID)
+	_, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	return err
+}
+
+func (c *nodeClient) StopContainer(ctx context.Context, containerID string) error {
+	cleanID, err := validateContainerID(containerID)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("docker stop -- %s", cleanID)
+	_, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	return err
+}
+
+func (c *nodeClient) RestartContainer(ctx context.Context, containerID string) error {
+	cleanID, err := validateContainerID(containerID)
+	if err != nil {
+		return err
+	}
+	cmd := fmt.Sprintf("docker restart -- %s", cleanID)
+	_, err = c.cfg.Executor.RunCommand(ctx, c.cfg.Host, c.cfg.Port, c.cfg.User, c.cfg.PrivKeyPEM, cmd)
+	return err
 }
 
 func (c *nodeClient) TestConnection(ctx context.Context) (string, error) {

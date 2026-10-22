@@ -33,11 +33,11 @@ type poller struct {
 	notifier notifier.Notifier
 	interval time.Duration
 
-	mu           sync.Mutex
-	nodeState    map[string]string // nodeID -> "online" | "offline"
-	depState     map[string]string // depID -> "running" | "failed" | "degraded"
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	mu        sync.Mutex
+	nodeState map[string]string // nodeID -> "online" | "offline"
+	depState  map[string]string // depID -> "running" | "failed" | "degraded"
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
 }
 
 // New creates a new Poller.
@@ -75,7 +75,10 @@ func (p *poller) Start() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = p.PollOnce(ctx)
+				// Bound total poll cycle to interval duration to prevent hung SSH sessions from stacking
+				pollCtx, pollCancel := context.WithTimeout(ctx, p.interval)
+				_ = p.PollOnce(pollCtx)
+				pollCancel()
 			}
 		}
 	}()
@@ -110,7 +113,10 @@ func (p *poller) PollOnce(ctx context.Context) error {
 	// 1. Audit Nodes
 	onlineNodes := make(map[string]bool)
 	for _, n := range nodes {
-		dockerVer, testErr := p.engine.TestNode(ctx, n.ID)
+		// ponytail: 15s bounded timeout per node to prevent hung SSH commands or unresponsive daemon from freezing poller loop
+		nodeCtx, nodeCancel := context.WithTimeout(ctx, 15*time.Second)
+		dockerVer, testErr := p.engine.TestNode(nodeCtx, n.ID)
+		nodeCancel()
 
 		p.mu.Lock()
 		prevState, known := p.nodeState[n.ID]
@@ -165,7 +171,9 @@ func (p *poller) PollOnce(ctx context.Context) error {
 	// Fetch telemetry containers per online node once to avoid duplicate queries
 	nodeContainers := make(map[string][]nodeclient.ContainerInfo)
 	for nodeID := range onlineNodes {
-		_, containers, telErr := p.engine.GetNodeTelemetry(ctx, nodeID)
+		telCtx, telCancel := context.WithTimeout(ctx, 15*time.Second)
+		_, containers, telErr := p.engine.GetNodeTelemetry(telCtx, nodeID)
+		telCancel()
 		if telErr == nil {
 			nodeContainers[nodeID] = containers
 		}
@@ -190,37 +198,44 @@ func (p *poller) PollOnce(ctx context.Context) error {
 		containers := nodeContainers[dep.NodeID]
 		var stackContainers []nodeclient.ContainerInfo
 		for _, c := range containers {
-			if strings.Contains(strings.ToLower(c.Names), strings.ToLower(dep.StackName)) {
+			if c.MatchesStack(dep.StackName) {
 				stackContainers = append(stackContainers, c)
 			}
 		}
 
 		hasExited := false
+		hasUnhealthy := false
+		var degradedReason string
 		for _, sc := range stackContainers {
 			state := strings.ToLower(sc.State)
 			if state == "exited" || state == "dead" {
 				hasExited = true
+				degradedReason = fmt.Sprintf("Container %s exited unexpectedly", sc.Names)
 				break
+			}
+			if strings.Contains(strings.ToLower(sc.Status), "unhealthy") {
+				hasUnhealthy = true
+				degradedReason = fmt.Sprintf("Container %s healthcheck reported unhealthy", sc.Names)
 			}
 		}
 
-		if hasExited {
+		if hasExited || hasUnhealthy {
 			currState := "degraded"
 			p.mu.Lock()
 			p.depState[dep.ID] = currState
 			p.mu.Unlock()
 
-			logger.Warn("poller", dep.NodeName, fmt.Sprintf("Deployment %s containers degraded or exited", dep.StackName), "stack", dep.StackName, "deployment_id", dep.ID)
+			logger.Warn("poller", dep.NodeName, fmt.Sprintf("Deployment %s containers degraded: %s", dep.StackName, degradedReason), "stack", dep.StackName, "deployment_id", dep.ID)
 
 			if prevState != "degraded" {
-				_ = st.UpdateDeploymentStatus(dep.ID, "failed", "Container exited unexpectedly")
+				_ = st.UpdateDeploymentStatus(dep.ID, "failed", degradedReason)
 				_ = p.notifier.SendAlert(ctx,
 					fmt.Sprintf("Deployment %s/%s Degraded", dep.NodeName, dep.StackName),
-					"One or more containers in this stack have stopped or exited unexpectedly.",
+					degradedReason,
 					false,
 				)
 			}
-		} else if len(stackContainers) > 0 && !hasExited {
+		} else if len(stackContainers) > 0 && !hasExited && !hasUnhealthy {
 			currState := "running"
 			p.mu.Lock()
 			p.depState[dep.ID] = currState
@@ -235,6 +250,22 @@ func (p *poller) PollOnce(ctx context.Context) error {
 					fmt.Sprintf("Deployment %s/%s Recovered", dep.NodeName, dep.StackName),
 					"Containers have resumed running normally.",
 					true,
+				)
+			}
+		} else if len(stackContainers) == 0 && (prevState == "running" || dep.Status == "running") {
+			currState := "degraded"
+			p.mu.Lock()
+			p.depState[dep.ID] = currState
+			p.mu.Unlock()
+
+			logger.Warn("poller", dep.NodeName, fmt.Sprintf("Deployment %s has no active containers", dep.StackName), "stack", dep.StackName, "deployment_id", dep.ID)
+
+			if prevState != "degraded" {
+				_ = st.UpdateDeploymentStatus(dep.ID, "failed", "No running containers found for this stack")
+				_ = p.notifier.SendAlert(ctx,
+					fmt.Sprintf("Deployment %s/%s Degraded", dep.NodeName, dep.StackName),
+					"No running containers found for this stack on node.",
+					false,
 				)
 			}
 		} else {
@@ -260,6 +291,29 @@ func (p *poller) PollOnce(ctx context.Context) error {
 			}
 		}
 	}
+
+	// ponytail: Prune state tracking for deleted nodes and deployments to prevent unbounded map growth
+	p.mu.Lock()
+	activeNodes := make(map[string]struct{}, len(nodes))
+	for _, n := range nodes {
+		activeNodes[n.ID] = struct{}{}
+	}
+	for id := range p.nodeState {
+		if _, exists := activeNodes[id]; !exists {
+			delete(p.nodeState, id)
+		}
+	}
+
+	activeDeps := make(map[string]struct{}, len(deployments))
+	for _, d := range deployments {
+		activeDeps[d.ID] = struct{}{}
+	}
+	for id := range p.depState {
+		if _, exists := activeDeps[id]; !exists {
+			delete(p.depState, id)
+		}
+	}
+	p.mu.Unlock()
 
 	return nil
 }

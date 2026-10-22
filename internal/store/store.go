@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,8 +25,12 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	// Recommended SQLite pragmas for single-writer concurrency
-	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`); err != nil {
+	// ponytail: Limit SQLite to 1 open connection to ensure single-writer safety, prevent SQLITE_BUSY errors,
+	// and guarantee connection-scoped PRAGMAs (foreign_keys=ON, busy_timeout) are active across all queries.
+	db.SetMaxOpenConns(1)
+
+	// Recommended SQLite pragmas for single-writer concurrency with busy wait retry
+	if _, err := db.Exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;`); err != nil {
 		// WAL might not be supported in :memory: databases, ignore error for memory
 	}
 
@@ -75,7 +82,17 @@ type Deployment struct {
 	DiffOutput    string    `json:"diff_output"`
 	RemoteCompose string    `json:"remote_compose"`
 	RemoteEnv     string    `json:"remote_env"`
+	ComposeYAML   string    `json:"compose_yaml,omitempty"` // per-deployment compose override; if empty, inherits stack compose
 	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// GetDesiredCompose returns the deployment-specific compose override if non-empty,
+// otherwise falling back to the shared stack template compose.
+func (d *Deployment) GetDesiredCompose(fallbackStackCompose string) string {
+	if strings.TrimSpace(d.ComposeYAML) != "" {
+		return d.ComposeYAML
+	}
+	return fallbackStackCompose
 }
 
 type DeploymentRevision struct {
@@ -107,7 +124,6 @@ func (s *Store) Close() error {
 func (s *Store) DB() *sql.DB {
 	return s.db
 }
-
 
 func (s *Store) initSchema() error {
 	schema := `
@@ -157,7 +173,9 @@ func (s *Store) initSchema() error {
 		diff_output TEXT NOT NULL DEFAULT '',
 		remote_compose TEXT NOT NULL DEFAULT '',
 		remote_env TEXT NOT NULL DEFAULT '',
-		updated_at DATETIME NOT NULL
+		compose_yaml TEXT NOT NULL DEFAULT '',
+		updated_at DATETIME NOT NULL,
+		UNIQUE(stack_id, node_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS deployment_revisions (
@@ -199,13 +217,11 @@ func (s *Store) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE nodes ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.Exec(`ALTER TABLE stacks ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.Exec(`ALTER TABLE deployments ADD COLUMN notes TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.Exec(`ALTER TABLE deployments ADD COLUMN compose_yaml TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_deployments_stack_node ON deployments(stack_id, node_id)`)
 
 	return nil
 }
-
-
-
-
 
 func (s *Store) GetSetting(key string) (string, error) {
 	var val string
@@ -225,6 +241,8 @@ func (s *Store) SetSetting(key, value string) error {
 }
 
 func (s *Store) CreateSession(token string) error {
+	// ponytail: opportunistically prune expired sessions older than 7 days to prevent unbounded table growth
+	_, _ = s.db.Exec(`DELETE FROM sessions WHERE created_at < datetime('now', '-7 days')`)
 	_, err := s.db.Exec(`INSERT INTO sessions (token, created_at) VALUES (?, ?)`, token, time.Now().UTC())
 	return err
 }
@@ -332,7 +350,6 @@ func (s *Store) DeleteNode(id string) error {
 	return err
 }
 
-
 func (s *Store) CreateStack(st Stack) error {
 	_, err := s.db.Exec(`
 		INSERT INTO stacks (id, name, compose_yaml, default_env, notes, created_at, updated_at)
@@ -375,13 +392,15 @@ func (s *Store) GetStack(id string) (*Stack, error) {
 }
 
 func (s *Store) UpdateStack(st Stack) error {
+	if st.UpdatedAt.IsZero() {
+		st.UpdatedAt = time.Now().UTC()
+	}
 	_, err := s.db.Exec(`
 		UPDATE stacks SET name = ?, compose_yaml = ?, default_env = ?, notes = ?, updated_at = ?
 		WHERE id = ?
 	`, st.Name, st.ComposeYAML, st.DefaultEnv, st.Notes, st.UpdatedAt, st.ID)
 	return err
 }
-
 
 func (s *Store) DeleteStack(id string) error {
 	_, err := s.db.Exec(`DELETE FROM stacks WHERE id = ?`, id)
@@ -393,15 +412,15 @@ func (s *Store) CreateDeployment(d Deployment) error {
 		d.DriftStatus = "unknown"
 	}
 	_, err := s.db.Exec(`
-		INSERT INTO deployments (id, stack_id, node_id, env_vars, notes, status, desired_hash, last_log, drift_status, diff_output, remote_compose, remote_env, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, d.ID, d.StackID, d.NodeID, d.EnvVars, d.Notes, d.Status, d.DesiredHash, d.LastLog, d.DriftStatus, d.DiffOutput, d.RemoteCompose, d.RemoteEnv, d.UpdatedAt)
+		INSERT INTO deployments (id, stack_id, node_id, env_vars, notes, status, desired_hash, last_log, drift_status, diff_output, remote_compose, remote_env, compose_yaml, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, d.ID, d.StackID, d.NodeID, d.EnvVars, d.Notes, d.Status, d.DesiredHash, d.LastLog, d.DriftStatus, d.DiffOutput, d.RemoteCompose, d.RemoteEnv, d.ComposeYAML, d.UpdatedAt)
 	return err
 }
 
 func (s *Store) ListDeployments() ([]Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.compose_yaml, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
@@ -416,7 +435,33 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 	var deps []Deployment
 	for rows.Next() {
 		var d Deployment
-		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.ComposeYAML, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, rows.Err()
+}
+
+func (s *Store) ListDeploymentsByStack(stackID string) ([]Deployment, error) {
+	query := `
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.compose_yaml, d.updated_at
+		FROM deployments d
+		JOIN stacks s ON d.stack_id = s.id
+		JOIN nodes n ON d.node_id = n.id
+		WHERE d.stack_id = ?
+		ORDER BY d.updated_at DESC
+	`
+	rows, err := s.db.Query(query, stackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []Deployment
+	for rows.Next() {
+		var d Deployment
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.ComposeYAML, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		deps = append(deps, d)
@@ -426,7 +471,7 @@ func (s *Store) ListDeployments() ([]Deployment, error) {
 
 func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.compose_yaml, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
@@ -442,7 +487,7 @@ func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 	var deps []Deployment
 	for rows.Next() {
 		var d Deployment
-		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.ComposeYAML, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		deps = append(deps, d)
@@ -452,18 +497,25 @@ func (s *Store) ListDeploymentsByNode(nodeID string) ([]Deployment, error) {
 
 func (s *Store) GetDeployment(id string) (*Deployment, error) {
 	query := `
-		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.updated_at
+		SELECT d.id, d.stack_id, d.node_id, s.name, n.name, n.status, d.env_vars, d.notes, d.status, d.desired_hash, d.last_log, d.drift_status, d.diff_output, d.remote_compose, d.remote_env, d.compose_yaml, d.updated_at
 		FROM deployments d
 		JOIN stacks s ON d.stack_id = s.id
 		JOIN nodes n ON d.node_id = n.id
 		WHERE d.id = ?
 	`
 	var d Deployment
-	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.UpdatedAt)
+	err := s.db.QueryRow(query, id).Scan(&d.ID, &d.StackID, &d.NodeID, &d.StackName, &d.NodeName, &d.NodeStatus, &d.EnvVars, &d.Notes, &d.Status, &d.DesiredHash, &d.LastLog, &d.DriftStatus, &d.DiffOutput, &d.RemoteCompose, &d.RemoteEnv, &d.ComposeYAML, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &d, nil
+}
+
+func (s *Store) UpdateDeploymentCompose(id, composeYAML string) error {
+	_, err := s.db.Exec(`
+		UPDATE deployments SET compose_yaml = ?, updated_at = ? WHERE id = ?
+	`, composeYAML, time.Now().UTC(), id)
+	return err
 }
 
 func (s *Store) UpdateDeploymentStatus(id, status, lastLog string) error {
@@ -520,7 +572,7 @@ func (s *Store) GetNextRevisionNumber(deploymentID string) (int, error) {
 
 func (s *Store) CreateDeploymentRevision(rev DeploymentRevision) error {
 	if rev.ID == "" {
-		rev.ID = fmt.Sprintf("rev_%d", time.Now().UnixNano())
+		rev.ID = fmt.Sprintf("rev_%s_%d", rev.DeploymentID, time.Now().UnixNano())
 	}
 	if rev.CreatedAt.IsZero() {
 		rev.CreatedAt = time.Now().UTC()
@@ -556,7 +608,7 @@ func (s *Store) ListDeploymentRevisions(deploymentID string) ([]DeploymentRevisi
 		}
 		list = append(list, r)
 	}
-	return list, nil
+	return list, rows.Err()
 }
 
 func (s *Store) GetDeploymentRevision(id string) (*DeploymentRevision, error) {
@@ -616,9 +668,10 @@ func (s *Store) ListNodePinnedImages(nodeID string) ([]string, error) {
 	var refs []string
 	for rows.Next() {
 		var ref string
-		if err := rows.Scan(&ref); err == nil {
-			refs = append(refs, ref)
+		if err := rows.Scan(&ref); err != nil {
+			return nil, err
 		}
+		refs = append(refs, ref)
 	}
 	return refs, rows.Err()
 }
@@ -682,17 +735,36 @@ func (s *Store) ListNodeImageScans(nodeID string) (map[string]*NodeImageScan, er
 		if err := rows.Scan(
 			&scan.NodeID, &scan.ImageRef, &scan.ScannedAt, &scan.Status,
 			&scan.CriticalCount, &scan.HighCount, &scan.MediumCount, &scan.LowCount, &scan.ReportJSON,
-		); err == nil {
-			scans[scan.ImageRef] = &scan
+		); err != nil {
+			return nil, err
 		}
+		scans[scan.ImageRef] = &scan
 	}
 	return scans, rows.Err()
 }
 
+// Backup creates a clean, atomic snapshot of the SQLite database and writes it to w.
+// ponytail: VACUUM INTO produces an atomic zero-lock snapshot compatible with WAL mode.
+func (s *Store) Backup(w io.Writer) error {
+	tempFile, err := os.CreateTemp("", "docker-orkes-backup-*.db")
+	if err != nil {
+		return fmt.Errorf("failed to create temp backup file: %w", err)
+	}
+	tempPath := filepath.ToSlash(tempFile.Name())
+	_ = tempFile.Close()
+	_ = os.Remove(tempPath) // VACUUM INTO requires target file to not exist
+	defer os.Remove(tempPath)
 
+	if _, err := s.db.Exec(fmt.Sprintf("VACUUM INTO %q", tempPath)); err != nil {
+		return fmt.Errorf("vacuum into failed: %w", err)
+	}
 
+	f, err := os.Open(tempPath)
+	if err != nil {
+		return fmt.Errorf("failed to open backup file: %w", err)
+	}
+	defer f.Close()
 
-
-
-
-
+	_, err = io.Copy(w, f)
+	return err
+}

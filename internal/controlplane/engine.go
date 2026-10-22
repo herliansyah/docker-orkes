@@ -2,17 +2,20 @@ package controlplane
 
 import (
 	"context"
+	"docker-orkes/internal/drift"
+	"docker-orkes/internal/gitsync"
+	"docker-orkes/internal/logger"
+	"docker-orkes/internal/nodeclient"
+	"docker-orkes/internal/ssh"
+	"docker-orkes/internal/store"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-	"docker-orkes/internal/drift"
-	"docker-orkes/internal/gitsync"
-	"docker-orkes/internal/nodeclient"
-	"docker-orkes/internal/ssh"
-	"docker-orkes/internal/store"
 )
 
 type Config struct {
@@ -31,20 +34,20 @@ type SaveFileResult struct {
 	DriftStatus string `json:"drift_status"`
 }
 type DeploymentPreflightResult struct {
-	DeploymentID  string                   `json:"deployment_id"`
-	StackName     string                   `json:"stack_name"`
-	NodeID        string                   `json:"node_id"`
-	NodeName      string                   `json:"node_name"`
-	NodeHost      string                   `json:"node_host"`
-	Status        string                   `json:"status"`
-	HasDrift      bool                     `json:"has_drift"`
-	Diff          string                   `json:"diff"`
-	DesiredHash   string                   `json:"desired_hash"`
-	ActualHash    string                   `json:"actual_hash"`
-	Containers    []nodeclient.ContainerInfo `json:"containers"`
-	ContainerCount int                     `json:"container_count"`
+	DeploymentID   string                     `json:"deployment_id"`
+	StackName      string                     `json:"stack_name"`
+	NodeID         string                     `json:"node_id"`
+	NodeName       string                     `json:"node_name"`
+	NodeHost       string                     `json:"node_host"`
+	Status         string                     `json:"status"`
+	HasDrift       bool                       `json:"has_drift"`
+	Diff           string                     `json:"diff"`
+	DesiredHash    string                     `json:"desired_hash"`
+	ActualHash     string                     `json:"actual_hash"`
+	Containers     []nodeclient.ContainerInfo `json:"containers"`
+	ContainerCount int                        `json:"container_count"`
+	MissingEnvVars []string                   `json:"missing_env_vars,omitempty"`
 }
-
 
 // Engine encapsulates core Control Plane domain operations.
 type Engine interface {
@@ -55,9 +58,13 @@ type Engine interface {
 	BootstrapNode(ctx context.Context, nodeID string, password string, pubKey string) error
 	GetNodeTelemetry(ctx context.Context, nodeID string) (diskUsage string, containers []nodeclient.ContainerInfo, err error)
 	GetContainerLogs(ctx context.Context, nodeID string, containerID string) (string, error)
+	StartContainer(ctx context.Context, nodeID string, containerID string) error
+	StopContainer(ctx context.Context, nodeID string, containerID string) error
+	RestartContainer(ctx context.Context, nodeID string, containerID string) error
 
 	// Deployment operations
 	Deploy(ctx context.Context, deploymentID string) error
+	Rollout(ctx context.Context, deploymentID string) error
 	Rollback(ctx context.Context, deploymentID string, revisionID string) error
 	ListRevisions(ctx context.Context, deploymentID string) ([]store.DeploymentRevision, error)
 	Restart(ctx context.Context, deploymentID string) error
@@ -81,7 +88,9 @@ type Engine interface {
 }
 
 type engine struct {
-	cfg Config
+	cfg      Config
+	mu       sync.Mutex
+	depLocks map[string]*sync.Mutex
 }
 
 // New creates a new Control Plane Engine.
@@ -95,7 +104,26 @@ func New(cfg Config) Engine {
 	if cfg.GitSyncer == nil {
 		cfg.GitSyncer = gitsync.NewSyncer()
 	}
-	return &engine{cfg: cfg}
+	return &engine{
+		cfg:      cfg,
+		depLocks: make(map[string]*sync.Mutex),
+	}
+}
+
+func (e *engine) lockDeployment(depID string) func() {
+	e.mu.Lock()
+	if e.depLocks == nil {
+		e.depLocks = make(map[string]*sync.Mutex)
+	}
+	l, ok := e.depLocks[depID]
+	if !ok {
+		l = &sync.Mutex{}
+		e.depLocks[depID] = l
+	}
+	e.mu.Unlock()
+
+	l.Lock()
+	return l.Unlock
 }
 
 func (e *engine) Store() *store.Store {
@@ -171,7 +199,43 @@ func (e *engine) GetContainerLogs(ctx context.Context, nodeID string, containerI
 	return client.GetContainerLogs(ctx, containerID)
 }
 
+func (e *engine) StartContainer(ctx context.Context, nodeID string, containerID string) error {
+	node, err := e.cfg.Store.GetNode(nodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	return e.getNodeClient(node).StartContainer(ctx, containerID)
+}
+
+func (e *engine) StopContainer(ctx context.Context, nodeID string, containerID string) error {
+	node, err := e.cfg.Store.GetNode(nodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	return e.getNodeClient(node).StopContainer(ctx, containerID)
+}
+
+func (e *engine) RestartContainer(ctx context.Context, nodeID string, containerID string) error {
+	node, err := e.cfg.Store.GetNode(nodeID)
+	if err != nil {
+		return fmt.Errorf("node not found: %w", err)
+	}
+	return e.getNodeClient(node).RestartContainer(ctx, containerID)
+}
+
 func (e *engine) Deploy(ctx context.Context, deploymentID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+	return e.deployLocked(ctx, deploymentID, false)
+}
+
+func (e *engine) Rollout(ctx context.Context, deploymentID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+	return e.deployLocked(ctx, deploymentID, true)
+}
+
+func (e *engine) deployLocked(ctx context.Context, deploymentID string, pull bool) error {
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -189,32 +253,39 @@ func (e *engine) Deploy(ctx context.Context, deploymentID string) error {
 	deployCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
+	desiredCompose := dep.GetDesiredCompose(stack.ComposeYAML)
 	files := map[string][]byte{
-		"docker-compose.yml": []byte(stack.ComposeYAML),
+		"docker-compose.yml": []byte(desiredCompose),
 		".env":               []byte(dep.EnvVars),
 	}
 
 	client := e.getNodeClient(node)
-	out, err := client.DeployStack(deployCtx, stack.Name, files)
+	out, err := client.DeployStack(deployCtx, stack.Name, files, pull)
 	if err != nil {
 		_ = e.cfg.Store.UpdateDeploymentStatus(dep.ID, "failed", err.Error())
 		return fmt.Errorf("failed to deploy stack: %w", err)
 	}
 
-	hash := drift.ComputeHash(stack.ComposeYAML, dep.EnvVars)
-	_ = e.cfg.Store.UpdateDeploymentDesiredHash(dep.ID, hash)
-	_ = e.cfg.Store.UpdateDeploymentStatus(dep.ID, "running", out)
+	hash := drift.ComputeHash(desiredCompose, dep.EnvVars)
+	if err := e.cfg.Store.UpdateDeploymentDesiredHash(dep.ID, hash); err != nil {
+		log.Printf("[WARN] Failed to update desired hash for deployment %s: %v", dep.ID, err)
+	}
+	if err := e.cfg.Store.UpdateDeploymentStatus(dep.ID, "running", out); err != nil {
+		log.Printf("[WARN] Failed to update deployment status for deployment %s: %v", dep.ID, err)
+	}
 
 	// ponytail: Forward-only revisions bounded to last 10 snapshots (ADR 0005)
 	if nextRev, err := e.cfg.Store.GetNextRevisionNumber(dep.ID); err == nil {
-		_ = e.cfg.Store.CreateDeploymentRevision(store.DeploymentRevision{
+		if err := e.cfg.Store.CreateDeploymentRevision(store.DeploymentRevision{
 			DeploymentID:   dep.ID,
 			RevisionNumber: nextRev,
-			ComposeYAML:    stack.ComposeYAML,
+			ComposeYAML:    desiredCompose,
 			EnvVars:        dep.EnvVars,
 			DesiredHash:    hash,
 			Reason:         "deploy",
-		})
+		}); err != nil {
+			log.Printf("[WARN] Failed to create deployment revision for deployment %s: %v", dep.ID, err)
+		}
 	}
 
 	// Invariant: Git Mirror backup reflects successful deployments
@@ -223,6 +294,9 @@ func (e *engine) Deploy(ctx context.Context, deploymentID string) error {
 }
 
 func (e *engine) Rollback(ctx context.Context, deploymentID string, revisionID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -239,10 +313,25 @@ func (e *engine) Rollback(ctx context.Context, deploymentID string, revisionID s
 		return fmt.Errorf("stack not found: %w", err)
 	}
 
-	if stack.ComposeYAML != rev.ComposeYAML {
-		stack.ComposeYAML = rev.ComposeYAML
-		if err := e.cfg.Store.UpdateStack(*stack); err != nil {
-			return fmt.Errorf("failed to revert stack compose: %w", err)
+	currentDesired := dep.GetDesiredCompose(stack.ComposeYAML)
+	if currentDesired != rev.ComposeYAML {
+		deps, _ := e.cfg.Store.ListDeploymentsByStack(dep.StackID)
+		if len(deps) > 1 {
+			// ponytail: Multiple deployments share this stack template. Revert compose for THIS deployment only
+			// without mutating the shared stack template, preventing false drift on other nodes.
+			logger.Info("deploy", dep.NodeName, fmt.Sprintf("Rollback isolated to deployment %s; shared stack %q preserved for %d other deployment(s)", dep.ID, stack.Name, len(deps)-1))
+			if err := e.cfg.Store.UpdateDeploymentCompose(dep.ID, rev.ComposeYAML); err != nil {
+				return fmt.Errorf("failed to revert deployment compose: %w", err)
+			}
+			dep.ComposeYAML = rev.ComposeYAML
+		} else {
+			stack.ComposeYAML = rev.ComposeYAML
+			stack.UpdatedAt = time.Now().UTC()
+			if err := e.cfg.Store.UpdateStack(*stack); err != nil {
+				return fmt.Errorf("failed to revert stack compose: %w", err)
+			}
+			_ = e.cfg.Store.UpdateDeploymentCompose(dep.ID, "")
+			dep.ComposeYAML = ""
 		}
 	}
 
@@ -252,7 +341,7 @@ func (e *engine) Rollback(ctx context.Context, deploymentID string, revisionID s
 		}
 	}
 
-	return e.Deploy(ctx, deploymentID)
+	return e.deployLocked(ctx, deploymentID, false)
 }
 
 func (e *engine) ListRevisions(ctx context.Context, deploymentID string) ([]store.DeploymentRevision, error) {
@@ -260,6 +349,9 @@ func (e *engine) ListRevisions(ctx context.Context, deploymentID string) ([]stor
 }
 
 func (e *engine) Restart(ctx context.Context, deploymentID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -285,6 +377,9 @@ func (e *engine) Restart(ctx context.Context, deploymentID string) error {
 }
 
 func (e *engine) Down(ctx context.Context, deploymentID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -309,6 +404,9 @@ func (e *engine) Down(ctx context.Context, deploymentID string) error {
 	return nil
 }
 func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, teardown bool, purgeVolumes bool, force bool) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -323,21 +421,15 @@ func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, tear
 	}
 
 	if teardown {
-		stackDir := fmt.Sprintf(".docker-orkes/stacks/%s", stack.Name)
-		composeFile := fmt.Sprintf("%s/docker-compose.yml", stackDir)
-		downCmd := fmt.Sprintf("docker compose -f %s down", composeFile)
-		if purgeVolumes {
-			downCmd = fmt.Sprintf("docker compose -f %s down -v", composeFile)
+		stackName := strings.TrimSpace(stack.Name)
+		if stackName == "" {
+			return errors.New("cannot teardown deployment: stack name is empty")
 		}
+		stackDir := fmt.Sprintf(".docker-orkes/stacks/%s", stackName)
+		composeFile := fmt.Sprintf("%s/docker-compose.yml", stackDir)
 
-		_, sshErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, downCmd)
-		if sshErr != nil {
-			if !force {
-				return fmt.Errorf("failed to teardown stack on node: %w", sshErr)
-			}
-			log.Printf("[WARN] SSH teardown failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, sshErr)
-		} else if purgeVolumes {
-			// ponytail: check directory size before rm -rf to prevent accidental deletion of misplaced databases or persistent data
+		// Pre-purge guardrail (ADR 0016): Check directory size BEFORE executing destructive operations (down -v or rm -rf)
+		if purgeVolumes && !force {
 			const maxPurgeStackDirSizeMB = 50
 			sizeCmd := fmt.Sprintf("if [ -d %q ]; then du -sm -- %q 2>/dev/null || echo 0; else echo 0; fi", stackDir, stackDir)
 			sizeOut, _ := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, sizeCmd)
@@ -348,18 +440,28 @@ func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, tear
 			}
 
 			if sizeMB > maxPurgeStackDirSizeMB {
+				return fmt.Errorf("data purge blocked: stack directory size (%d MB) exceeds safety threshold (%d MB); aborting to prevent accidental loss of persistent data; please inspect and clean up manually on node", sizeMB, maxPurgeStackDirSizeMB)
+			}
+		}
+
+		downCmd := fmt.Sprintf("docker compose -f %q down", composeFile)
+		if purgeVolumes {
+			downCmd = fmt.Sprintf("docker compose -f %q down -v", composeFile)
+		}
+
+		_, sshErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, downCmd)
+		if sshErr != nil {
+			if !force {
+				return fmt.Errorf("failed to teardown stack on node: %w", sshErr)
+			}
+			log.Printf("[WARN] SSH teardown failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, sshErr)
+		} else if purgeVolumes {
+			rmCmd := fmt.Sprintf("rm -rf -- %q", stackDir)
+			if _, rmErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, rmCmd); rmErr != nil {
 				if !force {
-					return fmt.Errorf("data purge blocked: stack directory size (%d MB) exceeds safety threshold (%d MB); aborting rm -rf to prevent accidental loss of persistent data; please inspect and clean up manually on node", sizeMB, maxPurgeStackDirSizeMB)
+					return fmt.Errorf("failed to purge stack directory on node: %w", rmErr)
 				}
-				log.Printf("[WARN] Skipping stack directory rm -rf for deployment %s: size (%d MB) exceeds safety threshold (%d MB) (force=true)", deploymentID, sizeMB, maxPurgeStackDirSizeMB)
-			} else {
-				rmCmd := fmt.Sprintf("rm -rf -- %q", stackDir)
-				if _, rmErr := e.cfg.Executor.RunCommand(ctx, node.Host, node.Port, node.User, e.cfg.PrivKeyPEM, rmCmd); rmErr != nil {
-					if !force {
-						return fmt.Errorf("failed to purge stack directory on node: %w", rmErr)
-					}
-					log.Printf("[WARN] SSH purge stack directory failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, rmErr)
-				}
+				log.Printf("[WARN] SSH purge stack directory failed for deployment %s on node %s (force=true): %v", deploymentID, node.ID, rmErr)
 			}
 		}
 	}
@@ -371,7 +473,6 @@ func (e *engine) DeleteDeployment(ctx context.Context, deploymentID string, tear
 	_ = e.SyncGitMirror(ctx)
 	return nil
 }
-
 
 func (e *engine) CheckDrift(ctx context.Context, deploymentID string) (*drift.DriftResult, error) {
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
@@ -400,7 +501,7 @@ func (e *engine) CheckDrift(ctx context.Context, deploymentID string) (*drift.Dr
 	remoteEnvBytes, _ := client.ReadStackFile(ctx, stack.Name, ".env")
 
 	desired := drift.Snapshot{
-		ComposeYAML: stack.ComposeYAML,
+		ComposeYAML: dep.GetDesiredCompose(stack.ComposeYAML),
 		EnvVars:     dep.EnvVars,
 	}
 	actual := drift.Snapshot{
@@ -423,31 +524,61 @@ func (e *engine) ReconcileDrift(ctx context.Context, deploymentID string) error 
 }
 
 func (e *engine) AdoptDrift(ctx context.Context, deploymentID string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
 	}
+
+	// Ensure fresh drift evaluation so RemoteCompose and RemoteEnv are populated
+	if dep.RemoteCompose == "" && dep.RemoteEnv == "" {
+		if _, err := e.CheckDrift(ctx, deploymentID); err != nil {
+			return fmt.Errorf("failed to verify remote state before adopting: %w", err)
+		}
+		dep, err = e.cfg.Store.GetDeployment(deploymentID)
+		if err != nil {
+			return err
+		}
+	}
+
 	stack, err := e.cfg.Store.GetStack(dep.StackID)
 	if err != nil {
 		return fmt.Errorf("stack not found: %w", err)
 	}
 
-	if dep.RemoteCompose != "" && dep.RemoteCompose != stack.ComposeYAML {
-		stack.ComposeYAML = dep.RemoteCompose
-		_ = e.cfg.Store.UpdateStack(*stack)
-	}
-
-	newCompose := stack.ComposeYAML
-	if dep.RemoteCompose != "" {
+	currentDesired := dep.GetDesiredCompose(stack.ComposeYAML)
+	newCompose := currentDesired
+	if dep.RemoteCompose != "" && dep.RemoteCompose != currentDesired {
+		deps, _ := e.cfg.Store.ListDeploymentsByStack(dep.StackID)
+		if len(deps) > 1 {
+			// ponytail: Multiple deployments share this stack template. Adopt remote compose for THIS deployment only,
+			// leaving the shared stack template untouched so other nodes do not drift.
+			logger.Info("deploy", dep.NodeName, fmt.Sprintf("Adopt drift isolated to deployment %s; shared stack %q preserved for %d other deployment(s)", dep.ID, stack.Name, len(deps)-1))
+			if err := e.cfg.Store.UpdateDeploymentCompose(dep.ID, dep.RemoteCompose); err != nil {
+				return fmt.Errorf("failed to adopt deployment compose: %w", err)
+			}
+			dep.ComposeYAML = dep.RemoteCompose
+		} else {
+			stack.ComposeYAML = dep.RemoteCompose
+			stack.UpdatedAt = time.Now().UTC()
+			if err := e.cfg.Store.UpdateStack(*stack); err != nil {
+				return fmt.Errorf("failed to update stack compose: %w", err)
+			}
+			_ = e.cfg.Store.UpdateDeploymentCompose(dep.ID, "")
+			dep.ComposeYAML = ""
+		}
 		newCompose = dep.RemoteCompose
 	}
 
 	actualHash := drift.ComputeHash(newCompose, dep.RemoteEnv)
-	_ = e.cfg.Store.UpdateDeploymentEnvAndHash(dep.ID, dep.RemoteEnv, actualHash)
+	if err := e.cfg.Store.UpdateDeploymentEnvAndHash(dep.ID, dep.RemoteEnv, actualHash); err != nil {
+		return fmt.Errorf("failed to update deployment env and hash: %w", err)
+	}
 
 	// Invariant: Git Mirror must reflect adopted state
-	_ = e.SyncGitMirror(ctx)
-	return nil
+	return e.SyncGitMirror(ctx)
 }
 
 func (e *engine) GetDeploymentPreflight(ctx context.Context, deploymentID string) (*DeploymentPreflightResult, error) {
@@ -464,15 +595,21 @@ func (e *engine) GetDeploymentPreflight(ctx context.Context, deploymentID string
 		return nil, fmt.Errorf("node not found: %w", err)
 	}
 
-	client := e.getNodeClient(node)
-	remoteComposeBytes, errCompose := client.ReadStackFile(ctx, stack.Name, "docker-compose.yml")
-	remoteEnvBytes, errEnv := client.ReadStackFile(ctx, stack.Name, ".env")
-	if errCompose != nil && errEnv != nil {
-		return nil, fmt.Errorf("failed to reach node or read stack directory: %w", errCompose)
+	if node.Status == "offline" {
+		return nil, fmt.Errorf("node %s is offline", node.Name)
 	}
 
+	client := e.getNodeClient(node)
+	// Verify node connectivity first; missing stack files indicate uninitialized stack, not an unreachable node
+	if _, err := client.TestConnection(ctx); err != nil {
+		return nil, fmt.Errorf("failed to reach node %s: %w", node.Name, err)
+	}
+
+	remoteComposeBytes, _ := client.ReadStackFile(ctx, stack.Name, "docker-compose.yml")
+	remoteEnvBytes, _ := client.ReadStackFile(ctx, stack.Name, ".env")
+
 	desired := drift.Snapshot{
-		ComposeYAML: stack.ComposeYAML,
+		ComposeYAML: dep.GetDesiredCompose(stack.ComposeYAML),
 		EnvVars:     dep.EnvVars,
 	}
 	actual := drift.Snapshot{
@@ -484,15 +621,16 @@ func (e *engine) GetDeploymentPreflight(ctx context.Context, deploymentID string
 	// Query running containers on this node
 	_, containers, _ := client.GetTelemetry(ctx)
 	var matching []nodeclient.ContainerInfo
-	stackLower := strings.ToLower(stack.Name)
 	for _, c := range containers {
-		if strings.EqualFold(c.Names, stack.Name) || strings.Contains(strings.ToLower(c.Names), stackLower) {
+		if c.MatchesStack(stack.Name) {
 			matching = append(matching, c)
 		}
 	}
 	if matching == nil {
 		matching = []nodeclient.ContainerInfo{}
 	}
+
+	missingEnv := findMissingEnvVars(desired.ComposeYAML, desired.EnvVars)
 
 	res := &DeploymentPreflightResult{
 		DeploymentID:   dep.ID,
@@ -507,6 +645,7 @@ func (e *engine) GetDeploymentPreflight(ctx context.Context, deploymentID string
 		ActualHash:     eval.ActualHash,
 		Containers:     matching,
 		ContainerCount: len(matching),
+		MissingEnvVars: missingEnv,
 	}
 	return res, nil
 }
@@ -567,6 +706,9 @@ func (e *engine) ViewDeploymentFile(ctx context.Context, deploymentID string, fi
 }
 
 func (e *engine) SaveDeploymentFile(ctx context.Context, deploymentID string, filename string, content []byte, redeploy bool) (*SaveFileResult, error) {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return nil, fmt.Errorf("deployment not found: %w", err)
@@ -618,6 +760,9 @@ func (e *engine) SaveDeploymentFile(ctx context.Context, deploymentID string, fi
 }
 
 func (e *engine) CreateDeploymentDir(ctx context.Context, deploymentID string, dirPath string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -635,6 +780,9 @@ func (e *engine) CreateDeploymentDir(ctx context.Context, deploymentID string, d
 }
 
 func (e *engine) DeleteDeploymentPath(ctx context.Context, deploymentID string, path string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -652,6 +800,9 @@ func (e *engine) DeleteDeploymentPath(ctx context.Context, deploymentID string, 
 }
 
 func (e *engine) ExtractDeploymentArchive(ctx context.Context, deploymentID string, archiveFilename string, targetDir string) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -669,6 +820,9 @@ func (e *engine) ExtractDeploymentArchive(ctx context.Context, deploymentID stri
 }
 
 func (e *engine) UploadDeploymentFiles(ctx context.Context, deploymentID string, files map[string][]byte) error {
+	unlock := e.lockDeployment(deploymentID)
+	defer unlock()
+
 	dep, err := e.cfg.Store.GetDeployment(deploymentID)
 	if err != nil {
 		return fmt.Errorf("deployment not found: %w", err)
@@ -711,9 +865,20 @@ func (e *engine) BuildGitMirrorFiles() (map[string][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	envMode, _ := e.cfg.Store.GetSetting("git_mirror_env_mode")
 	for _, d := range deployments {
-		depEnvPath := fmt.Sprintf("deployments/%s/%s.env", d.NodeName, d.StackName)
-		files[depEnvPath] = []byte(d.EnvVars)
+		if envMode != "exclude" {
+			depEnvPath := fmt.Sprintf("deployments/%s/%s.env", d.NodeName, d.StackName)
+			content := []byte(d.EnvVars)
+			if envMode == "masked" {
+				content = []byte(maskEnvSecrets(d.EnvVars))
+			}
+			files[depEnvPath] = content
+		}
+		if strings.TrimSpace(d.ComposeYAML) != "" {
+			depComposePath := fmt.Sprintf("deployments/%s/%s.override.yml", d.NodeName, d.StackName)
+			files[depComposePath] = []byte(d.ComposeYAML)
+		}
 	}
 
 	runbookNotes, _ := e.cfg.Store.GetSetting("global_runbook_notes")
@@ -759,4 +924,86 @@ func (e *engine) SyncGitMirror(ctx context.Context) error {
 	_ = e.cfg.Store.SetSetting("git_mirror_status", "synced")
 	_ = e.cfg.Store.SetSetting("git_mirror_error", "")
 	return nil
+}
+
+// maskEnvSecrets masks sensitive values in .env lines for safe Git Mirror backup.
+func maskEnvSecrets(envVars string) string {
+	lines := strings.Split(envVars, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if kv := strings.SplitN(line, "=", 2); len(kv) == 2 {
+			lines[i] = kv[0] + "=********"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// findRequiredComposeEnvVars extracts variable names like ${VAR} or ${VAR:?err} that have no default fallback.
+func findRequiredComposeEnvVars(composeYAML string) []string {
+	var required []string
+	seen := make(map[string]bool)
+	i := 0
+	for i < len(composeYAML) {
+		idx := strings.Index(composeYAML[i:], "${")
+		if idx == -1 {
+			break
+		}
+		start := i + idx + 2
+		end := strings.Index(composeYAML[start:], "}")
+		if end == -1 {
+			break
+		}
+		expr := composeYAML[start : start+end]
+		i = start + end + 1
+
+		var varName string
+		if strings.Contains(expr, ":-") || strings.Contains(expr, "-") {
+			continue // has default value
+		} else if q := strings.Index(expr, ":?"); q != -1 {
+			varName = expr[:q]
+		} else {
+			varName = expr
+		}
+
+		varName = strings.TrimSpace(varName)
+		if varName != "" && !seen[varName] {
+			seen[varName] = true
+			required = append(required, varName)
+		}
+	}
+	return required
+}
+
+// findMissingEnvVars returns required variables from compose that are missing or empty in envVars.
+func findMissingEnvVars(composeYAML, envVars string) []string {
+	required := findRequiredComposeEnvVars(composeYAML)
+	if len(required) == 0 {
+		return nil
+	}
+
+	provided := make(map[string]bool)
+	for _, line := range strings.Split(envVars, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if kv := strings.SplitN(trimmed, "=", 2); len(kv) == 2 {
+			k := strings.TrimSpace(kv[0])
+			v := strings.TrimSpace(kv[1])
+			if v != "" {
+				provided[k] = true
+			}
+		}
+	}
+
+	var missing []string
+	for _, req := range required {
+		if !provided[req] {
+			missing = append(missing, req)
+		}
+	}
+	return missing
 }

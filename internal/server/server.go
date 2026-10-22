@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -13,21 +14,24 @@ import (
 	"io"
 	"io/fs"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 	"sync"
+	"time"
 
 	"docker-orkes/internal/controlplane"
 	"docker-orkes/internal/drift"
 	"docker-orkes/internal/gitsync"
-	"docker-orkes/internal/notifier"
 	"docker-orkes/internal/logger"
 	"docker-orkes/internal/nodeclient"
+	"docker-orkes/internal/notifier"
 	"docker-orkes/internal/poller"
 	"docker-orkes/internal/ssh"
 	"docker-orkes/internal/store"
@@ -43,6 +47,7 @@ type Config struct {
 	DBPath         string
 	MasterPassword string
 	Addr           string
+	APIToken       string // optional API token for automated CI/CD deployment calls
 	Executor       ssh.Executor
 	GitSyncer      gitsync.Syncer
 	GitMirrorDir   string
@@ -59,24 +64,41 @@ type BulkScanProgress struct {
 	StartedAt    time.Time `json:"started_at"`
 }
 
+type loginAttempt struct {
+	count        int
+	blockedUntil time.Time
+	lastAttempt  time.Time
+}
+
 type Server struct {
-	cfg          Config
-	store        *store.Store
-	cp           controlplane.Engine
-	executor     ssh.Executor
-	gitSyncer    gitsync.Syncer
-	gitMirrorDir string
-	templates    *template.Template
-	pubKey       string
-	privKey      string
-	notifier     notifier.Notifier
-	poller       poller.Poller
-	mu           sync.RWMutex
-	bulkScans    map[string]*BulkScanProgress
-	bulkScansMu  sync.Mutex
+	cfg             Config
+	store           *store.Store
+	cp              controlplane.Engine
+	executor        ssh.Executor
+	gitSyncer       gitsync.Syncer
+	gitMirrorDir    string
+	templates       *template.Template
+	pubKey          string
+	privKey         string
+	notifier        notifier.Notifier
+	poller          poller.Poller
+	mu              sync.RWMutex
+	bulkScans       map[string]*BulkScanProgress
+	bulkScansMu     sync.Mutex
+	loginAttempts   map[string]*loginAttempt
+	loginAttemptsMu sync.Mutex
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 func New(cfg Config) (*Server, error) {
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	initSuccess := false
+	defer func() {
+		if !initSuccess {
+			serverCancel()
+		}
+	}()
 	if cfg.MasterPassword == "" {
 		cfg.MasterPassword = "admin" // ponytail: sensible default for zero-config quickstart, ceiling: user should provide strong password via env
 	}
@@ -142,7 +164,7 @@ func New(cfg Config) (*Server, error) {
 		plr.Start()
 	}
 
-	return &Server{
+	srv := &Server{
 		cfg:          cfg,
 		store:        st,
 		cp:           cp,
@@ -152,10 +174,65 @@ func New(cfg Config) (*Server, error) {
 		templates:    tmpl,
 		pubKey:       pubKey,
 		privKey:      privKey,
-		notifier:     notif,
-		poller:       plr,
-		bulkScans:    make(map[string]*BulkScanProgress),
-	}, nil
+		notifier:        notif,
+		poller:          plr,
+		bulkScans:       make(map[string]*BulkScanProgress),
+		loginAttempts:   make(map[string]*loginAttempt),
+		ctx:             serverCtx,
+		cancel:          serverCancel,
+	}
+	initSuccess = true
+	srv.startAutoBackupLoop()
+	return srv, nil
+}
+
+func (s *Server) startAutoBackupLoop() {
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-ticker.C:
+				enabled, _ := s.store.GetSetting("auto_backup_enabled")
+				if enabled == "true" {
+					_ = s.performAutoBackup()
+				}
+			}
+		}
+	}()
+}
+
+func (s *Server) performAutoBackup() error {
+	backupDir := "data/backups"
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return err
+	}
+	filename := filepath.Join(backupDir, fmt.Sprintf("docker-orkes-backup-%s.db", time.Now().UTC().Format("2006-01-02-150405")))
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := s.store.Backup(f); err != nil {
+		logger.Error("backup", "", fmt.Sprintf("Auto-backup failed: %v", err))
+		return err
+	}
+	logger.Info("backup", "", fmt.Sprintf("Auto-backup completed: %s", filename))
+
+	// Prune backups older than 7 days
+	entries, _ := os.ReadDir(backupDir)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "docker-orkes-backup-") && strings.HasSuffix(entry.Name(), ".db") {
+			if fi, err := entry.Info(); err == nil && fi.ModTime().Before(cutoff) {
+				_ = os.Remove(filepath.Join(backupDir, entry.Name()))
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) ControlPlane() controlplane.Engine {
@@ -167,6 +244,9 @@ func (s *Server) Store() *store.Store {
 }
 
 func (s *Server) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.mu.Lock()
 	if s.poller != nil {
 		s.poller.Stop()
@@ -179,11 +259,11 @@ func (s *Server) PublicKeySSH() string {
 	return s.pubKey
 }
 
-
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Public routes
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("POST /login", s.handleLoginSubmit)
 	mux.HandleFunc("POST /logout", s.handleLogout)
@@ -213,6 +293,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /nodes/{id}/networks/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteNodeNetwork)))
 	mux.Handle("POST /nodes/{id}/networks/prune", s.requireAuth(http.HandlerFunc(s.handlePruneNodeNetworks)))
 	mux.Handle("GET /nodes/{id}/containers/{container_id}/logs", s.requireAuth(http.HandlerFunc(s.handleContainerLogs)))
+	mux.Handle("POST /nodes/{id}/containers/{container_id}/start", s.requireAuth(http.HandlerFunc(s.handleStartContainer)))
+	mux.Handle("POST /nodes/{id}/containers/{container_id}/stop", s.requireAuth(http.HandlerFunc(s.handleStopContainer)))
+	mux.Handle("POST /nodes/{id}/containers/{container_id}/restart", s.requireAuth(http.HandlerFunc(s.handleRestartContainer)))
+
+	// Database Backup
+	mux.Handle("GET /api/backup", s.requireAuth(http.HandlerFunc(s.handleDatabaseBackup)))
 
 	mux.Handle("GET /stacks", s.requireAuth(http.HandlerFunc(s.handleListStacks)))
 	mux.Handle("POST /stacks", s.requireAuth(http.HandlerFunc(s.handleCreateStack)))
@@ -230,7 +316,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /deployments/{id}/containers", s.requireAuth(http.HandlerFunc(s.handleGetDeploymentContainers)))
 	mux.Handle("GET /deployments/{id}/preflight", s.requireAuth(http.HandlerFunc(s.handleDeploymentPreflight)))
 
-
 	mux.Handle("POST /deployments/{id}/drift/check", s.requireAuth(http.HandlerFunc(s.handleCheckDrift)))
 	mux.Handle("POST /deployments/{id}/drift/reconcile", s.requireAuth(http.HandlerFunc(s.handleReconcileDrift)))
 	mux.Handle("POST /deployments/{id}/drift/adopt", s.requireAuth(http.HandlerFunc(s.handleAdoptDrift)))
@@ -241,8 +326,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /deployments/{id}/files/delete", s.requireAuth(http.HandlerFunc(s.handleDeleteDeploymentFile)))
 	mux.Handle("POST /deployments/{id}/files/extract", s.requireAuth(http.HandlerFunc(s.handleExtractDeploymentArchive)))
 	mux.Handle("POST /deployments/{id}/files/upload", s.requireAuth(http.HandlerFunc(s.handleUploadDeploymentFiles)))
-
-
 
 	mux.Handle("GET /deployments/{id}/revisions", s.requireAuth(http.HandlerFunc(s.handleListRevisions)))
 	mux.Handle("POST /deployments/{id}/rollback", s.requireAuth(http.HandlerFunc(s.handleRollbackDeployment)))
@@ -269,11 +352,42 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+func (s *Server) validateAPIToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	if s.cfg.APIToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.APIToken)) == 1 {
+		return true
+	}
+	dbToken, err := s.store.GetSetting("api_token")
+	if err == nil && dbToken != "" && subtle.ConstantTimeCompare([]byte(token), []byte(dbToken)) == 1 {
+		return true
+	}
+	return false
+}
+
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Support automated CI/CD calls with Bearer or X-API-Token header
+		authHeader := r.Header.Get("Authorization")
+		token := ""
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		} else if customKey := r.Header.Get("X-API-Token"); customKey != "" {
+			token = strings.TrimSpace(customKey)
+		}
+
+		if token != "" && s.validateAPIToken(token) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		cookie, err := r.Cookie("orkes_session")
 		if err != nil || !s.store.ValidateSession(cookie.Value) {
-			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || strings.HasPrefix(r.URL.Path, "/api/") {
+			if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") ||
+				strings.HasPrefix(r.URL.Path, "/api/") ||
+				strings.Contains(r.Header.Get("Accept"), "application/json") ||
+				strings.Contains(r.Header.Get("Content-Type"), "application/json") {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
@@ -317,11 +431,17 @@ func (s *Server) handleTelemetryStream(w http.ResponseWriter, r *http.Request) {
 	ch, unsub := broadcaster.Subscribe()
 	defer unsub()
 
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
 	ctx := r.Context()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			_, _ = fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
 		case evt, ok := <-ch:
 			if !ok {
 				return
@@ -344,14 +464,83 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	_ = s.templates.ExecuteTemplate(w, "login.html", nil)
 }
 
+func clientIP(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return remoteAddr
+}
+
+func (s *Server) checkLoginRateLimit(ip string) bool {
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+
+	now := time.Now()
+	// Opportunistic cleanup of stale entries older than 10 minutes
+	for k, att := range s.loginAttempts {
+		if now.Sub(att.lastAttempt) > 10*time.Minute {
+			delete(s.loginAttempts, k)
+		}
+	}
+
+	att, exists := s.loginAttempts[ip]
+	if !exists {
+		return true
+	}
+	if now.Before(att.blockedUntil) {
+		return false
+	}
+	return true
+}
+
+func (s *Server) recordFailedLogin(ip string) {
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+
+	now := time.Now()
+	att, exists := s.loginAttempts[ip]
+	if !exists {
+		att = &loginAttempt{}
+		s.loginAttempts[ip] = att
+	} else if now.Sub(att.lastAttempt) > 10*time.Minute {
+		// Reset count if previous attempts were more than 10 minutes ago
+		att.count = 0
+		att.blockedUntil = time.Time{}
+	}
+	att.lastAttempt = now
+	att.count++
+	if att.count >= 5 {
+		att.blockedUntil = now.Add(1 * time.Minute)
+	}
+}
+
+func (s *Server) recordSuccessfulLogin(ip string) {
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+	delete(s.loginAttempts, ip)
+}
+
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
+	ip := clientIP(r.RemoteAddr)
+	if !s.checkLoginRateLimit(ip) {
+		logger.Warn("auth", "", "Login rate limit exceeded", "ip", r.RemoteAddr)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_ = s.templates.ExecuteTemplate(w, "login.html", map[string]string{
+			"Error": "Too many failed login attempts. Please wait 1 minute before trying again.",
+		})
+		return
+	}
+
 	pass := r.FormValue("password")
-	if pass != s.cfg.MasterPassword {
+	if subtle.ConstantTimeCompare([]byte(pass), []byte(s.cfg.MasterPassword)) != 1 {
+		s.recordFailedLogin(ip)
 		logger.Warn("auth", "", "Failed login attempt: invalid master password", "ip", r.RemoteAddr)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -361,6 +550,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.recordSuccessfulLogin(ip)
 	token := generateToken(32)
 	if err := s.store.CreateSession(token); err != nil {
 		logger.Error("auth", "", "Failed to create operator session", "error", err.Error())
@@ -369,11 +559,13 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	logger.Info("auth", "", "Operator login successful", "ip", r.RemoteAddr)
 
+	isSecure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 	http.SetCookie(w, &http.Cookie{
 		Name:     "orkes_session",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  time.Now().Add(7 * 24 * time.Hour),
 	})
@@ -397,6 +589,12 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	s.handleDashboard(w, r)
 }
@@ -416,6 +614,10 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 
 	if name == "" || host == "" {
 		http.Error(w, "Name and host are required", http.StatusBadRequest)
+		return
+	}
+	if err := validateNodeName(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	port, err := strconv.Atoi(portStr)
@@ -439,7 +641,6 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().UTC(),
 	}
 
-
 	if sshPassword != "" {
 		if err := s.executor.BootstrapKey(r.Context(), node.Host, node.Port, node.User, sshPassword, s.pubKey); err != nil {
 			node.Status = "offline"
@@ -461,6 +662,7 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -504,10 +706,16 @@ func (s *Server) handleTestNode(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	deps, err := s.store.ListDeploymentsByNode(id)
+	if err == nil && len(deps) > 0 {
+		http.Error(w, fmt.Sprintf("Cannot delete node: %d active deployment(s) are assigned to it. Please delete or teardown the deployments first.", len(deps)), http.StatusBadRequest)
+		return
+	}
 	if err := s.store.DeleteNode(id); err != nil {
 		http.Error(w, "Failed to delete node: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -534,6 +742,10 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Name and host are required", http.StatusBadRequest)
 		return
 	}
+	if err := validateNodeName(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 {
 		port = 22
@@ -557,7 +769,6 @@ func (s *Server) handleUpdateNode(w http.ResponseWriter, r *http.Request) {
 	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
-
 
 func (s *Server) handleListStacks(w http.ResponseWriter, r *http.Request) {
 	s.handleDashboard(w, r)
@@ -605,6 +816,7 @@ func (s *Server) handleCreateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -635,6 +847,20 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldStack, err := s.store.GetStack(id)
+	if err != nil {
+		http.Error(w, "Stack not found", http.StatusNotFound)
+		return
+	}
+
+	if oldStack.Name != name {
+		deps, err := s.store.ListDeploymentsByStack(id)
+		if err == nil && len(deps) > 0 {
+			http.Error(w, fmt.Sprintf("Cannot rename stack '%s' to '%s': %d active deployment(s) depend on it. Please teardown deployments first or keep original stack name.", oldStack.Name, name, len(deps)), http.StatusBadRequest)
+			return
+		}
+	}
+
 	stack := store.Stack{
 		ID:          id,
 		Name:        name,
@@ -644,21 +870,28 @@ func (s *Server) handleUpdateStack(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-
 	if err := s.store.UpdateStack(stack); err != nil {
 		http.Error(w, "Failed to update stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleDeleteStack(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	deps, err := s.store.ListDeploymentsByStack(id)
+	if err == nil && len(deps) > 0 {
+		http.Error(w, fmt.Sprintf("Cannot delete stack: %d active deployment(s) depend on it. Please delete or teardown the deployments first.", len(deps)), http.StatusBadRequest)
+		return
+	}
 	if err := s.store.DeleteStack(id); err != nil {
 		http.Error(w, "Failed to delete stack: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	_ = s.triggerGitSync(r.Context())
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -676,6 +909,7 @@ func validateComposeYAML(content string) error {
 	}
 	return nil
 }
+
 var stackSlugRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 var gitBranchRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$`)
 
@@ -686,6 +920,19 @@ func validateStackSlug(name string) error {
 	return nil
 }
 
+func validateNodeName(name string) error {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return errors.New("node name cannot be empty")
+	}
+	if len(trimmed) > 64 {
+		return errors.New("node name cannot exceed 64 characters")
+	}
+	if strings.Contains(trimmed, "/") || strings.Contains(trimmed, "\\") || strings.Contains(trimmed, "..") {
+		return errors.New("node name cannot contain slashes or path traversal characters")
+	}
+	return nil
+}
 
 func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	s.handleDashboard(w, r)
@@ -707,6 +954,17 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Prevent duplicate deployment of the same stack on the same node (avoids remote Stack Directory collision)
+	existingDeps, err := s.store.ListDeploymentsByNode(nodeID)
+	if err == nil {
+		for _, ed := range existingDeps {
+			if ed.StackID == stackID {
+				http.Error(w, "Deployment already exists for this stack on this node", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
 	dep := store.Deployment{
 		ID:        generateToken(8),
 		StackID:   stackID,
@@ -722,7 +980,11 @@ func (s *Server) handleCreateDeployment(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_ = s.deployStack(r.Context(), &dep)
+	// ponytail: detach deployment execution from browser HTTP request context so client disconnection / reverse proxy timeout does not abort container rollout midway
+	deployCtx := context.WithoutCancel(r.Context())
+	if deployErr := s.deployStack(deployCtx, &dep); deployErr != nil {
+		logger.Error("deploy", dep.ID, "Initial deployment rollout failed: "+deployErr.Error(), "node_id", nodeID, "stack_id", stackID)
+	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -751,8 +1013,6 @@ func (s *Server) handleUpdateDeployment(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-
-
 func (s *Server) handleDeploymentPreflight(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	preflight, err := s.cp.GetDeploymentPreflight(r.Context(), id)
@@ -775,7 +1035,8 @@ func (s *Server) handleDeploymentPreflight(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := s.cp.Deploy(r.Context(), id)
+	deployCtx := context.WithoutCancel(r.Context())
+	err := s.cp.Deploy(deployCtx, id)
 	dep, _ := s.store.GetDeployment(id)
 	lastLog := ""
 	if dep != nil {
@@ -805,7 +1066,8 @@ func (s *Server) handleUpDeployment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRolloutDeployment(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := s.cp.Deploy(r.Context(), id)
+	deployCtx := context.WithoutCancel(r.Context())
+	err := s.cp.Rollout(deployCtx, id)
 	dep, _ := s.store.GetDeployment(id)
 	lastLog := ""
 	if dep != nil {
@@ -927,6 +1189,11 @@ func (s *Server) handleDeleteDeployment(w http.ResponseWriter, r *http.Request) 
 		}
 	} else {
 		_ = r.ParseMultipartForm(32 << 20)
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 		if r.Form == nil {
 			_ = r.ParseForm()
 		}
@@ -1008,13 +1275,19 @@ func (s *Server) handleCheckDrift(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReconcileDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_ = s.cp.ReconcileDrift(r.Context(), id)
+	if err := s.cp.ReconcileDrift(r.Context(), id); err != nil {
+		http.Error(w, "Failed to reconcile drift: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) handleAdoptDrift(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	_ = s.cp.AdoptDrift(r.Context(), id)
+	if err := s.cp.AdoptDrift(r.Context(), id); err != nil {
+		http.Error(w, "Failed to adopt drift: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -1212,9 +1485,8 @@ func (s *Server) handleGetDeploymentContainers(w http.ResponseWriter, r *http.Re
 	allContainers := parseDockerPsOutput(psOut, knownStacks)
 
 	var matching []ContainerInfo
-	stackLower := strings.ToLower(dep.StackName)
 	for _, c := range allContainers {
-		if strings.EqualFold(c.StackName, dep.StackName) || strings.Contains(strings.ToLower(c.Names), stackLower) {
+		if c.MatchesStack(dep.StackName) {
 			matching = append(matching, c)
 		}
 	}
@@ -1274,6 +1546,11 @@ func (s *Server) handleUploadDeploymentFiles(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Request too large or invalid multipart form (max 100MB)", http.StatusBadRequest)
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 
 	prefixDir := strings.TrimSpace(r.FormValue("subpath"))
 	if prefixDir != "" && (strings.Contains(prefixDir, "..") || strings.HasPrefix(prefixDir, "/")) {
@@ -1347,9 +1624,6 @@ func (s *Server) handleUploadDeploymentFiles(w http.ResponseWriter, r *http.Requ
 		"files_uploaded": len(filesMap),
 	})
 }
-
-
-
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" && r.URL.Path != "/nodes" && r.URL.Path != "/stacks" && r.URL.Path != "/deployments" {
@@ -1446,7 +1720,11 @@ func (s *Server) buildGitMirrorFiles() (map[string][]byte, error) {
 }
 
 func (s *Server) triggerGitSync(ctx context.Context) error {
-	return s.cp.SyncGitMirror(ctx)
+	// ponytail: Bound git sync timeout with server background context so HTTP client disconnection
+	// does not abruptly kill the underlying git commit/push process mid-execution.
+	syncCtx, cancel := context.WithTimeout(s.ctx, 45*time.Second)
+	defer cancel()
+	return s.cp.SyncGitMirror(syncCtx)
 }
 
 func (s *Server) handleUpdateGitSettings(w http.ResponseWriter, r *http.Request) {
@@ -1520,7 +1798,6 @@ func (s *Server) handleSyncGitNow(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-
 func generateToken(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
@@ -1546,10 +1823,106 @@ type ContainerInfo struct {
 	StackName string `json:"stack_name,omitempty"`
 }
 
+// MatchesStack checks whether a container belongs to a specified stack name.
+func (c ContainerInfo) MatchesStack(stackName string) bool {
+	if c.StackName != "" {
+		return strings.EqualFold(c.StackName, stackName)
+	}
+	cName := strings.TrimPrefix(strings.ToLower(c.Names), "/")
+	sName := strings.ToLower(stackName)
+	if cName == sName {
+		return true
+	}
+	return strings.HasPrefix(cName, sName+"_") || strings.HasPrefix(cName, sName+"-")
+}
+
+type MemoryMetrics struct {
+	Total   string `json:"total"`
+	Used    string `json:"used"`
+	Free    string `json:"free"`
+	Percent string `json:"percent"`
+}
+
+type CPUMetrics struct {
+	Load1  string `json:"load1"`
+	Load5  string `json:"load5"`
+	Load15 string `json:"load15"`
+}
+
 type NodeTelemetry struct {
 	Disk       DiskMetrics     `json:"disk"`
+	Memory     MemoryMetrics   `json:"memory"`
+	CPU        CPUMetrics      `json:"cpu"`
 	Containers []ContainerInfo `json:"containers"`
 	Error      string          `json:"error,omitempty"`
+}
+
+func parseMeminfoOutput(out string) MemoryMetrics {
+	var totalKB, freeKB, availKB, buffersKB, cachedKB int64
+	for _, line := range strings.Split(out, "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		valFields := strings.Fields(parts[1])
+		if len(valFields) == 0 {
+			continue
+		}
+		val, _ := strconv.ParseInt(valFields[0], 10, 64)
+		switch key {
+		case "MemTotal":
+			totalKB = val
+		case "MemFree":
+			freeKB = val
+		case "MemAvailable":
+			availKB = val
+		case "Buffers":
+			buffersKB = val
+		case "Cached":
+			cachedKB = val
+		}
+	}
+
+	if totalKB <= 0 {
+		return MemoryMetrics{}
+	}
+
+	if availKB <= 0 {
+		availKB = freeKB + buffersKB + cachedKB
+	}
+	usedKB := totalKB - availKB
+	if usedKB < 0 {
+		usedKB = 0
+	}
+
+	pct := int(float64(usedKB) / float64(totalKB) * 100)
+
+	formatKB := func(kb int64) string {
+		if kb >= 1024*1024 {
+			return fmt.Sprintf("%.1f GB", float64(kb)/(1024*1024))
+		}
+		return fmt.Sprintf("%d MB", kb/1024)
+	}
+
+	return MemoryMetrics{
+		Total:   formatKB(totalKB),
+		Used:    formatKB(usedKB),
+		Free:    formatKB(availKB),
+		Percent: fmt.Sprintf("%d%%", pct),
+	}
+}
+
+func parseLoadavgOutput(out string) CPUMetrics {
+	fields := strings.Fields(strings.TrimSpace(out))
+	if len(fields) >= 3 {
+		return CPUMetrics{
+			Load1:  fields[0],
+			Load5:  fields[1],
+			Load15: fields[2],
+		}
+	}
+	return CPUMetrics{}
 }
 
 func parseDfOutput(out string) DiskMetrics {
@@ -1643,17 +2016,39 @@ func (r rawDockerPsItem) getLabels() string {
 	return r.LabelsLower
 }
 
+func isValidLabelKey(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 func parseDockerLabels(labelsStr string) map[string]string {
 	res := make(map[string]string)
 	if labelsStr == "" {
 		return res
 	}
 	parts := strings.Split(labelsStr, ",")
+	var currentKey, currentVal string
 	for _, part := range parts {
-		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(kv) == 2 {
-			res[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		trimmed := strings.TrimSpace(part)
+		if kv := strings.SplitN(trimmed, "=", 2); len(kv) == 2 && isValidLabelKey(kv[0]) {
+			if currentKey != "" {
+				res[currentKey] = currentVal
+			}
+			currentKey = kv[0]
+			currentVal = kv[1]
+		} else if currentKey != "" {
+			currentVal += "," + trimmed
 		}
+	}
+	if currentKey != "" {
+		res[currentKey] = currentVal
 	}
 	return res
 }
@@ -1732,7 +2127,9 @@ func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dfOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "df -h /")
+	// ponytail: Probe disk, meminfo, and loadavg in a single combined SSH execution to avoid multiple roundtrips
+	probeCmd := "df -h -P / && echo '---MEMINFO---' && cat /proc/meminfo 2>/dev/null && echo '---LOADAVG---' && cat /proc/loadavg 2>/dev/null || true"
+	probeOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, probeCmd)
 	psOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a --format '{{json .}}'")
 
 	deployments, _ := s.store.ListDeploymentsByNode(node.ID)
@@ -1743,8 +2140,25 @@ func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	dfText := probeOut
+	memText := ""
+	loadText := ""
+	if strings.Contains(probeOut, "---MEMINFO---") {
+		parts := strings.Split(probeOut, "---MEMINFO---")
+		dfText = parts[0]
+		if len(parts) > 1 {
+			memParts := strings.Split(parts[1], "---LOADAVG---")
+			memText = memParts[0]
+			if len(memParts) > 1 {
+				loadText = memParts[1]
+			}
+		}
+	}
+
 	telemetry := NodeTelemetry{
-		Disk:       parseDfOutput(dfOut),
+		Disk:       parseDfOutput(dfText),
+		Memory:     parseMeminfoOutput(memText),
+		CPU:        parseLoadavgOutput(loadText),
 		Containers: parseDockerPsOutput(psOut, knownStacks),
 	}
 
@@ -1752,11 +2166,28 @@ func (s *Server) handleNodeTelemetry(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(telemetry)
 }
 
+type flushWriter struct {
+	w       io.Writer
+	flusher http.Flusher
+}
+
+func (fw *flushWriter) Write(p []byte) (n int, err error) {
+	n, err = fw.w.Write(p)
+	if n > 0 && fw.flusher != nil {
+		fw.flusher.Flush()
+	}
+	return n, err
+}
+
 func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	containerID := strings.TrimSpace(r.PathValue("container_id"))
 	if containerID == "" {
 		http.Error(w, "Invalid container ID", http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(containerID, "-") {
+		http.Error(w, "Invalid container ID: cannot start with hyphen", http.StatusBadRequest)
 		return
 	}
 	for _, c := range containerID {
@@ -1771,7 +2202,31 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cmd := fmt.Sprintf("docker logs --tail 100 %s", containerID)
+	tailStr := r.URL.Query().Get("tail")
+	tail := 100
+	if t, err := strconv.Atoi(tailStr); err == nil && t > 0 {
+		if t > 5000 {
+			t = 5000
+		}
+		tail = t
+	}
+
+	follow := r.URL.Query().Get("follow") == "true" || r.URL.Query().Get("follow") == "1"
+	flusher, isFlusher := w.(http.Flusher)
+
+	if follow && isFlusher {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+
+		cmd := fmt.Sprintf("docker logs -f --tail %d -- %s", tail, containerID)
+		fw := &flushWriter{w: w, flusher: flusher}
+		_ = s.executor.RunCommandStream(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd, fw)
+		return
+	}
+
+	cmd := fmt.Sprintf("docker logs --tail %d -- %s", tail, containerID)
 	logs, err := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, cmd)
 	if err != nil {
 		http.Error(w, "Failed to get logs: "+err.Error(), http.StatusInternalServerError)
@@ -1780,6 +2235,61 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte(logs))
+}
+
+func (s *Server) handleStartContainer(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.PathValue("id")
+	containerID := r.PathValue("container_id")
+	if err := s.cp.StartContainer(r.Context(), nodeID, containerID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	logger.Info("node", nodeID, fmt.Sprintf("Container %s started", containerID))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Container started successfully"})
+}
+
+func (s *Server) handleStopContainer(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.PathValue("id")
+	containerID := r.PathValue("container_id")
+	if err := s.cp.StopContainer(r.Context(), nodeID, containerID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	logger.Info("node", nodeID, fmt.Sprintf("Container %s stopped", containerID))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Container stopped successfully"})
+}
+
+func (s *Server) handleRestartContainer(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.PathValue("id")
+	containerID := r.PathValue("container_id")
+	if err := s.cp.RestartContainer(r.Context(), nodeID, containerID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	logger.Info("node", nodeID, fmt.Sprintf("Container %s restarted", containerID))
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Container restarted successfully"})
+}
+
+func (s *Server) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
+	filename := fmt.Sprintf("docker-orkes-backup-%s.db", time.Now().UTC().Format("2006-01-02-150405"))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+
+	if err := s.store.Backup(w); err != nil {
+		logger.Error("server", "", fmt.Sprintf("Database backup failed: %v", err))
+		http.Error(w, "Backup failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	logger.Info("server", "", "Database backup downloaded successfully")
 }
 
 type rawDockerImage struct {
@@ -2098,6 +2608,10 @@ func (s *Server) handlePullNodeImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Valid image reference required for pulling", http.StatusBadRequest)
 		return
 	}
+	if strings.HasPrefix(imageRef, "-") {
+		http.Error(w, "Invalid image target: cannot start with hyphen", http.StatusBadRequest)
+		return
+	}
 
 	for _, c := range imageRef {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || c == '_' || c == '-' || c == '@') {
@@ -2200,6 +2714,10 @@ func (s *Server) handleDeleteNodeImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "image_ref or image_id required", http.StatusBadRequest)
 		return
 	}
+	if strings.HasPrefix(target, "-") {
+		http.Error(w, "Invalid image target: cannot start with hyphen", http.StatusBadRequest)
+		return
+	}
 
 	// Validate target against command injection
 	for _, c := range target {
@@ -2288,7 +2806,7 @@ type trivyOutput struct {
 func (s *Server) runTrivyScan(ctx context.Context, node *store.Node, imageRef string) (*store.NodeImageScan, error) {
 	// ponytail: Run transient trivy container mounting socket and named cache volume
 	// Known ceiling: requires internet access on node to download CVE vulnerability DB on first run
-	cmd := fmt.Sprintf("docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v orkes-trivy-cache:/root/.cache/ aquasec/trivy:latest image --format json --quiet %s", imageRef)
+	cmd := fmt.Sprintf("docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v orkes-trivy-cache:/root/.cache/ aquasec/trivy:latest image --format json --quiet %q", imageRef)
 	out, err := s.executor.RunCommand(ctx, node.Host, node.Port, node.User, s.privKey, cmd)
 	if err != nil {
 		scan := &store.NodeImageScan{
@@ -2393,6 +2911,10 @@ func (s *Server) handleScanNodeImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Valid image reference required for scanning", http.StatusBadRequest)
 		return
 	}
+	if strings.HasPrefix(imageRef, "-") {
+		http.Error(w, "Invalid image target: cannot start with hyphen", http.StatusBadRequest)
+		return
+	}
 
 	// Validate target against command injection
 	for _, c := range imageRef {
@@ -2479,7 +3001,7 @@ func (s *Server) handleBulkScanNodeImages(w http.ResponseWriter, r *http.Request
 
 	// Launch background sequential scan
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(s.ctx, 30*time.Minute)
 		defer cancel()
 
 		logger.Info("scanner", node.ID, fmt.Sprintf("Bulk vulnerability scan initiated on node %s", node.Name))
@@ -2515,6 +3037,16 @@ func (s *Server) handleBulkScanNodeImages(w http.ResponseWriter, r *http.Request
 				continue
 			}
 			ref := fmt.Sprintf("%s:%s", repo, tag)
+			valid := true
+			for _, c := range ref {
+				if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ':' || c == '/' || c == '.' || c == '_' || c == '-' || c == '@') {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
 			targets = append(targets, ref)
 		}
 
@@ -2523,6 +3055,11 @@ func (s *Server) handleBulkScanNodeImages(w http.ResponseWriter, r *http.Request
 		s.bulkScansMu.Unlock()
 
 		for i, ref := range targets {
+			if ctx.Err() != nil {
+				logger.Warn("scanner", node.ID, fmt.Sprintf("Bulk scan aborted for node %s: context canceled or timed out", node.Name))
+				break
+			}
+
 			s.bulkScansMu.Lock()
 			progress.CurrentIndex = i + 1
 			progress.CurrentImage = ref
@@ -2553,7 +3090,11 @@ func (s *Server) handleBulkScanNodeImages(w http.ResponseWriter, r *http.Request
 			}
 			s.bulkScansMu.Unlock()
 
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				break
+			case <-time.After(500 * time.Millisecond):
+			}
 		}
 
 		s.bulkScansMu.Lock()
@@ -2721,9 +3262,10 @@ type terminalResizeMsg struct {
 }
 
 type wsTerminalRW struct {
-	r     io.Reader
-	w     io.Writer
-	touch func()
+	r       io.Reader
+	w       io.Writer
+	writeMu sync.Mutex
+	touch   func()
 }
 
 func (rw *wsTerminalRW) Read(p []byte) (int, error) {
@@ -2735,6 +3277,9 @@ func (rw *wsTerminalRW) Read(p []byte) (int, error) {
 }
 
 func (rw *wsTerminalRW) Write(p []byte) (int, error) {
+	// ponytail: Mutex serializes concurrent writes to websocket connection (SSH stdout + stderr + idle alerts)
+	rw.writeMu.Lock()
+	defer rw.writeMu.Unlock()
 	n, err := rw.w.Write(p)
 	if n > 0 && rw.touch != nil {
 		rw.touch()
@@ -2778,6 +3323,10 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 	cmd := ""
 	containerID := strings.TrimSpace(r.URL.Query().Get("container_id"))
 	if containerID != "" {
+		if strings.HasPrefix(containerID, "-") {
+			_, _ = ws.Write([]byte("\r\n\x1b[31mError: Invalid container ID\x1b[0m\r\n"))
+			return
+		}
 		for _, c := range containerID {
 			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.') {
 				_, _ = ws.Write([]byte("\r\n\x1b[31mError: Invalid container ID\x1b[0m\r\n"))
@@ -2785,7 +3334,7 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 			}
 		}
 		// ponytail: Smart shell fallback: test if /bin/bash exists, else fallback to /bin/sh for Alpine/BusyBox
-		cmd = fmt.Sprintf("docker exec -it %s /bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'", containerID)
+		cmd = fmt.Sprintf("docker exec -it -- %s /bin/sh -c 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'", containerID)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2794,7 +3343,10 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 	idleTimer := time.NewTimer(30 * time.Minute)
 	defer idleTimer.Stop()
 
+	var timerMu sync.Mutex
 	touch := func() {
+		timerMu.Lock()
+		defer timerMu.Unlock()
 		if !idleTimer.Stop() {
 			select {
 			case <-idleTimer.C:
@@ -2804,18 +3356,26 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 		idleTimer.Reset(30 * time.Minute)
 	}
 
+	resizeChan := make(chan [2]int, 10)
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	rw := &wsTerminalRW{
+		r:     pr,
+		w:     ws,
+		touch: touch,
+	}
+
 	go func() {
 		select {
 		case <-idleTimer.C:
-			_, _ = ws.Write([]byte("\r\n\x1b[33mSession closed due to 30 minutes of inactivity.\x1b[0m\r\n"))
+			_, _ = rw.Write([]byte("\r\n\x1b[33mSession closed due to 30 minutes of inactivity.\x1b[0m\r\n"))
 			cancel()
 			_ = ws.Close()
 		case <-ctx.Done():
 		}
 	}()
-
-	resizeChan := make(chan [2]int, 10)
-	pr, pw := io.Pipe()
 
 	// Read from WebSocket: separate resize commands from stdin keystrokes
 	go func() {
@@ -2850,17 +3410,11 @@ func (s *Server) handleTerminalWebSocket(ws *websocket.Conn) {
 		}
 	}()
 
-	rw := &wsTerminalRW{
-		r:     pr,
-		w:     ws,
-		touch: touch,
-	}
-
 	err = s.executor.RunInteractiveTerminal(ctx, node.Host, node.Port, node.User, s.privKey, cmd, rows, cols, rw, resizeChan)
 	if err != nil && ctx.Err() == nil {
-		_, _ = ws.Write([]byte(fmt.Sprintf("\r\n\x1b[31mTerminal session ended: %v\x1b[0m\r\n", err)))
+		_, _ = rw.Write([]byte(fmt.Sprintf("\r\n\x1b[31mTerminal session ended: %v\x1b[0m\r\n", err)))
 	} else if ctx.Err() == nil {
-		_, _ = ws.Write([]byte("\r\n\x1b[32mTerminal session closed.\x1b[0m\r\n"))
+		_, _ = rw.Write([]byte("\r\n\x1b[32mTerminal session closed.\x1b[0m\r\n"))
 	}
 }
 
@@ -2868,12 +3422,12 @@ func parseDockerVolumesOutput(volOut string, psInspectOut string) []nodeclient.N
 	var list []nodeclient.NodeVolumeInfo
 
 	type rawVol struct {
-		Name       string `json:"Name"`
-		Driver     string `json:"Driver"`
-		Scope      string `json:"Scope"`
-		Size       string `json:"Size"`
-		Labels     string `json:"Labels"`
-		LabelMap   map[string]string
+		Name     string `json:"Name"`
+		Driver   string `json:"Driver"`
+		Scope    string `json:"Scope"`
+		Size     string `json:"Size"`
+		Labels   string `json:"Labels"`
+		LabelMap map[string]string
 	}
 
 	// Map volume name -> attached container names
@@ -3041,7 +3595,7 @@ func (s *Server) handleListNodeVolumes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a -q | xargs -r docker inspect --format '{{json .}}' 2>/dev/null || true")
+	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "sh -c 'ids=$(docker ps -a -q); if [ -n \"$ids\" ]; then docker inspect --format \"{{json .}}\" $ids; fi' 2>/dev/null || true")
 	// If inspect fails or returns multi JSON objects without wrapping array, we parse line-by-line
 	if inspectOut != "" && !strings.HasPrefix(strings.TrimSpace(inspectOut), "[") {
 		// Wrap JSON lines into JSON array
@@ -3082,6 +3636,10 @@ func (s *Server) handleDeleteNodeVolume(w http.ResponseWriter, r *http.Request) 
 	volName := strings.TrimSpace(req.Name)
 	if volName == "" {
 		http.Error(w, "Volume name required", http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(volName, "-") {
+		http.Error(w, "Invalid volume name: cannot start with hyphen", http.StatusBadRequest)
 		return
 	}
 
@@ -3141,7 +3699,7 @@ func (s *Server) handleListNodeNetworks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "docker ps -a -q | xargs -r docker inspect --format '{{json .}}' 2>/dev/null || true")
+	inspectOut, _ := s.executor.RunCommand(r.Context(), node.Host, node.Port, node.User, s.privKey, "sh -c 'ids=$(docker ps -a -q); if [ -n \"$ids\" ]; then docker inspect --format \"{{json .}}\" $ids; fi' 2>/dev/null || true")
 	if inspectOut != "" && !strings.HasPrefix(strings.TrimSpace(inspectOut), "[") {
 		var lines []string
 		for _, l := range strings.Split(inspectOut, "\n") {
@@ -3184,6 +3742,10 @@ func (s *Server) handleDeleteNodeNetwork(w http.ResponseWriter, r *http.Request)
 	}
 	if target == "" {
 		http.Error(w, "Network ID or name required", http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(target, "-") {
+		http.Error(w, "Invalid network target: cannot start with hyphen", http.StatusBadRequest)
 		return
 	}
 
@@ -3234,7 +3796,3 @@ func (s *Server) handlePruneNodeNetworks(w http.ResponseWriter, r *http.Request)
 		"output":  out,
 	})
 }
-
-
-
-

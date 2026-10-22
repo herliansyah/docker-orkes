@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -76,7 +77,9 @@ func (n *httpNotifier) SendAlert(ctx context.Context, title string, message stri
 
 func (n *httpNotifier) sendTelegram(ctx context.Context, title, message string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", n.cfg.TelegramBotToken)
-	text := fmt.Sprintf("<b>%s</b>\n\n%s", title, message)
+	escapedTitle := html.EscapeString(title)
+	escapedMessage := html.EscapeString(message)
+	text := fmt.Sprintf("<b>%s</b>\n\n%s", escapedTitle, escapedMessage)
 
 	body, err := json.Marshal(map[string]interface{}{
 		"chat_id":    n.cfg.TelegramChatID,

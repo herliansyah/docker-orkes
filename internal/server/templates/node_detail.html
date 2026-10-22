@@ -42,49 +42,86 @@
 
   <main class="w-full px-4 sm:px-6 lg:px-8 py-8 space-y-8">
     <!-- Storage & Health Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
       <!-- Disk Usage Card -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 md:col-span-2">
-        <div class="flex items-center justify-between mb-4">
-          <div>
-            <h3 class="text-sm font-semibold text-zinc-100">Disk Storage Capacity (Host Root)</h3>
-            <p class="text-xs text-zinc-400 mt-0.5">Physical filesystem utilization (<code class="text-indigo-400">df -h /</code>)</p>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-zinc-100 uppercase tracking-wider">💾 Disk Storage</h3>
+            <span id="disk-percent-badge" class="text-xs font-bold text-indigo-400">--%</span>
           </div>
-          <span id="disk-percent-badge" class="text-sm font-bold text-indigo-400">--%</span>
+          <div class="w-full bg-zinc-950 rounded-full h-2.5 border border-zinc-800 overflow-hidden mb-3">
+            <div id="disk-progress" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[11px] text-zinc-400 font-mono">
+            <span>Used: <strong id="disk-used" class="text-zinc-200">--</strong></span>
+            <span>Free: <strong id="disk-free" class="text-zinc-200">--</strong></span>
+          </div>
         </div>
-
-        <div class="w-full bg-zinc-950 rounded-full h-3.5 border border-zinc-800 overflow-hidden mb-3">
-          <div id="disk-progress" class="bg-indigo-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+        <div class="pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-500 font-mono">
+          Total: <span id="disk-total" class="text-zinc-400">--</span>
         </div>
+      </div>
 
-        <div class="flex justify-between text-xs text-zinc-400 font-mono">
-          <span>Used: <strong id="disk-used" class="text-zinc-200">--</strong></span>
-          <span>Free: <strong id="disk-free" class="text-zinc-200">--</strong></span>
-          <span>Total: <strong id="disk-total" class="text-zinc-200">--</strong></span>
+      <!-- Host Memory (RAM) Card -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-zinc-100 uppercase tracking-wider">🧠 Host Memory (RAM)</h3>
+            <span id="mem-percent-badge" class="text-xs font-bold text-emerald-400">--%</span>
+          </div>
+          <div class="w-full bg-zinc-950 rounded-full h-2.5 border border-zinc-800 overflow-hidden mb-3">
+            <div id="mem-progress" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[11px] text-zinc-400 font-mono">
+            <span>Used: <strong id="mem-used" class="text-zinc-200">--</strong></span>
+            <span>Free: <strong id="mem-free" class="text-zinc-200">--</strong></span>
+          </div>
+        </div>
+        <div class="pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-500 font-mono">
+          Total: <span id="mem-total" class="text-zinc-400">--</span>
+        </div>
+      </div>
+
+      <!-- CPU Load Card -->
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-zinc-100 uppercase tracking-wider">⚡ CPU Load Average</h3>
+            <span id="cpu-load1-badge" class="text-xs font-bold text-indigo-400 font-mono">--</span>
+          </div>
+          <p class="text-[11px] text-zinc-400 mt-1">Host scheduler queue load</p>
+          <div class="mt-3 flex justify-between text-[11px] text-zinc-300 font-mono bg-zinc-950/80 px-2 py-1.5 rounded border border-zinc-800">
+            <span>1m: <strong id="cpu-load1" class="text-indigo-400">--</strong></span>
+            <span>5m: <strong id="cpu-load5" class="text-zinc-200">--</strong></span>
+            <span>15m: <strong id="cpu-load15" class="text-zinc-400">--</strong></span>
+          </div>
+        </div>
+        <div class="pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-500 font-mono">
+          /proc/loadavg
         </div>
       </div>
 
       <!-- Node Vitals Card -->
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 flex flex-col justify-between">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
         <div>
-          <h3 class="text-sm font-semibold text-zinc-100 mb-3">Docker Engine Vitals</h3>
-          <div class="space-y-2 text-xs">
-            <div class="flex justify-between text-zinc-400">
-              <span>Status:</span>
-              <span class="font-medium text-emerald-400">● {{.Node.Status}}</span>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold text-zinc-100 uppercase tracking-wider">🐳 Docker Engine</h3>
+            <span class="text-xs font-medium text-emerald-400">● {{.Node.Status}}</span>
+          </div>
+          <div class="space-y-1.5 text-xs mt-2">
+            <div class="flex justify-between text-zinc-400 text-[11px]">
+              <span>Version:</span>
+              <span class="font-mono text-zinc-200 truncate max-w-[130px]">{{.Node.DockerVersion}}</span>
             </div>
-            <div class="flex justify-between text-zinc-400">
-              <span>Docker Version:</span>
-              <span class="font-mono text-zinc-200 truncate max-w-[140px]">{{.Node.DockerVersion}}</span>
-            </div>
-            <div class="flex justify-between text-zinc-400">
-              <span>SSH Endpoint:</span>
+            <div class="flex justify-between text-zinc-400 text-[11px]">
+              <span>SSH:</span>
               <span class="font-mono text-zinc-200">{{.Node.Host}}:{{.Node.Port}}</span>
             </div>
           </div>
         </div>
-        <div class="pt-3 border-t border-zinc-800 text-[11px] text-zinc-500">
-          Auto-polling active while viewing
+        <div class="pt-2 border-t border-zinc-800/80 text-[10px] text-zinc-500">
+          Auto-polling active
         </div>
       </div>
     </div>
@@ -490,7 +527,13 @@
           <span class="text-sm">📋</span>
           <h3 id="modal-container-name" class="text-sm font-semibold text-zinc-100">Container Logs</h3>
         </div>
-        <button onclick="closeLogsModal()" class="text-zinc-400 hover:text-zinc-200 text-sm p-1">✕</button>
+        <div class="flex items-center gap-3">
+          <label class="inline-flex items-center gap-1.5 text-xs text-zinc-300 font-mono cursor-pointer select-none">
+            <input type="checkbox" id="logs-follow-checkbox" onchange="toggleLogsStreaming()" class="rounded border-zinc-700 text-indigo-600 bg-zinc-800 focus:ring-0">
+            <span>🔴 Live Stream</span>
+          </label>
+          <button onclick="closeLogsModal()" class="text-zinc-400 hover:text-zinc-200 text-sm p-1">✕</button>
+        </div>
       </div>
       <div class="p-4 flex-1 overflow-hidden flex flex-col">
         <pre id="logs-content" class="bg-zinc-950 p-4 rounded-lg border border-zinc-800 text-xs font-mono text-zinc-300 flex-1 overflow-y-auto whitespace-pre-wrap">Fetching logs...</pre>
@@ -500,6 +543,24 @@
 
   <script>
     const nodeID = "{{.Node.ID}}";
+
+    function escapeHtml(text) {
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function escapeAttr(text) {
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;');
+    }
 
     async function fetchTelemetry() {
       try {
@@ -516,14 +577,54 @@
           
           const rawPercent = parseInt(data.disk.percent || '0', 10);
           const bar = document.getElementById('disk-progress');
-          bar.style.width = rawPercent + '%';
-          if (rawPercent > 85) {
-            bar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
-          } else if (rawPercent > 70) {
-            bar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
-          } else {
-            bar.className = 'bg-indigo-500 h-full rounded-full transition-all duration-500';
+          if (bar) {
+            bar.style.width = rawPercent + '%';
+            if (rawPercent > 85) {
+              bar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+            } else if (rawPercent > 70) {
+              bar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+            } else {
+              bar.className = 'bg-indigo-500 h-full rounded-full transition-all duration-500';
+            }
           }
+        }
+
+        // Update Memory (RAM)
+        if (data.memory) {
+          const memUsed = document.getElementById('mem-used');
+          const memFree = document.getElementById('mem-free');
+          const memTotal = document.getElementById('mem-total');
+          const memBadge = document.getElementById('mem-percent-badge');
+          const memBar = document.getElementById('mem-progress');
+
+          if (memUsed) memUsed.innerText = data.memory.used || '--';
+          if (memFree) memFree.innerText = data.memory.free || '--';
+          if (memTotal) memTotal.innerText = data.memory.total || '--';
+          if (memBadge) memBadge.innerText = data.memory.percent || '--%';
+
+          if (memBar) {
+            const rawPct = parseInt(data.memory.percent || '0', 10);
+            memBar.style.width = rawPct + '%';
+            if (rawPct > 85) {
+              memBar.className = 'bg-rose-500 h-full rounded-full transition-all duration-500';
+            } else if (rawPct > 70) {
+              memBar.className = 'bg-amber-500 h-full rounded-full transition-all duration-500';
+            } else {
+              memBar.className = 'bg-emerald-500 h-full rounded-full transition-all duration-500';
+            }
+          }
+        }
+
+        // Update CPU Load
+        if (data.cpu) {
+          const l1 = document.getElementById('cpu-load1');
+          const l5 = document.getElementById('cpu-load5');
+          const l15 = document.getElementById('cpu-load15');
+          const l1Badge = document.getElementById('cpu-load1-badge');
+          if (l1) l1.innerText = data.cpu.load1 || '--';
+          if (l5) l5.innerText = data.cpu.load5 || '--';
+          if (l15) l15.innerText = data.cpu.load15 || '--';
+          if (l1Badge) l1Badge.innerText = data.cpu.load1 || '--';
         }
 
         // Update Containers
@@ -606,8 +707,8 @@
         const isRunning = (c.state || '').toLowerCase() === 'running';
         const shortID = (c.id || '').substring(0, 12);
         const originBadge = c.is_managed
-          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" title="Managed by Docker Orkes (Stack: ${c.stack_name || 'Active'})">
-               <span>⚡</span> <span>Managed${c.stack_name ? ' (' + c.stack_name + ')' : ''}</span>
+          ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" title="Managed by Docker Orkes (Stack: ${escapeAttr(c.stack_name || 'Active')})">
+               <span>⚡</span> <span>Managed${c.stack_name ? ' (' + escapeHtml(c.stack_name) + ')' : ''}</span>
              </span>`
           : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-amber-400/90 border border-amber-500/20" title="Unmanaged / External container">
                <span>📦</span> <span>Unmanaged</span>
@@ -616,27 +717,39 @@
         return `
           <tr class="hover:bg-zinc-800/30 transition">
             <td class="py-3 px-4 font-semibold text-zinc-100">
-              ${c.names || c.id}
-              <div class="text-[10px] text-zinc-500 font-mono">${shortID}</div>
+              ${escapeHtml(c.names || c.id)}
+              <div class="text-[10px] text-zinc-500 font-mono">${escapeHtml(shortID)}</div>
             </td>
             <td class="py-3 px-4">${originBadge}</td>
-            <td class="py-3 px-4 font-mono text-[11px] text-zinc-300">${c.image}</td>
+            <td class="py-3 px-4 font-mono text-[11px] text-zinc-300">${escapeHtml(c.image)}</td>
             <td class="py-3 px-4">
               <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ${isRunning ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'}">
-                ${isRunning ? '● Running' : '○ ' + (c.state || 'stopped')}
+                ${isRunning ? '● Running' : '○ ' + escapeHtml(c.state || 'stopped')}
               </span>
             </td>
-            <td class="py-3 px-4 font-mono text-[11px] text-zinc-400">${c.ports || '-'}</td>
+            <td class="py-3 px-4 font-mono text-[11px] text-zinc-400">${escapeHtml(c.ports || '-')}</td>
             <td class="py-3 px-4 text-right">
               <div class="inline-flex items-center gap-1.5 justify-end">
                 ${isRunning ? `
-                <button onclick="openContainerTerminal(nodeID, '${c.id}', '${c.names || c.id}', '${c.image}')"
+                <button onclick="restartContainer('${escapeAttr(c.id)}', '${escapeAttr(c.names || c.id)}')"
+                  class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition" title="Restart Container">
+                  🔄 Restart
+                </button>
+                <button onclick="stopContainer('${escapeAttr(c.id)}', '${escapeAttr(c.names || c.id)}')"
+                  class="bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 px-2 py-1 rounded text-xs transition" title="Stop Container">
+                  ⏹ Stop
+                </button>
+                <button onclick="openContainerTerminal(nodeID, '${escapeAttr(c.id)}', '${escapeAttr(c.names || c.id)}', '${escapeAttr(c.image)}')"
                   class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded text-xs transition flex items-center gap-1 font-medium" title="Exec Terminal">
                   💻 <span>Terminal</span>
-                </button>` : ''}
-                <button onclick="viewContainerLogs('${c.id}', '${c.names}')"
+                </button>` : `
+                <button onclick="startContainer('${escapeAttr(c.id)}', '${escapeAttr(c.names || c.id)}')"
+                  class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2 py-1 rounded text-xs transition" title="Start Container">
+                  ▶ Start
+                </button>`}
+                <button onclick="viewContainerLogs('${escapeAttr(c.id)}', '${escapeAttr(c.names)}')"
                   class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-2.5 py-1 rounded text-xs transition">
-                  View Logs
+                  Logs
                 </button>
               </div>
             </td>
@@ -692,7 +805,7 @@
         if (!res.ok) {
           const errText = await res.text();
           if (!silent) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Failed to load images: ${errText}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Failed to load images: ${escapeHtml(errText)}</td></tr>`;
           }
           return;
         }
@@ -709,7 +822,7 @@
       } catch (err) {
         console.error("Failed to fetch images:", err);
         if (!silent) {
-          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Error fetching images: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Error fetching images: ${escapeHtml(err.message)}</td></tr>`;
         }
       }
     }
@@ -791,7 +904,7 @@
 
         let containerList = '';
         if (img.containers && img.containers.length > 0) {
-          containerList = `<div class="text-[10px] text-zinc-400 mt-1 font-mono">Containers: ${img.containers.join(', ')}</div>`;
+          containerList = `<div class="text-[10px] text-zinc-400 mt-1 font-mono">Containers: ${img.containers.map(escapeHtml).join(', ')}</div>`;
         }
 
         // Vulnerability Scan badge
@@ -806,11 +919,11 @@
           const critText = img.critical_count > 0 ? `<span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-1.5 py-0.5 rounded font-bold">${img.critical_count} Crit</span>` : '';
           const highText = img.high_count > 0 ? `<span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.5 rounded font-bold">${img.high_count} High</span>` : '';
           const otherText = (img.critical_count === 0 && img.high_count === 0) ? `<span class="bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 px-1.5 py-0.5 rounded">${(img.medium_count || 0) + (img.low_count || 0)} CVEs</span>` : '';
-          vulnBadge = `<button onclick="viewVulnerabilityReport('${ref}')" class="inline-flex items-center gap-1 text-[10px] hover:opacity-80 transition cursor-pointer" title="Click to view detailed CVE report">
+          vulnBadge = `<button onclick="viewVulnerabilityReport('${escapeAttr(ref)}')" class="inline-flex items-center gap-1 text-[10px] hover:opacity-80 transition cursor-pointer" title="Click to view detailed CVE report">
             ${critText} ${highText} ${otherText}
           </button>`;
         } else if (img.scan_status === 'clean') {
-          vulnBadge = `<button onclick="viewVulnerabilityReport('${ref}')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition cursor-pointer" title="Zero CVEs found. Click for report">
+          vulnBadge = `<button onclick="viewVulnerabilityReport('${escapeAttr(ref)}')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition cursor-pointer" title="Zero CVEs found. Click for report">
             ✓ Clean
           </button>`;
         } else if (img.scan_status === 'error') {
@@ -850,47 +963,47 @@
           if (scanningImages[ref]) {
             scanButton = `<span class="bg-zinc-800 text-indigo-300 border border-zinc-700 px-2 py-1 rounded text-xs flex items-center gap-1"><span class="animate-spin text-xs">🔄</span> Scanning</span>`;
           } else if (img.can_scan) {
-            scanButton = `<button onclick="scanSingleImage('${ref}', false)" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium flex items-center gap-1" title="Scan image for CVE vulnerabilities">🛡️ Scan</button>`;
+            scanButton = `<button onclick="scanSingleImage('${escapeAttr(ref)}', false)" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium flex items-center gap-1" title="Scan image for CVE vulnerabilities">🛡️ Scan</button>`;
           } else {
-            scanButton = `<button onclick="scanSingleImage('${ref}', true)" class="bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 px-2 py-1 rounded text-xs transition flex items-center gap-1" title="Scan cooldown active. Click to Force Re-scan">🛡️ Force</button>`;
+            scanButton = `<button onclick="scanSingleImage('${escapeAttr(ref)}', true)" class="bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border border-zinc-700 px-2 py-1 rounded text-xs transition flex items-center gap-1" title="Scan cooldown active. Click to Force Re-scan">🛡️ Force</button>`;
           }
 
           const st = imageUpdateStatus[ref];
           if (st && st.state === 'checking') {
             updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-950/50 text-indigo-300 border border-indigo-800/50"><span class="animate-spin text-xs">🔄</span> Checking...</span>`;
           } else if (st && st.state === 'up_to_date') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Image is up to date with registry"><span>✓ Up to date</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Image is up to date with registry"><span>✓ Up to date</span> <button onclick="checkImageUpdate('${escapeAttr(ref)}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
           } else if (st && st.state === 'updated') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30" title="Newer image layers were downloaded"><span>🚀 Updated</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30" title="Newer image layers were downloaded"><span>🚀 Updated</span> <button onclick="checkImageUpdate('${escapeAttr(ref)}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Re-check registry">↻</button></span>`;
           } else if (st && st.state === 'error') {
-            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${st.error || 'Failed'}"><span>❌ Error</span> <button onclick="checkImageUpdate('${ref}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Retry">↻</button></span>`;
+            updateControl = `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20" title="${escapeAttr(st.error || 'Failed')}"><span>❌ Error</span> <button onclick="checkImageUpdate('${escapeAttr(ref)}')" class="ml-1 text-zinc-400 hover:text-zinc-200 transition" title="Retry">↻</button></span>`;
           } else {
-            updateControl = `<button onclick="checkImageUpdate('${ref}')" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check</span></button>`;
+            updateControl = `<button onclick="checkImageUpdate('${escapeAttr(ref)}')" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1 rounded text-xs transition font-medium flex items-center gap-1.5" title="Check registry for newer version of this image">🔍 <span>Check</span></button>`;
           }
 
           if (img.is_pinned) {
-            pinButton = `<button onclick="togglePinImage('${ref}', false)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition font-medium" title="Unpin On-Demand retention">⭐ Pinned</button>`;
+            pinButton = `<button onclick="togglePinImage('${escapeAttr(ref)}', false)" class="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-2 py-1 rounded text-xs transition font-medium" title="Unpin On-Demand retention">⭐ Pinned</button>`;
           } else {
-            pinButton = `<button onclick="togglePinImage('${ref}', true)" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-xs transition" title="Pin as On-Demand utility">☆ Pin</button>`;
+            pinButton = `<button onclick="togglePinImage('${escapeAttr(ref)}', true)" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-1 rounded text-xs transition" title="Pin as On-Demand utility">☆ Pin</button>`;
           }
         }
 
         let deleteButton = '';
         if (canDelete) {
-          deleteButton = `<button onclick="deleteImage('${ref}', '${img.id}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Selective delete image">🗑️ Delete</button>`;
+          deleteButton = `<button onclick="deleteImage('${escapeAttr(ref)}', '${escapeAttr(img.id)}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Selective delete image">🗑️ Delete</button>`;
         } else {
           const reason = img.is_pinned ? 'Pinned as On-Demand (unpin first)' : (img.usage_origin === 'managed' ? 'In use by Managed containers' : 'In use by containers');
-          deleteButton = `<button disabled class="opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-800 px-2 py-1 rounded text-xs" title="${reason}">Delete</button>`;
+          deleteButton = `<button disabled class="opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-800 px-2 py-1 rounded text-xs" title="${escapeAttr(reason)}">Delete</button>`;
         }
 
         return `
           <tr class="hover:bg-zinc-800/30 transition">
             <td class="py-3 px-4 font-semibold text-zinc-100">
-              ${isDangling ? '<span class="text-zinc-400 italic">&lt;none&gt;:&lt;none&gt;</span>' : `<span class="font-mono text-zinc-200">${ref}</span>`}
+              ${isDangling ? '<span class="text-zinc-400 italic">&lt;none&gt;:&lt;none&gt;</span>' : `<span class="font-mono text-zinc-200">${escapeHtml(ref)}</span>`}
               ${containerList}
             </td>
-            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${shortID}</td>
-            <td class="py-3 px-4 font-mono text-xs text-zinc-300">${img.size || '-'}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${escapeHtml(shortID)}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-300">${escapeHtml(img.size || '-')}</td>
             <td class="py-3 px-4">${statusBadge}</td>
             <td class="py-3 px-4">${vulnBadge}</td>
             <td class="py-3 px-4">${lastScannedCell}</td>
@@ -1223,17 +1336,21 @@
               sevBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300 border border-blue-500/40">LOW</span>`;
             }
 
-            const cveId = v.VulnerabilityID || '-';
-            const link = v.PrimaryURL || (cveId.startsWith('CVE-') ? `https://nvd.nist.gov/vuln/detail/${cveId}` : '');
-            const cveHtml = link ? `<a href="${link}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline flex items-center gap-1">${cveId} ↗</a>` : cveId;
+            const rawCveId = v.VulnerabilityID || '-';
+            const cveId = escapeHtml(rawCveId);
+            let link = v.PrimaryURL || (rawCveId.startsWith('CVE-') ? `https://nvd.nist.gov/vuln/detail/${encodeURIComponent(rawCveId)}` : '');
+            if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+              link = '';
+            }
+            const cveHtml = link ? `<a href="${escapeAttr(link)}" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:underline flex items-center gap-1">${cveId} ↗</a>` : cveId;
 
             return `
               <tr class="hover:bg-zinc-800/40 transition">
                 <td class="py-2.5 px-3">${sevBadge}</td>
                 <td class="py-2.5 px-3">${cveHtml}</td>
-                <td class="py-2.5 px-3 font-semibold text-zinc-200">${v.PkgName || '-'}</td>
-                <td class="py-2.5 px-3 text-rose-300">${v.InstalledVersion || '-'}</td>
-                <td class="py-2.5 px-3 text-emerald-400 font-semibold">${v.FixedVersion || '<span class="text-zinc-500 italic">None</span>'}</td>
+                <td class="py-2.5 px-3 font-semibold text-zinc-200">${escapeHtml(v.PkgName || '-')}</td>
+                <td class="py-2.5 px-3 text-rose-300">${escapeHtml(v.InstalledVersion || '-')}</td>
+                <td class="py-2.5 px-3 text-emerald-400 font-semibold">${v.FixedVersion ? escapeHtml(v.FixedVersion) : '<span class="text-zinc-500 italic">None</span>'}</td>
               </tr>
             `;
           }).join('');
@@ -1349,7 +1466,7 @@
         if (!res.ok) {
           const errText = await res.text();
           if (!silent) {
-            tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Failed to load volumes: ${errText}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Failed to load volumes: ${escapeHtml(errText)}</td></tr>`;
           }
           return;
         }
@@ -1366,7 +1483,7 @@
       } catch (err) {
         console.error("Failed to fetch volumes:", err);
         if (!silent) {
-          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Error fetching volumes: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-400">Error fetching volumes: ${escapeHtml(err.message)}</td></tr>`;
         }
       }
     }
@@ -1415,7 +1532,7 @@
       tbody.innerHTML = volumes.map(v => {
         const originBadge = v.is_managed
           ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/40">
-               <span>⚡</span> <span class="font-mono">${v.stack_name || 'Managed'}</span>
+               <span>⚡</span> <span class="font-mono">${escapeHtml(v.stack_name || 'Managed')}</span>
              </span>`
           : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
                <span>📦</span> <span>Unmanaged</span>
@@ -1427,21 +1544,21 @@
 
         let attachedInfo = '';
         if (v.containers && v.containers.length > 0) {
-          attachedInfo = `<div class="text-[10px] text-zinc-400 mt-0.5 font-mono">Containers: ${v.containers.join(', ')}</div>`;
+          attachedInfo = `<div class="text-[10px] text-zinc-400 mt-0.5 font-mono">Containers: ${v.containers.map(escapeHtml).join(', ')}</div>`;
         }
 
         const deleteBtn = v.in_use
           ? `<button disabled class="opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-800 px-2 py-1 rounded text-xs" title="In use by containers">Delete</button>`
-          : `<button onclick="deleteVolume('${v.name}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Delete volume">🗑️ Delete</button>`;
+          : `<button onclick="deleteVolume('${escapeAttr(v.name)}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Delete volume">🗑️ Delete</button>`;
 
         return `
           <tr class="hover:bg-zinc-800/30 transition">
             <td class="py-3 px-4">
-              <div class="font-mono text-zinc-200 font-medium">${v.name}</div>
+              <div class="font-mono text-zinc-200 font-medium">${escapeHtml(v.name)}</div>
               ${attachedInfo}
             </td>
             <td class="py-3 px-4">${originBadge}</td>
-            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${v.driver || 'local'}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${escapeHtml(v.driver || 'local')}</td>
             <td class="py-3 px-4">${statusBadge}</td>
             <td class="py-3 px-4 text-right">${deleteBtn}</td>
           </tr>
@@ -1503,7 +1620,7 @@
         if (!res.ok) {
           const errText = await res.text();
           if (!silent) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Failed to load networks: ${errText}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Failed to load networks: ${escapeHtml(errText)}</td></tr>`;
           }
           return;
         }
@@ -1520,7 +1637,7 @@
       } catch (err) {
         console.error("Failed to fetch networks:", err);
         if (!silent) {
-          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Error fetching networks: ${err.message}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-400">Error fetching networks: ${escapeHtml(err.message)}</td></tr>`;
         }
       }
     }
@@ -1575,7 +1692,7 @@
           </span>`;
         } else if (n.is_managed) {
           originBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-indigo-950/60 text-indigo-300 border border-indigo-800/40">
-            <span>⚡</span> <span class="font-mono">${n.stack_name || 'Managed'}</span>
+            <span>⚡</span> <span class="font-mono">${escapeHtml(n.stack_name || 'Managed')}</span>
           </span>`;
         } else {
           originBadge = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
@@ -1589,7 +1706,7 @@
 
         let attachedInfo = '';
         if (n.containers && n.containers.length > 0) {
-          attachedInfo = `<div class="text-[10px] text-zinc-400 mt-0.5 font-mono">Containers: ${n.containers.join(', ')}</div>`;
+          attachedInfo = `<div class="text-[10px] text-zinc-400 mt-0.5 font-mono">Containers: ${n.containers.map(escapeHtml).join(', ')}</div>`;
         }
 
         const shortID = (n.id || '').substring(0, 12);
@@ -1600,18 +1717,18 @@
         } else if (n.in_use) {
           deleteBtn = `<button disabled class="opacity-30 cursor-not-allowed bg-zinc-800 text-zinc-500 border border-zinc-800 px-2 py-1 rounded text-xs" title="In use by containers">Delete</button>`;
         } else {
-          deleteBtn = `<button onclick="deleteNetwork('${n.id}', '${n.name}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Delete network">🗑️ Delete</button>`;
+          deleteBtn = `<button onclick="deleteNetwork('${escapeAttr(n.id)}', '${escapeAttr(n.name)}')" class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition font-medium" title="Delete network">🗑️ Delete</button>`;
         }
 
         return `
           <tr class="hover:bg-zinc-800/30 transition">
             <td class="py-3 px-4">
-              <div class="font-mono text-zinc-200 font-medium">${n.name}</div>
+              <div class="font-mono text-zinc-200 font-medium">${escapeHtml(n.name)}</div>
               ${attachedInfo}
             </td>
-            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${shortID || '-'}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${escapeHtml(shortID || '-')}</td>
             <td class="py-3 px-4">${originBadge}</td>
-            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${n.driver || 'bridge'}</td>
+            <td class="py-3 px-4 font-mono text-xs text-zinc-400">${escapeHtml(n.driver || 'bridge')}</td>
             <td class="py-3 px-4">${statusBadge}</td>
             <td class="py-3 px-4 text-right">${deleteBtn}</td>
           </tr>
@@ -1663,22 +1780,122 @@
       }
     }
 
+    let logStreamAbortController = null;
+    let activeLogContainerID = null;
+    let activeLogContainerName = null;
+
     async function viewContainerLogs(containerID, containerName) {
+      activeLogContainerID = containerID;
+      activeLogContainerName = containerName;
       document.getElementById('modal-container-name').innerText = `Logs: ${containerName || containerID}`;
       document.getElementById('logs-content').innerText = 'Loading logs...';
+      const chk = document.getElementById('logs-follow-checkbox');
+      if (chk) chk.checked = false;
       document.getElementById('logs-modal').classList.remove('hidden');
 
+      await fetchStaticLogs(containerID);
+    }
+
+    async function fetchStaticLogs(containerID) {
+      stopLogsStreaming();
       try {
-        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/logs`);
+        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/logs?tail=200`);
         const text = await res.text();
-        document.getElementById('logs-content').innerText = text || '(No log output)';
+        const el = document.getElementById('logs-content');
+        if (el) {
+          el.innerText = text || '(No log output)';
+          el.scrollTop = el.scrollHeight;
+        }
       } catch (err) {
         document.getElementById('logs-content').innerText = 'Failed to load logs: ' + err;
       }
     }
 
+    async function toggleLogsStreaming() {
+      const chk = document.getElementById('logs-follow-checkbox');
+      if (chk && chk.checked) {
+        startLogsStreaming();
+      } else {
+        fetchStaticLogs(activeLogContainerID);
+      }
+    }
+
+    async function startLogsStreaming() {
+      stopLogsStreaming();
+      const el = document.getElementById('logs-content');
+      if (el) el.innerText = '';
+
+      logStreamAbortController = new AbortController();
+      try {
+        const res = await fetch(`/nodes/${nodeID}/containers/${activeLogContainerID}/logs?follow=true&tail=100`, {
+          signal: logStreamAbortController.signal
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          if (el) {
+            el.innerText += chunk;
+            el.scrollTop = el.scrollHeight;
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error("Log stream error:", err);
+        }
+      }
+    }
+
+    function stopLogsStreaming() {
+      if (logStreamAbortController) {
+        logStreamAbortController.abort();
+        logStreamAbortController = null;
+      }
+    }
+
     function closeLogsModal() {
+      stopLogsStreaming();
       document.getElementById('logs-modal').classList.add('hidden');
+    }
+
+    async function startContainer(containerID, containerName) {
+      if (!confirm(`Start container "${containerName || containerID}"?`)) return;
+      try {
+        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/start`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to start container');
+        fetchTelemetry();
+      } catch (err) {
+        alert('Start container failed: ' + err.message);
+      }
+    }
+
+    async function stopContainer(containerID, containerName) {
+      if (!confirm(`Stop container "${containerName || containerID}"?`)) return;
+      try {
+        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/stop`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to stop container');
+        fetchTelemetry();
+      } catch (err) {
+        alert('Stop container failed: ' + err.message);
+      }
+    }
+
+    async function restartContainer(containerID, containerName) {
+      if (!confirm(`Restart container "${containerName || containerID}"?`)) return;
+      try {
+        const res = await fetch(`/nodes/${nodeID}/containers/${containerID}/restart`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to restart container');
+        fetchTelemetry();
+      } catch (err) {
+        alert('Restart container failed: ' + err.message);
+      }
     }
 
     // Web Terminal Management

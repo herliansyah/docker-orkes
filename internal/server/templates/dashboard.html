@@ -1638,6 +1638,10 @@
               class="py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer">
               <span>🩺</span> <span data-i18n="settings_tab_poller">Health Poller</span>
             </button>
+            <button type="button" onclick="switchSettingsTab('backup')" id="settings-tab-btn-backup"
+              class="py-2 px-3.5 border-b-2 font-medium text-xs border-transparent text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 flex items-center gap-2 transition shrink-0 cursor-pointer">
+              <span>💾</span> <span>Database Backup</span>
+            </button>
           </div>
 
           <!-- Settings Tab Panes -->
@@ -1844,6 +1848,30 @@
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+
+            <!-- Pane 5: Database Backup -->
+            <div id="settings-pane-backup" class="settings-pane hidden space-y-4">
+              <div class="bg-zinc-950/60 border border-zinc-800 rounded-xl p-5 space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                      <span>💾</span>
+                      <span>SQLite Database Snapshot & Disaster Recovery</span>
+                    </h3>
+                    <p class="text-xs text-zinc-400 mt-1 max-w-2xl">
+                      Download an instantaneous atomic snapshot (<code class="text-indigo-400 bg-zinc-900 px-1.5 py-0.5 rounded">VACUUM INTO</code>) of the Control Plane SQLite database, including all nodes, credentials, deployment revisions, and notification settings.
+                    </p>
+                  </div>
+                  <a href="/api/backup" download
+                    class="inline-flex items-center gap-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg transition shrink-0 shadow-lg shadow-indigo-900/30">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    <span>Download Database (.db)</span>
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -2273,7 +2301,11 @@
             <p class="text-[11px] font-mono text-zinc-400 mt-0.5">Live stdout / stderr stream (docker logs --tail 100)</p>
           </div>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-3">
+          <label class="inline-flex items-center gap-1.5 text-xs text-zinc-300 font-mono cursor-pointer select-none">
+            <input type="checkbox" id="dashboard-logs-follow-checkbox" onchange="toggleDashboardLogsStreaming()" class="rounded border-zinc-700 text-indigo-600 bg-zinc-800 focus:ring-0">
+            <span>🔴 Live Stream</span>
+          </label>
           <button type="button" onclick="refreshContainerLogs()" class="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1">
             <span>🔄</span> <span>Refresh</span>
           </button>
@@ -3442,7 +3474,7 @@
     }
 
     function switchSettingsTab(subTab) {
-      const keys = ['ssh', 'git', 'notifications', 'poller'];
+      const keys = ['ssh', 'git', 'notifications', 'poller', 'backup'];
       if (!keys.includes(subTab)) subTab = 'ssh';
 
       keys.forEach(k => {
@@ -3541,6 +3573,7 @@
     const deploymentContainersCache = {};
     let activeLogNodeId = '';
     let activeLogContainerId = '';
+    let dashboardLogStreamAbortController = null;
 
     function toggleDeploymentContainers(depId) {
       const row = document.getElementById(`dep-containers-${depId}`);
@@ -3638,16 +3671,29 @@
             </td>
             <td class="py-2.5 px-3 text-right whitespace-nowrap">
               <div class="inline-flex items-center gap-1.5">
-                <button type="button" onclick="viewContainerLogs('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)}')"
-                  class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="View live logs">
-                  <span>📋</span> <span>Logs</span>
-                </button>
                 ${isRunning ? `
+                <button type="button" onclick="actionContainer('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)}', 'restart', '${depId}')"
+                  class="bg-indigo-950/40 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-800/50 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Restart container">
+                  <span>🔄</span> <span>Restart</span>
+                </button>
+                <button type="button" onclick="actionContainer('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)}', 'stop', '${depId}')"
+                  class="bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Stop container">
+                  <span>⏹</span> <span>Stop</span>
+                </button>
                 <button type="button" onclick="openTerminal('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)} (Container Exec)', '${escapeHtml(data.node_name)} • ${escapeHtml(c.image)}')"
                   class="bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/50 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Open interactive container shell">
                   <span>💻</span> <span>Terminal</span>
                 </button>
-                ` : ''}
+                ` : `
+                <button type="button" onclick="actionContainer('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)}', 'start', '${depId}')"
+                  class="bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/50 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="Start container">
+                  <span>▶</span> <span>Start</span>
+                </button>
+                `}
+                <button type="button" onclick="viewContainerLogs('${escapeHtml(data.node_id)}', '${escapeHtml(c.id)}', '${escapeHtml(c.names || c.id)}')"
+                  class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 px-2 py-1 rounded text-xs transition inline-flex items-center gap-1" title="View logs">
+                  <span>📋</span> <span>Logs</span>
+                </button>
               </div>
             </td>
           </tr>
@@ -3672,11 +3718,29 @@
       `;
     }
 
+    async function actionContainer(nodeId, containerId, containerName, action, depId) {
+      const verb = action.charAt(0).toUpperCase() + action.slice(1);
+      if (!confirm(`${verb} container "${containerName || containerId}"?`)) return;
+      try {
+        const res = await fetch(`/nodes/${nodeId}/containers/${containerId}/${action}`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Failed to ${action} container`);
+        if (depId) {
+          await fetchDeploymentContainers(depId, true);
+        }
+      } catch (err) {
+        alert(`${verb} container failed: ` + err.message);
+      }
+    }
+
     async function viewContainerLogs(nodeId, containerId, containerName) {
+      stopDashboardLogsStreaming();
       activeLogNodeId = nodeId;
       activeLogContainerId = containerId;
       document.getElementById('modal-container-name').innerText = `Logs: ${containerName || containerId}`;
       document.getElementById('logs-content').innerText = 'Loading logs...';
+      const chk = document.getElementById('dashboard-logs-follow-checkbox');
+      if (chk) chk.checked = false;
       document.getElementById('logs-modal').classList.remove('hidden');
 
       await refreshContainerLogs();
@@ -3684,18 +3748,77 @@
 
     async function refreshContainerLogs() {
       if (!activeLogNodeId || !activeLogContainerId) return;
+      const chk = document.getElementById('dashboard-logs-follow-checkbox');
+      if (chk && chk.checked) {
+        await startDashboardLogsStreaming();
+        return;
+      }
+      stopDashboardLogsStreaming();
       try {
-        const res = await fetch(`/nodes/${activeLogNodeId}/containers/${activeLogContainerId}/logs`);
+        const res = await fetch(`/nodes/${activeLogNodeId}/containers/${activeLogContainerId}/logs?tail=200`);
         const text = await res.text();
         const el = document.getElementById('logs-content');
-        el.innerText = text || '(No log output)';
-        el.scrollTop = el.scrollHeight;
+        if (el) {
+          el.innerText = text || '(No log output)';
+          el.scrollTop = el.scrollHeight;
+        }
       } catch (err) {
-        document.getElementById('logs-content').innerText = 'Failed to load logs: ' + err.message;
+        const el = document.getElementById('logs-content');
+        if (el) el.innerText = 'Failed to load logs: ' + err.message;
+      }
+    }
+
+    async function toggleDashboardLogsStreaming() {
+      const chk = document.getElementById('dashboard-logs-follow-checkbox');
+      if (chk && chk.checked) {
+        await startDashboardLogsStreaming();
+      } else {
+        stopDashboardLogsStreaming();
+        await refreshContainerLogs();
+      }
+    }
+
+    async function startDashboardLogsStreaming() {
+      stopDashboardLogsStreaming();
+      if (!activeLogNodeId || !activeLogContainerId) return;
+      const el = document.getElementById('logs-content');
+      if (el) el.innerText = '';
+
+      dashboardLogStreamAbortController = new AbortController();
+      try {
+        const res = await fetch(`/nodes/${activeLogNodeId}/containers/${activeLogContainerId}/logs?follow=true&tail=100`, {
+          signal: dashboardLogStreamAbortController.signal
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          if (el) {
+            el.innerText += chunk;
+            el.scrollTop = el.scrollHeight;
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error("Dashboard log stream error:", err);
+          if (el) el.innerText += `\n[Stream disconnected: ${err.message}]`;
+        }
+      }
+    }
+
+    function stopDashboardLogsStreaming() {
+      if (dashboardLogStreamAbortController) {
+        dashboardLogStreamAbortController.abort();
+        dashboardLogStreamAbortController = null;
       }
     }
 
     function closeLogsModal() {
+      stopDashboardLogsStreaming();
       document.getElementById('logs-modal').classList.add('hidden');
       activeLogNodeId = '';
       activeLogContainerId = '';
@@ -4889,7 +5012,7 @@
           listContainer.innerHTML = html;
         })
         .catch(err => {
-          listContainer.innerHTML = `<div class="text-rose-400 p-4">Error loading revisions: ${err.message}</div>`;
+          listContainer.innerHTML = `<div class="text-rose-400 p-4">Error loading revisions: ${escapeHtml(err.message)}</div>`;
         });
     }
 
@@ -5354,11 +5477,13 @@
       const label = btn.querySelector('.mask-label');
       if (btn.dataset.isMasked === 'true') {
         textarea.value = btn.dataset.raw || '';
+        textarea.readOnly = false;
         btn.dataset.isMasked = 'false';
         if (label) label.innerText = 'Mask Secrets';
       } else {
         btn.dataset.raw = textarea.value;
         textarea.value = maskEnvContent(textarea.value);
+        textarea.readOnly = true;
         btn.dataset.isMasked = 'true';
         if (label) label.innerText = 'Reveal Secrets';
       }
@@ -5372,6 +5497,7 @@
       const btn = form.querySelector('[data-is-masked="true"]');
       if (btn && btn.dataset.raw !== undefined) {
         textarea.value = btn.dataset.raw;
+        textarea.readOnly = false;
         btn.dataset.isMasked = 'false';
       }
     }
@@ -5386,11 +5512,13 @@
 
       if (isEditorMasked) {
         editor.value = rawEditorContent;
+        editor.readOnly = false;
         isEditorMasked = false;
         if (label) label.innerText = 'Mask Secrets';
       } else {
         rawEditorContent = editor.value;
         editor.value = maskEnvContent(editor.value);
+        editor.readOnly = true;
         isEditorMasked = true;
         if (label) label.innerText = 'Reveal Secrets';
       }

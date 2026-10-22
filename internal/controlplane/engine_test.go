@@ -13,9 +13,9 @@ import (
 )
 
 type mockExecutor struct {
-	mu           sync.Mutex
-	commands     []string
-	uploaded     map[string]map[string][]byte
+	mu       sync.Mutex
+	commands []string
+	uploaded map[string]map[string][]byte
 }
 
 func (m *mockExecutor) TestConnection(ctx context.Context, host string, port int, user string, privKey string) (string, error) {
@@ -252,6 +252,9 @@ func TestControlPlane_DeploymentLifecycle(t *testing.T) {
 
 	mockExec.mu.Lock()
 	for _, cmd := range mockExec.commands {
+		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down") && strings.Contains(cmd, "large-stack") {
+			t.Errorf("docker compose down was executed on large stack despite safety threshold violation!")
+		}
 		if strings.Contains(cmd, "rm -rf") && strings.Contains(cmd, ".docker-orkes/stacks/large-stack") {
 			t.Errorf("rm -rf was executed on large stack directory despite safety threshold violation!")
 		}
@@ -428,3 +431,102 @@ func TestControlPlane_RevisionsAndRollback(t *testing.T) {
 	}
 }
 
+func TestControlPlane_PreflightUninitializedStack(t *testing.T) {
+	eng, _, _ := setupTestEngine(t)
+	st := eng.Store()
+	defer st.Close()
+
+	ctx := context.Background()
+
+	_ = st.CreateNode(store.Node{ID: "n-init", Name: "init-worker", Host: "10.0.0.9", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{ID: "s-init", Name: "init-stack", ComposeYAML: "services:\n  app:\n    image: redis:alpine\n"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d-init", StackID: "s-init", NodeID: "n-init", EnvVars: "REDIS_PORT=6379", Status: "pending"})
+
+	// Preflight on uninitialized stack where files do not exist yet on node should NOT return error
+	res, err := eng.GetDeploymentPreflight(ctx, "d-init")
+	if err != nil {
+		t.Fatalf("expected preflight to succeed on uninitialized stack, got error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected non-nil preflight result")
+	}
+	if !res.HasDrift {
+		t.Errorf("expected new uninitialized stack to indicate pending changes (diff)")
+	}
+}
+
+func TestControlPlane_MultiDeploymentRollbackIsolation(t *testing.T) {
+	eng, _, _ := setupTestEngine(t)
+	st := eng.Store()
+	defer st.Close()
+
+	ctx := context.Background()
+
+	// 1 stack shared by 2 deployments on 2 nodes
+	_ = st.CreateNode(store.Node{ID: "n-iso-1", Name: "node-1", Host: "10.0.0.1", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateNode(store.Node{ID: "n-iso-2", Name: "node-2", Host: "10.0.0.2", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{ID: "s-shared", Name: "shared-app", ComposeYAML: "image: app:v1\n"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d-iso-1", StackID: "s-shared", NodeID: "n-iso-1", EnvVars: "TAG=v1", Status: "running"})
+	_ = st.CreateDeployment(store.Deployment{ID: "d-iso-2", StackID: "s-shared", NodeID: "n-iso-2", EnvVars: "TAG=v1", Status: "running"})
+
+	_ = eng.Deploy(ctx, "d-iso-1")
+	_ = eng.Deploy(ctx, "d-iso-2")
+
+	// Get initial revision of d-iso-1
+	revs1, _ := eng.ListRevisions(ctx, "d-iso-1")
+	v1ID := revs1[0].ID
+
+	// Update stack template to v2 and deploy d-iso-1
+	stack, _ := st.GetStack("s-shared")
+	stack.ComposeYAML = "image: app:v2\n"
+	_ = st.UpdateStack(*stack)
+	_ = eng.Deploy(ctx, "d-iso-1")
+
+	// Rollback d-iso-1 to v1
+	if err := eng.Rollback(ctx, "d-iso-1", v1ID); err != nil {
+		t.Fatalf("rollback failed: %v", err)
+	}
+
+	// Verify d-iso-1 has rolled back
+	dep1, _ := st.GetDeployment("d-iso-1")
+	if dep1.ComposeYAML != "image: app:v1\n" {
+		t.Errorf("expected d-iso-1 to have isolated compose override v1, got: %q", dep1.ComposeYAML)
+	}
+
+	// Verify shared stack template for d-iso-2 is UNTOUCHED (v2 preserved, no false drift on node 2)
+	stackAfter, _ := st.GetStack("s-shared")
+	if stackAfter.ComposeYAML != "image: app:v2\n" {
+		t.Errorf("expected shared stack template to remain v2 for other deployments, got: %q", stackAfter.ComposeYAML)
+	}
+}
+
+func TestControlPlane_PreflightMissingEnvVars(t *testing.T) {
+	eng, _, _ := setupTestEngine(t)
+	st := eng.Store()
+	defer st.Close()
+
+	ctx := context.Background()
+
+	_ = st.CreateNode(store.Node{ID: "n-env", Name: "env-worker", Host: "10.0.0.8", Port: 22, User: "root", Status: "online"})
+	_ = st.CreateStack(store.Stack{
+		ID:          "s-env",
+		Name:        "env-stack",
+		ComposeYAML: "services:\n  db:\n    image: postgres:15\n    environment:\n      POSTGRES_PASSWORD: ${DB_PASS:?required}\n      POSTGRES_USER: ${DB_USER}\n      POSTGRES_PORT: ${DB_PORT:-5432}\n",
+	})
+	_ = st.CreateDeployment(store.Deployment{
+		ID:      "d-env",
+		StackID: "s-env",
+		NodeID:  "n-env",
+		EnvVars: "DB_USER=postgres\n", // DB_PASS is missing, DB_PORT has default so not missing
+		Status:  "pending",
+	})
+
+	res, err := eng.GetDeploymentPreflight(ctx, "d-env")
+	if err != nil {
+		t.Fatalf("preflight failed: %v", err)
+	}
+
+	if len(res.MissingEnvVars) != 1 || res.MissingEnvVars[0] != "DB_PASS" {
+		t.Errorf("expected missing env vars to be [DB_PASS], got: %v", res.MissingEnvVars)
+	}
+}
